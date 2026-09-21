@@ -10,6 +10,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/includes/init.php';
+require_once INCLUDES_PATH . '/countries.php';
 require_once INCLUDES_PATH . '/content-functions.php';
 
 $page = cms_page('contact-us');
@@ -46,9 +47,25 @@ if (is_post()) {
     ]);
     $v->required('name')->min('name', 2)->max('name', 150)
       ->required('email')->email('email')->max('email', 190)
-      ->phone('phone')
       ->required('subject')->min('subject', 3)->max('subject', 200)
       ->required('message')->min('message', 10)->max('message', 5000);
+
+    // The phone is optional, but a number and the country it belongs to only
+    // mean anything together - so they are judged together rather than by the
+    // India-only Validator::phone() this field used to call.
+    $phoneCountry = strtoupper(trim((string) input('phone_country', phone_default_country())));
+    if (!isset(phone_countries()[$phoneCountry])) {
+        $phoneCountry = phone_default_country();
+    }
+
+    $phoneRaw   = trim((string) input('phone', ''));
+    $phoneE164  = null;
+    if ($phoneRaw !== '') {
+        $phoneE164 = phone_to_e164($phoneCountry, $phoneRaw);
+        if ($phoneE164 === null) {
+            $v->fail('phone', phone_country_hint($phoneCountry));
+        }
+    }
 
     if ($v->fails()) {
         flash_old($_POST);
@@ -60,7 +77,9 @@ if (is_post()) {
     Database::insert('contact_messages', [
         'name'       => (string) input('name', ''),
         'email'      => mb_strtolower((string) input('email', '')),
-        'phone'      => normalize_phone((string) input('phone', '')),
+        // E.164, so the same person typed three ways is one record. Null when
+        // the field was left blank, which it is allowed to be.
+        'phone'      => $phoneE164,
         'subject'    => (string) input('subject', ''),
         'message'    => (string) input('message', ''),
         'status'     => 'new',
@@ -250,15 +269,41 @@ echo cms_page_banner($page ?? [
                         <?php endif; ?>
                     </div>
 
+                    <?php
+                    $oldCountry = strtoupper((string) old('phone_country'));
+                    if (!isset(phone_countries()[$oldCountry])) {
+                        $oldCountry = phone_default_country();
+                    }
+                    ?>
                     <div class="sik-field">
                         <label class="sik-label" for="contactPhone">Phone number</label>
-                        <input class="sik-input<?= error_for($errors, 'phone') !== '' ? ' is-invalid' : '' ?>"
-                               id="contactPhone" name="phone" type="tel" inputmode="numeric" maxlength="20"
-                               autocomplete="tel" value="<?= e(old('phone')) ?>">
+                        <div class="sik-phonegroup">
+                            <?php // Labelled separately: "+91" alone tells a screen reader nothing. ?>
+                            <label class="sik-sr" for="contactPhoneCountry">Country dialling code</label>
+                            <select class="sik-select sik-phonegroup__country" id="contactPhoneCountry"
+                                    name="phone_country" data-phone-country>
+                                <?php foreach (phone_countries() as $iso => $meta): ?>
+                                    <option value="<?= e_attr($iso) ?>"
+                                            data-dial="<?= e_attr($meta['dial']) ?>"
+                                            data-min="<?= (int) $meta['min'] ?>"
+                                            data-max="<?= (int) $meta['max'] ?>"
+                                            <?= $iso === $oldCountry ? 'selected' : '' ?>>
+                                        <?php // No separate ISO code: where the flag emoji is unsupported the browser
+                                              // already falls back to the two letters, and printing both
+                                              // gave "IN IN +91" on exactly those platforms. ?>
+                                        <?= e(country_flag($iso)) ?> +<?= e($meta['dial']) ?> &middot; <?= e($meta['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input class="sik-input sik-phonegroup__number<?= error_for($errors, 'phone') !== '' ? ' is-invalid' : '' ?>"
+                                   id="contactPhone" name="phone" type="tel" inputmode="tel" maxlength="24"
+                                   autocomplete="tel-national" data-phone-number
+                                   value="<?= e(old('phone')) ?>">
+                        </div>
                         <?php if ($msg = error_for($errors, 'phone')): ?>
                             <span class="sik-error"><?= e($msg) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Optional. Helps us call you back on anything urgent.</span>
+                            <span class="sik-help" data-phone-hint>Optional. <?= e(phone_country_hint($oldCountry)) ?></span>
                         <?php endif; ?>
                     </div>
 

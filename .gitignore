@@ -52,3 +52,8 @@ c -l)|X|
 
 # Local-only helper scripts
 /bin/
+
+# Generated database export for a live host. Contains admin password hashes
+# and customer rows - regenerate it with database/export-for-hosting.php
+# rather than committing one.
+database/shopinnkart-import.sql

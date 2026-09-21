@@ -13887,3 +13887,55 @@ a.sik-buylist__name:hover { color: var(--sik-primary-ink); }
         border-top: 1px solid var(--sik-line);
     }
 }
+
+/* --- Phone field with a country selector ----------------------------------
+   One control to the eye: the select and the number share a border and a
+   focus ring, so they read as a single field rather than two that happen to
+   sit together.
+
+   The select is capped rather than sized to its longest option - "United Arab
+   Emirates" would otherwise push the number box to nothing on a phone. What
+   stays visible is the flag, the ISO code and the dial code, which is the part
+   anyone needs while typing; the full name is there when the list is open. */
+.sik-phonegroup {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-width: 0;
+}
+.sik-phonegroup__country {
+    flex: 0 0 auto;
+    width: 8.5rem;
+    min-width: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right-color: transparent;
+    /* The option text is long; the closed control shows only its head. */
+    text-overflow: ellipsis;
+}
+.sik-phonegroup__number {
+    flex: 1 1 auto;
+    min-width: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+/* Whichever half has focus paints above the other, so the ring is never cut
+   in half by its neighbour's border. */
+.sik-phonegroup__country:focus,
+.sik-phonegroup__number:focus,
+.sik-phonegroup__country:focus-visible,
+.sik-phonegroup__number:focus-visible { position: relative; z-index: 1; }
+
+@media (max-width: 400px) {
+    /* Below this the two halves leave the number too little room to read back
+       what was typed, so they stack and each takes the full width. */
+    .sik-phonegroup { flex-wrap: wrap; }
+    .sik-phonegroup__country,
+    .sik-phonegroup__number {
+        flex: 1 1 100%;
+        width: 100%;
+        border-radius: var(--sik-radius-sm);
+        border-right-color: var(--sik-line);
+    }
+    .sik-phonegroup__number { margin-top: var(--sp-2); }
+}

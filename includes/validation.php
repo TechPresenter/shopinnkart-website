@@ -261,6 +261,21 @@ final class Validator
     // Results
     // -----------------------------------------------------------------------
 
+    /**
+     * Record an error this class cannot express on its own.
+     *
+     * Some rules span two fields - a phone number is only valid against the
+     * country chosen beside it - and a per-field rule method cannot see the
+     * other field. Callers judge those themselves and report the result here,
+     * so the message still travels with every other error rather than being
+     * flashed separately and appearing somewhere else on the page.
+     */
+    public function fail(string $field, string $message): self
+    {
+        $this->addError($field, $message);
+        return $this;
+    }
+
     public function fails(): bool
     {
         return $this->errors !== [];

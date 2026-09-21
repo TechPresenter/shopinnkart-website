@@ -543,3 +543,67 @@
 
     SIK.account = Account;
 })();
+
+/* ---------------------------------------------------------------------------
+   Phone field: keep the hint honest about the chosen country
+   ---------------------------------------------------------------------------
+   The server is the authority - it re-validates the pair on submit whatever
+   happens here. This only spares the shopper a round trip to learn that the
+   country they picked expects a different number of digits.
+   --------------------------------------------------------------------------- */
+(function () {
+    'use strict';
+
+    function wire(select) {
+        if (select.dataset.phoneBound === '1') { return; }
+        select.dataset.phoneBound = '1';
+
+        const field  = select.closest('.sik-field') || document;
+        const number = field.querySelector('[data-phone-number]');
+        const hint   = field.querySelector('[data-phone-hint]');
+        if (!number) { return; }
+
+        function describe(option) {
+            const min = Number(option.dataset.min || 0);
+            const max = Number(option.dataset.max || 0);
+            if (!min) { return ''; }
+            const digits = min === max ? min + ' digits' : min + '\u2013' + max + ' digits';
+            // The country name is the tail of the option text, after the "·".
+            const parts = option.textContent.split('\u00B7');
+            const name  = (parts[parts.length - 1] || '').trim();
+            return name + ' numbers are ' + digits
+                + (option.value === 'IN' ? ', starting 6, 7, 8 or 9' : '') + '.';
+        }
+
+        function sync() {
+            const option = select.options[select.selectedIndex];
+            if (!option) { return; }
+
+            // Only the hint is rewritten. Rewriting the number - stripping a
+            // dial code the shopper typed, say - would edit the field under
+            // their cursor, and the server already accepts every shape.
+            if (hint && !hint.dataset.locked) {
+                hint.textContent = 'Optional. ' + describe(option);
+            }
+            const max = Number(option.dataset.max || 0);
+            if (max) {
+                // Room for spaces and a pasted dial code, not a hard cap.
+                number.setAttribute('maxlength', String(max + 8));
+            }
+        }
+
+        select.addEventListener('change', sync);
+        sync();
+    }
+
+    function init(scope) {
+        (scope || document).querySelectorAll('[data-phone-country]').forEach(wire);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () { init(); });
+    } else {
+        init();
+    }
+    document.addEventListener('sik:refresh', function () { init(); });
+}());
