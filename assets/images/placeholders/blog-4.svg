@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Article cover: network orbit">
+  <defs>
+    <radialGradient id="b4bg" cx="70%" cy="20%" r="100%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEE8DE"/>
+    </radialGradient>
+    <linearGradient id="b4o" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="500" fill="url(#b4bg)"/>
+  <g fill="#0F2143" opacity="0.12">
+    <circle cx="60" cy="60" r="4"/><circle cx="120" cy="60" r="4"/><circle cx="180" cy="60" r="4"/>
+    <circle cx="60" cy="120" r="4"/><circle cx="120" cy="120" r="4"/><circle cx="180" cy="120" r="4"/>
+    <circle cx="60" cy="180" r="4"/><circle cx="120" cy="180" r="4"/><circle cx="180" cy="180" r="4"/>
+    <circle cx="620" cy="380" r="4"/><circle cx="680" cy="380" r="4"/><circle cx="740" cy="380" r="4"/>
+    <circle cx="620" cy="440" r="4"/><circle cx="680" cy="440" r="4"/><circle cx="740" cy="440" r="4"/>
+  </g>
+  <g fill="none" stroke="#0F2143" stroke-opacity="0.2" stroke-width="3">
+    <ellipse cx="400" cy="250" rx="230" ry="112"/>
+    <ellipse cx="400" cy="250" rx="230" ry="112" transform="rotate(60 400 250)"/>
+    <ellipse cx="400" cy="250" rx="230" ry="112" transform="rotate(-60 400 250)"/>
+  </g>
+  <circle cx="400" cy="250" r="72" fill="url(#b4o)"/>
+  <circle cx="400" cy="250" r="40" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="400" cy="250" r="18" fill="#0F2143"/>
+  <g fill="#0F2143">
+    <circle cx="630" cy="250" r="14"/>
+    <circle cx="285" cy="52" r="12"/>
+    <circle cx="515" cy="448" r="12"/>
+  </g>
+  <g fill="#F4511E">
+    <circle cx="170" cy="250" r="14"/>
+    <circle cx="515" cy="52" r="10"/>
+    <circle cx="285" cy="448" r="10"/>
+  </g>
+</svg>

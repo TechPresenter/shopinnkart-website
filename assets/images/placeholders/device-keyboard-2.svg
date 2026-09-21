@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Keyboard side profile with keycaps">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="416" rx="192" ry="18" fill="#0F2143" opacity=".07"/>
+<g fill="#22395F">
+<path d="M108 296 h40 l-4 -34 h-32 Z"/><path d="M156 296 h40 l-4 -38 h-32 Z"/><path d="M204 296 h40 l-4 -42 h-32 Z"/><path d="M252 296 h40 l-4 -44 h-32 Z"/><path d="M300 296 h40 l-4 -42 h-32 Z"/><path d="M348 296 h40 l-4 -38 h-32 Z"/><path d="M396 296 h40 l-4 -34 h-32 Z"/><path d="M444 296 h40 l-4 -30 h-32 Z"/>
+</g>
+<path d="M252 252 h32 l4 -8 h-40 Z" fill="url(#a)"/>
+<path d="M300 254 h32 l4 -8 h-40 Z" fill="url(#a)"/>
+<path d="M100 296 h400 l-14 62 H114 Z" fill="url(#d)"/>
+<rect x="114" y="358" width="372" height="14" rx="7" fill="#16294A"/>
+<rect x="140" y="316" width="120" height="10" rx="5" fill="#FFFFFF" opacity=".12"/>
+<circle cx="452" cy="330" r="8" fill="url(#a)"/>
+<path d="M100 232 h-24 M500 232 h24" stroke="#0F2143" stroke-opacity=".16" stroke-width="3" stroke-linecap="round"/>
+</svg>

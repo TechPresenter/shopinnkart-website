@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Laptop">
+<title>Laptop</title>
+<defs>
+<radialGradient id="lpBg" cx="50%" cy="36%" r="72%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1EFEA"/></radialGradient>
+<linearGradient id="lpBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22406F"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="lpScr" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#F2F5FA"/><stop offset="1" stop-color="#D5DDEA"/></linearGradient>
+</defs>
+<rect width="600" height="600" fill="url(#lpBg)"/>
+<ellipse cx="300" cy="424" rx="216" ry="26" fill="#0F2143" opacity="0.08"/>
+<rect x="146" y="118" width="308" height="212" rx="16" fill="url(#lpBody)"/>
+<rect x="160" y="132" width="280" height="184" rx="8" fill="url(#lpScr)"/>
+<rect x="178" y="150" width="110" height="64" rx="10" fill="#F4511E"/>
+<rect x="300" y="150" width="122" height="64" rx="10" fill="#6B7280" opacity="0.2"/>
+<rect x="178" y="232" width="244" height="11" rx="5.5" fill="#6B7280" opacity="0.38"/>
+<rect x="178" y="256" width="178" height="11" rx="5.5" fill="#6B7280" opacity="0.26"/>
+<rect x="178" y="280" width="214" height="11" rx="5.5" fill="#6B7280" opacity="0.2"/>
+<circle cx="300" cy="126" r="3.5" fill="#8FA0BC"/>
+<path d="M140 330 H460 L516 388 H84 Z" fill="#1B3462"/>
+<path d="M172 342 H428 L458 372 H142 Z" fill="#12274C"/>
+<path d="M266 376 H334 L344 386 H256 Z" fill="#F4511E"/>
+<rect x="80" y="388" width="440" height="18" rx="9" fill="#0F2143"/>
+<rect x="276" y="393" width="48" height="7" rx="3.5" fill="#22406F"/>
+</svg>

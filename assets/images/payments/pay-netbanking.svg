@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" width="48" height="30" role="img" aria-label="Net banking">
+  <rect x=".5" y=".5" width="47" height="29" rx="4.5" fill="#fff" stroke="#D8DEE9"/>
+  <path d="M24 6.5 37 12v2H11v-2z" fill="#0F2143"/>
+  <rect x="14" y="15.5" width="2.8" height="6.5" fill="#0F2143" opacity=".7"/>
+  <rect x="19.5" y="15.5" width="2.8" height="6.5" fill="#0F2143" opacity=".7"/>
+  <rect x="25" y="15.5" width="2.8" height="6.5" fill="#0F2143" opacity=".7"/>
+  <rect x="30.5" y="15.5" width="2.8" height="6.5" fill="#0F2143" opacity=".7"/>
+  <rect x="11" y="23" width="26" height="2.2" rx="1.1" fill="#F4511E"/>
+</svg>

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Printer">
+<title>Printer</title>
+<defs>
+<radialGradient id="prBg" cx="50%" cy="34%" r="72%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1EFEA"/></radialGradient>
+<linearGradient id="prBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A4C82"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+</defs>
+<rect width="600" height="600" fill="url(#prBg)"/>
+<ellipse cx="300" cy="486" rx="192" ry="24" fill="#0F2143" opacity="0.08"/>
+<rect x="212" y="106" width="176" height="90" rx="8" fill="#FFFFFF"/>
+<rect x="212" y="106" width="176" height="90" rx="8" fill="none" stroke="#D5DDEA" stroke-width="4"/>
+<rect x="234" y="132" width="132" height="9" rx="4.5" fill="#6B7280" opacity="0.3"/>
+<rect x="234" y="154" width="98" height="9" rx="4.5" fill="#6B7280" opacity="0.22"/>
+<rect x="164" y="180" width="272" height="42" rx="12" fill="#1B3462"/>
+<rect x="122" y="214" width="356" height="196" rx="28" fill="url(#prBody)"/>
+<rect x="150" y="240" width="118" height="14" rx="7" fill="#FFFFFF" opacity="0.16"/>
+<rect x="330" y="234" width="112" height="46" rx="12" fill="#0B1A36" opacity="0.45"/>
+<circle cx="356" cy="257" r="10" fill="#F4511E"/>
+<rect x="378" y="250" width="48" height="8" rx="4" fill="#8FA0BC" opacity="0.6"/>
+<rect x="150" y="300" width="300" height="20" rx="10" fill="#0B1A36"/>
+<rect x="176" y="318" width="248" height="140" rx="8" fill="#FFFFFF"/>
+<rect x="176" y="318" width="248" height="140" rx="8" fill="none" stroke="#D5DDEA" stroke-width="4"/>
+<rect x="204" y="356" width="192" height="10" rx="5" fill="#6B7280" opacity="0.28"/>
+<rect x="204" y="384" width="140" height="10" rx="5" fill="#6B7280" opacity="0.2"/>
+<rect x="204" y="412" width="96" height="10" rx="5" fill="#F4511E"/>
+<rect x="150" y="410" width="60" height="16" rx="8" fill="#0F2143"/>
+<rect x="390" y="410" width="60" height="16" rx="8" fill="#0F2143"/>
+</svg>

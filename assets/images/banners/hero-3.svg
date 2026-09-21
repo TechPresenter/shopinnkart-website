@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Television, console and gamepad">
+  <defs>
+    <radialGradient id="h3bg" cx="30%" cy="24%" r="92%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0EBE2"/>
+    </radialGradient>
+    <linearGradient id="h3o" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="700" fill="url(#h3bg)"/>
+  <path d="M900 0v346A346 346 0 0 0 554 0Z" fill="url(#h3o)"/>
+  <circle cx="126" cy="196" r="60" fill="#F4511E" opacity="0.09"/>
+  <ellipse cx="450" cy="560" rx="342" ry="28" fill="#0F2143" opacity="0.09"/>
+
+  <g>
+    <rect x="212" y="180" width="480" height="292" rx="20" fill="#0F2143"/>
+    <rect x="226" y="194" width="452" height="252" rx="12" fill="#12294F"/>
+    <path d="M226 366l96-72 82 60 96-104 178 130v54a12 12 0 0 1-12 12H238a12 12 0 0 1-12-12Z" fill="#F4511E" opacity="0.35"/>
+    <circle cx="336" cy="248" r="26" fill="#FF8A3D" opacity="0.9"/>
+    <rect x="418" y="454" width="68" height="60" rx="8" fill="#0F2143" opacity="0.9"/>
+    <rect x="336" y="508" width="232" height="16" rx="8" fill="#0F2143"/>
+  </g>
+
+  <g>
+    <rect x="712" y="288" width="86" height="236" rx="16" fill="#0F2143"/>
+    <rect x="726" y="316" width="58" height="7" rx="3.5" fill="#FFFFFF" opacity="0.25"/>
+    <rect x="726" y="332" width="40" height="7" rx="3.5" fill="#FFFFFF" opacity="0.16"/>
+    <circle cx="755" cy="384" r="22" fill="#12294F"/>
+    <circle cx="755" cy="384" r="9" fill="#FF8A3D"/>
+    <rect x="726" y="436" width="58" height="10" rx="5" fill="#F4511E" opacity="0.7"/>
+    <rect x="726" y="460" width="58" height="10" rx="5" fill="#FFFFFF" opacity="0.14"/>
+  </g>
+
+  <g>
+    <path d="M164 452h132a44 44 0 0 1 42 31l16 52a30 30 0 0 1-53 26l-22-27h-98l-22 27a30 30 0 0 1-53-26l16-52a44 44 0 0 1 42-31Z" fill="#0F2143"/>
+    <rect x="150" y="490" width="40" height="11" rx="5.5" fill="#FFFFFF" opacity="0.8"/>
+    <rect x="164.5" y="475.5" width="11" height="40" rx="5.5" fill="#FFFFFF" opacity="0.8"/>
+    <circle cx="286" cy="486" r="10" fill="#F4511E"/>
+    <circle cx="312" cy="510" r="10" fill="#FF8A3D"/>
+    <circle cx="260" cy="510" r="10" fill="#FFFFFF" opacity="0.75"/>
+    <circle cx="286" cy="534" r="10" fill="#FFFFFF" opacity="0.5"/>
+  </g>
+
+  <circle cx="630" cy="132" r="11" fill="#FFFFFF" opacity="0.5"/>
+  <circle cx="152" cy="352" r="8" fill="#F4511E" opacity="0.35"/>
+</svg>

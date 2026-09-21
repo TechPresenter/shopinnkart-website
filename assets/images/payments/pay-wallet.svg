@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 30" width="48" height="30" role="img" aria-label="Wallets">
+  <rect x=".5" y=".5" width="47" height="29" rx="4.5" fill="#fff" stroke="#D8DEE9"/>
+  <path d="M11 9.5a2.5 2.5 0 0 1 2.5-2.5H32v3H13.5a2.5 2.5 0 0 1-2.5-.5z" fill="#0F2143" opacity=".55"/>
+  <rect x="11" y="9" width="26" height="14" rx="3" fill="none" stroke="#0F2143" stroke-width="1.6"/>
+  <path d="M30 13.5h7v5h-7a2.5 2.5 0 0 1 0-5z" fill="#F4511E"/>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Game controller back with triggers">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="466" rx="176" ry="20" fill="#0F2143" opacity=".07"/>
+<path d="M188 150 h224 a56 56 0 0 1 56 56 a92 92 0 0 1 -22 60 l-46 54 a56 56 0 0 1 -88 -8 h-24 a56 56 0 0 1 -88 8 l-46 -54 a92 92 0 0 1 -22 -60 a56 56 0 0 1 56 -56 Z" fill="url(#d)"/>
+<rect x="152" y="118" width="80" height="42" rx="20" fill="#22395F"/>
+<rect x="368" y="118" width="80" height="42" rx="20" fill="#22395F"/>
+<rect x="166" y="130" width="52" height="14" rx="7" fill="url(#a)"/>
+<rect x="382" y="130" width="52" height="14" rx="7" fill="url(#a)"/>
+<rect x="222" y="204" width="156" height="88" rx="18" fill="#16294A"/>
+<rect x="244" y="228" width="112" height="12" rx="6" fill="#3A5480"/>
+<rect x="244" y="254" width="76" height="12" rx="6" fill="#3A5480"/>
+<circle cx="196" cy="332" r="26" fill="#16294A"/>
+<circle cx="404" cy="332" r="26" fill="#16294A"/>
+<rect x="264" y="330" width="72" height="16" rx="8" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<circle cx="300" cy="388" r="10" fill="url(#a)" opacity=".8"/>
+</svg>

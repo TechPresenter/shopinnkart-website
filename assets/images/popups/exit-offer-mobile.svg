@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="300" viewBox="0 0 360 300"
+     preserveAspectRatio="xMidYMid slice" role="img" aria-label="Exit offer">
+  <defs>
+    <linearGradient id="eomBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F2143"/>
+      <stop offset="1" stop-color="#1B3A6B"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="300" fill="url(#eomBg)"/>
+  <circle cx="40" cy="264" r="110" fill="#F4511E" opacity=".14"/>
+  <circle cx="330" cy="40" r="96" fill="#FFFFFF" opacity=".05"/>
+
+  <!-- shopping bag with a discount tag -->
+  <g transform="translate(114 78)" fill="none" stroke="#FFFFFF" stroke-width="6"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 40h112l-10 100H20z"/>
+    <path d="M44 40V26a22 22 0 0 1 44 0v14"/>
+  </g>
+  <g transform="translate(196 150)">
+    <circle r="42" fill="#F4511E"/>
+    <text text-anchor="middle" y="10" font-family="Segoe UI, Arial, sans-serif"
+          font-size="26" font-weight="800" fill="#FFFFFF">10%</text>
+  </g>
+</svg>

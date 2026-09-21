@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="72" viewBox="0 0 120 72" role="img" aria-label="EMI offer">
+  <rect width="120" height="72" rx="12" fill="#FFFFFF"/>
+  <rect x=".75" y=".75" width="118.5" height="70.5" rx="11.25" fill="none" stroke="#E5E7EB" stroke-width="1.5"/>
+  <rect x="0" y="0" width="120" height="6" rx="3" fill="#1565C0"/>
+  <g transform="translate(60 38)" fill="none" stroke="#1565C0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-19" y="-13" width="38" height="26" rx="4"/>
+    <line x1="-19" y1="-4" x2="19" y2="-4"/>
+    <path d="M-11 4h6M1 4h10" />
+    <path d="M-11 9h4" />
+  </g>
+</svg>

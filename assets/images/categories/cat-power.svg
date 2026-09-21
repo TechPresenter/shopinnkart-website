@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Power">
+<title>Power</title>
+<defs>
+<radialGradient id="bgPow" cx="50%" cy="32%" r="78%">
+<stop offset="0" stop-color="#F8FCEF"/><stop offset="1" stop-color="#E2F0C6"/>
+</radialGradient>
+<linearGradient id="ldPow" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/>
+</linearGradient>
+</defs>
+<circle cx="200" cy="200" r="200" fill="url(#bgPow)"/>
+<ellipse cx="200" cy="300" rx="90" ry="12" fill="#0F2143" opacity=".07"/>
+<rect x="182" y="112" width="36" height="14" rx="6" fill="#6B7280" opacity=".55"/>
+<rect x="126" y="122" width="148" height="164" rx="26" fill="#0F2143"/>
+<rect x="142" y="138" width="116" height="132" rx="16" fill="#F8F7F4"/>
+<path d="M212 156 L166 218 H196 L188 252 L234 190 H204 Z" fill="url(#ldPow)"/>
+<circle cx="170" cy="278" r="5" fill="#FF8A3D"/>
+<circle cx="190" cy="278" r="5" fill="#FF8A3D"/>
+<circle cx="210" cy="278" r="5" fill="#FF8A3D" opacity=".55"/>
+<circle cx="230" cy="278" r="5" fill="#F8F7F4" opacity=".3"/>
+</svg>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Charger with coiled USB cable">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="482" rx="164" ry="20" fill="#0F2143" opacity=".07"/>
+<circle cx="330" cy="356" r="102" fill="none" stroke="#6B7280" stroke-width="15" opacity=".38"/>
+<circle cx="330" cy="356" r="70" fill="none" stroke="#6B7280" stroke-width="15" opacity=".48"/>
+<circle cx="330" cy="356" r="38" fill="none" stroke="#6B7280" stroke-width="15" opacity=".58"/>
+<path d="M330 254 q-96 -6 -110 -46" fill="none" stroke="#6B7280" stroke-width="15" stroke-linecap="round" opacity=".45"/>
+<rect x="188" y="182" width="42" height="30" rx="10" fill="#22395F"/>
+<rect x="196" y="188" width="26" height="10" rx="5" fill="url(#a)"/>
+<g transform="rotate(-8 244 216)">
+<rect x="150" y="112" width="18" height="60" rx="8" fill="#22395F"/>
+<rect x="186" y="112" width="18" height="60" rx="8" fill="#22395F"/>
+<rect x="106" y="164" width="150" height="168" rx="40" fill="url(#d)"/>
+<rect x="120" y="178" width="122" height="140" rx="32" fill="#16294A"/>
+<path d="M196 208 h-28 l-11 54 h21 l-7 44 40 -64 h-24 Z" fill="url(#a)"/>
+<rect x="146" y="292" width="34" height="14" rx="7" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="192" y="292" width="28" height="14" rx="7" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+</g>
+</svg>

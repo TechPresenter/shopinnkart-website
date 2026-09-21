@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Laptop, headphones and smartwatch">
+  <defs>
+    <radialGradient id="h1bg" cx="28%" cy="22%" r="92%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0EBE2"/>
+    </radialGradient>
+    <linearGradient id="h1o" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+    <linearGradient id="h1scr" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EDEFF3"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="700" fill="url(#h1bg)"/>
+  <path d="M900 0v340A340 340 0 0 0 560 0Z" fill="url(#h1o)"/>
+  <circle cx="120" cy="150" r="58" fill="#F4511E" opacity="0.10"/>
+  <circle cx="806" cy="596" r="34" fill="#0F2143" opacity="0.08"/>
+  <ellipse cx="440" cy="528" rx="336" ry="28" fill="#0F2143" opacity="0.09"/>
+
+  <g>
+    <rect x="300" y="238" width="300" height="232" rx="16" fill="#0F2143"/>
+    <rect x="314" y="252" width="272" height="196" rx="9" fill="url(#h1scr)"/>
+    <rect x="334" y="272" width="104" height="13" rx="6.5" fill="#F4511E"/>
+    <rect x="334" y="296" width="178" height="9" rx="4.5" fill="#6B7280" opacity="0.35"/>
+    <rect x="334" y="314" width="140" height="9" rx="4.5" fill="#6B7280" opacity="0.25"/>
+    <rect x="334" y="344" width="80" height="80" rx="12" fill="#FF8A3D" opacity="0.9"/>
+    <rect x="428" y="344" width="80" height="80" rx="12" fill="#0F2143" opacity="0.12"/>
+    <rect x="522" y="344" width="44" height="80" rx="12" fill="#0F2143" opacity="0.07"/>
+    <path d="M272 470h356l30 34a10 10 0 0 1-8 16H250a10 10 0 0 1-8-16Z" fill="#DCE0E7"/>
+    <rect x="412" y="502" width="76" height="7" rx="3.5" fill="#0F2143" opacity="0.18"/>
+  </g>
+
+  <g>
+    <path d="M118 468a62 62 0 0 1 124 0" fill="none" stroke="#0F2143" stroke-width="15" stroke-linecap="round"/>
+    <rect x="102" y="452" width="34" height="70" rx="17" fill="#0F2143"/>
+    <rect x="224" y="452" width="34" height="70" rx="17" fill="#0F2143"/>
+    <rect x="108" y="466" width="22" height="42" rx="11" fill="#F4511E"/>
+    <rect x="230" y="466" width="22" height="42" rx="11" fill="#FF8A3D" opacity="0.75"/>
+  </g>
+
+  <g>
+    <rect x="684" y="336" width="46" height="70" rx="15" fill="#1D3B6B"/>
+    <rect x="684" y="458" width="46" height="64" rx="15" fill="#1D3B6B"/>
+    <rect x="666" y="386" width="82" height="86" rx="24" fill="#0F2143"/>
+    <rect x="675" y="395" width="64" height="68" rx="18" fill="#F8F7F4"/>
+    <path d="M707 410a19 19 0 1 1-13 32" fill="none" stroke="#F4511E" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="707" cy="429" r="4" fill="#0F2143" opacity="0.5"/>
+    <rect x="748" y="414" width="8" height="20" rx="4" fill="#FF8A3D"/>
+  </g>
+
+  <circle cx="640" cy="176" r="10" fill="#FFFFFF" opacity="0.55"/>
+  <circle cx="196" cy="330" r="7" fill="#F4511E" opacity="0.4"/>
+</svg>

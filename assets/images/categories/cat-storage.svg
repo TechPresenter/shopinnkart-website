@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Storage">
+<title>Storage</title>
+<defs>
+<radialGradient id="bgStor" cx="50%" cy="32%" r="78%">
+<stop offset="0" stop-color="#F5F8FC"/><stop offset="1" stop-color="#DDE4EC"/>
+</radialGradient>
+<linearGradient id="ldStor" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/>
+</linearGradient>
+</defs>
+<circle cx="200" cy="200" r="200" fill="url(#bgStor)"/>
+<ellipse cx="200" cy="292" rx="98" ry="13" fill="#0F2143" opacity=".07"/>
+<rect x="110" y="127" width="180" height="132" rx="22" fill="#0F2143"/>
+<rect x="126" y="143" width="148" height="100" rx="12" fill="#F8F7F4"/>
+<circle cx="200" cy="193" r="42" fill="#FF8A3D" opacity=".3"/>
+<circle cx="200" cy="193" r="26" fill="none" stroke="#6B7280" stroke-width="3" opacity=".3"/>
+<circle cx="200" cy="193" r="12" fill="url(#ldStor)"/>
+<path d="M252 151 L214 187" stroke="#0F2143" stroke-width="10" stroke-linecap="round"/>
+<circle cx="254" cy="149" r="9" fill="#0F2143"/>
+<rect x="170" y="259" width="60" height="14" rx="5" fill="#6B7280" opacity=".45"/>
+<rect x="128" y="238" width="10" height="10" rx="3" fill="#FF8A3D"/>
+</svg>

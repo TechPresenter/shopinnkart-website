@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="60" viewBox="0 0 96 60" role="img" aria-label="Cash on Delivery">
+  <rect width="96" height="60" rx="10" fill="#F4F7FC"/>
+  <rect x=".75" y=".75" width="94.5" height="58.5" rx="9.25" fill="none" stroke="#DDE5F0" stroke-width="1.5"/>
+  <g fill="none" stroke="#0F2143" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="20" y="19" width="40" height="24" rx="3"/>
+    <circle cx="40" cy="31" r="6"/>
+  </g>
+  <path d="M64 24h8l6 7v10h-14z" fill="none" stroke="#F4511E" stroke-width="2.2" stroke-linejoin="round"/>
+  <circle cx="68" cy="43" r="3" fill="#F4511E"/>
+</svg>

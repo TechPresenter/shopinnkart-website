@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="60" viewBox="0 0 96 60" role="img" aria-label="Online payment">
+  <rect width="96" height="60" rx="10" fill="#F4F7FC"/>
+  <rect x=".75" y=".75" width="94.5" height="58.5" rx="9.25" fill="none" stroke="#DDE5F0" stroke-width="1.5"/>
+  <rect x="18" y="17" width="60" height="26" rx="4" fill="none" stroke="#0F2143" stroke-width="2.2"/>
+  <path d="M18 25h60" stroke="#0F2143" stroke-width="2.2"/>
+  <rect x="24" y="32" width="14" height="4" rx="2" fill="#F4511E"/>
+  <path d="M58 36h12" stroke="#94A3B8" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Audio">
+<title>Audio</title>
+<defs>
+<radialGradient id="bgAud" cx="50%" cy="32%" r="78%">
+<stop offset="0" stop-color="#FFF4F5"/><stop offset="1" stop-color="#F9D8DE"/>
+</radialGradient>
+<linearGradient id="ldAud" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/>
+</linearGradient>
+</defs>
+<circle cx="200" cy="200" r="200" fill="url(#bgAud)"/>
+<ellipse cx="200" cy="312" rx="110" ry="13" fill="#0F2143" opacity=".07"/>
+<path d="M112 236 V190 a88 88 0 0 1 176 0 v46" fill="none" stroke="#0F2143" stroke-width="20" stroke-linecap="round"/>
+<path d="M126 214 V192 a74 74 0 0 1 148 0 v22" fill="none" stroke="#FF8A3D" stroke-width="5" stroke-linecap="round" opacity=".5"/>
+<rect x="90" y="208" width="48" height="90" rx="22" fill="#0F2143"/>
+<rect x="262" y="208" width="48" height="90" rx="22" fill="#0F2143"/>
+<rect x="102" y="222" width="24" height="62" rx="12" fill="url(#ldAud)"/>
+<rect x="274" y="222" width="24" height="62" rx="12" fill="url(#ldAud)"/>
+<circle cx="114" cy="253" r="6" fill="#FFFFFF" opacity=".55"/>
+<circle cx="286" cy="253" r="6" fill="#FFFFFF" opacity=".55"/>
+</svg>

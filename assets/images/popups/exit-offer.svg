@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Special offer before you go">
+  <defs>
+    <linearGradient id="eoBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F2143"/>
+      <stop offset="1" stop-color="#1B335F"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="240" fill="url(#eoBg)"/>
+  <circle cx="588" cy="34" r="126" fill="#F4511E" opacity=".18"/>
+  <circle cx="58" cy="212" r="104" fill="#F4511E" opacity=".1"/>
+
+  <!-- gift box -->
+  <g transform="translate(256 52)">
+    <rect x="0" y="52" width="128" height="86" rx="8" fill="#F4511E"/>
+    <rect x="-10" y="34" width="148" height="30" rx="7" fill="#FF8A3D"/>
+    <rect x="54" y="34" width="20" height="104" fill="#FFFFFF" opacity=".92"/>
+    <path d="M64 34c-16-2-30-10-30-20a14 14 0 0 1 28-2c1 8 2 15 2 22z" fill="#FFFFFF" opacity=".92"/>
+    <path d="M64 34c16-2 30-10 30-20a14 14 0 0 0-28-2c-1 8-2 15-2 22z" fill="#FFFFFF" opacity=".92"/>
+  </g>
+
+  <!-- percent badge -->
+  <g transform="translate(452 130)">
+    <circle r="42" fill="#F4511E"/>
+    <text y="8" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="800" fill="#FFFFFF">%</text>
+  </g>
+
+  <g fill="#FFFFFF" opacity=".7">
+    <rect x="140" y="66" width="10" height="10" rx="2" transform="rotate(20 145 71)"/>
+    <circle cx="176" cy="150" r="5"/>
+    <rect x="120" y="168" width="8" height="8" rx="2" transform="rotate(-22 124 172)"/>
+    <circle cx="518" cy="62" r="4"/>
+  </g>
+</svg>

@@ -1,0 +1,237 @@
+# ===========================================================================
+#  ShopInnKart - Apache configuration
+#  Clean URLs, security hardening, compression and caching.
+# ===========================================================================
+
+# --- Default document -------------------------------------------------------
+DirectoryIndex index.php index.html
+
+# --- Never list a directory -------------------------------------------------
+Options -Indexes +FollowSymLinks
+
+# --- Custom error documents -------------------------------------------------
+# ErrorDocument only accepts a document-root-relative path, which cannot be
+# written portably for a sub-folder install (a bare "404.php" is treated as a
+# literal message, not a path). So the branded 403 and 404 are served by the
+# rewrite rules below instead, and this stays as the last-resort handler for
+# server-level 500s. PHP fatals never reach it — ErrorHandler renders 500.php
+# itself.
+ErrorDocument 500 /500.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # No RewriteBase on purpose. Without it, mod_rewrite resolves relative
+    # substitutions against the directory holding this file, so the project
+    # works unchanged at the domain root OR in a sub-folder like /ecomweb.
+    # Hard-coding "RewriteBase /" breaks every clean URL in a sub-folder.
+
+    # Force HTTPS in production. Commented out for local XAMPP development;
+    # uncomment on the live server.
+    # RewriteCond %{HTTPS} !=on
+    # RewriteCond %{HTTP_HOST} !^localhost [NC]
+    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+    # Strip a trailing slash from non-directory URLs.
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} !/api/
+    RewriteRule ^(.+)/$ $1 [L,R=301]
+
+    # ---------------------------------------------------------------
+    #  Clean URLs
+    # ---------------------------------------------------------------
+    RewriteRule ^product/([a-zA-Z0-9\-_]+)/?$        product.php?slug=$1     [L,QSA]
+    RewriteRule ^combo/([a-zA-Z0-9\-_]+)/?$          combo.php?slug=$1       [L,QSA]
+    RewriteRule ^combos/?$                           combos.php              [L,QSA]
+    RewriteRule ^category/([a-zA-Z0-9\-_]+)/?$       category.php?slug=$1    [L,QSA]
+    RewriteRule ^brand/([a-zA-Z0-9\-_]+)/?$          brand.php?slug=$1       [L,QSA]
+    RewriteRule ^page/([a-zA-Z0-9\-_]+)/?$           page.php?slug=$1        [L,QSA]
+    RewriteRule ^blog/?$                             blog.php                [L,QSA]
+    RewriteRule ^blog/category/([a-zA-Z0-9\-_]+)/?$  blog.php?category=$1    [L,QSA]
+    RewriteRule ^blog/([a-zA-Z0-9\-_]+)/?$           blog-post.php?slug=$1   [L,QSA]
+    RewriteRule ^order/([A-Za-z0-9\-]+)/?$           order-details.php?order=$1 [L,QSA]
+
+    RewriteRule ^shop/?$          shop.php          [L,QSA]
+    RewriteRule ^search/?$        search.php        [L,QSA]
+    RewriteRule ^deals/?$         deals.php         [L,QSA]
+    RewriteRule ^new-arrivals/?$  new-arrivals.php  [L,QSA]
+    RewriteRule ^best-sellers/?$  best-sellers.php  [L,QSA]
+    RewriteRule ^brands/?$        brands.php        [L,QSA]
+    RewriteRule ^cart/?$          cart.php          [L,QSA]
+    RewriteRule ^checkout/?$      checkout.php      [L,QSA]
+    RewriteRule ^wishlist/?$      wishlist.php      [L,QSA]
+    RewriteRule ^compare/?$       compare.php       [L,QSA]
+    RewriteRule ^track-order/?$   track-order.php   [L,QSA]
+    RewriteRule ^account/?$       account.php       [L,QSA]
+    RewriteRule ^login/?$         login.php         [L,QSA]
+    RewriteRule ^register/?$      register.php      [L,QSA]
+    RewriteRule ^logout/?$        logout.php        [L,QSA]
+    RewriteRule ^contact/?$       contact.php       [L,QSA]
+    RewriteRule ^about/?$         about.php         [L,QSA]
+    RewriteRule ^faq/?$           faq.php           [L,QSA]
+    RewriteRule ^sitemap\.xml$    sitemap.php       [L]
+    # robots.txt is generated, not a file on disk: the Sitemap line has to name
+    # whatever host is actually serving the site, and the operator can append
+    # rules from the admin panel.
+    RewriteRule ^robots\.txt$     robots.php        [L]
+
+    # Anything else that is not a real file/folder and has no extension
+    # falls through to the .php file of the same name.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} !\.[a-zA-Z0-9]{2,5}$
+    RewriteRule ^([a-zA-Z0-9\-_]+)/?$ $1.php [L,QSA]
+
+    # ---------------------------------------------------------------
+    #  Branded error pages
+    #  Served by rewriting rather than ErrorDocument, because that
+    #  directive cannot express a sub-folder-relative path. Each target
+    #  sets its own HTTP status, so the response code is still correct.
+    # ---------------------------------------------------------------
+
+    # Note: the server-side directories are NOT rewritten to 403.php. Apache
+    # runs authorization before per-directory mod_rewrite, so the deny-all
+    # .htaccess inside each one answers first with a bare 403. That is the
+    # right order — the hard deny should win over cosmetics, and a plain 403
+    # on a path no customer ever visits leaks less than a styled one.
+    # 403.php is still used where a real person can land on it: an order that
+    # is not theirs, or an admin page their role does not cover.
+
+    # Everything left over is genuinely missing.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} !/api/
+    RewriteRule ^ 404.php [L]
+</IfModule>
+
+# ===========================================================================
+#  Security
+# ===========================================================================
+
+# --- Block direct access to server-side folders -----------------------------
+# Not anchored at ^/ so they still match when the app lives in a sub-folder.
+# Each of these directories also carries its own deny-all .htaccess, so the
+# protection survives a host that ignores this file.
+RedirectMatch 403 /config/.*$
+RedirectMatch 403 /storage/.*$
+RedirectMatch 403 /database/.*$
+RedirectMatch 403 /includes/.*$
+RedirectMatch 403 /admin/includes/.*$
+
+# --- Block dotfiles and sensitive extensions --------------------------------
+<FilesMatch "^\.|\.(sql|log|ini|md|json|lock|bak|old|swp|dist|yml|yaml)$">
+    Require all denied
+</FilesMatch>
+
+# --- Include-only partials are never entry points ---------------------------
+# Anything named _something.php is meant to be require()d by a page that has
+# already run its auth checks. Requesting one directly would skip those checks.
+<FilesMatch "^_.*\.php$">
+    Require all denied
+</FilesMatch>
+
+# .htaccess itself must never be served.
+<Files ".htaccess">
+    Require all denied
+</Files>
+
+# --- Uploads must never execute --------------------------------------------
+# A PHP file smuggled into /uploads is served as plain text, not run.
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_URI} /uploads/.*\.(php|phtml|php3|php4|php5|php7|phps|pl|py|jsp|asp|sh|cgi)$ [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# --- Uploaded SVGs are sandboxed -------------------------------------------
+# upload_image() rewrites every uploaded SVG from an allowlist, so nothing
+# scriptable should reach disk. This is the second line: an SVG opened directly
+# is served with no script, plugin or network privileges of its own, so even a
+# sanitiser bypass cannot reach the session cookie.
+<IfModule mod_headers.c>
+    <FilesMatch "\.svg$">
+        Header always set Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        Header always set X-Content-Type-Options "nosniff"
+    </FilesMatch>
+</IfModule>
+
+# --- Security headers -------------------------------------------------------
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+    Header always unset X-Powered-By
+    Header unset Server
+
+    # Enable on HTTPS only.
+    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# --- Hide the PHP version ---------------------------------------------------
+<IfModule mod_php.c>
+    php_flag expose_php off
+</IfModule>
+
+# ===========================================================================
+#  Performance
+# ===========================================================================
+
+# --- Compression ------------------------------------------------------------
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+    AddOutputFilterByType DEFLATE application/javascript application/x-javascript text/javascript
+    AddOutputFilterByType DEFLATE application/json application/xml application/rss+xml
+    AddOutputFilterByType DEFLATE image/svg+xml application/vnd.ms-fontobject font/ttf font/otf
+</IfModule>
+
+<IfModule mod_brotli.c>
+    AddOutputFilterByType BROTLI_COMPRESS text/html text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+# --- Browser caching --------------------------------------------------------
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresDefault                          "access plus 1 month"
+
+    ExpiresByType text/html                 "access plus 0 seconds"
+    ExpiresByType application/json          "access plus 0 seconds"
+
+    ExpiresByType text/css                  "access plus 1 year"
+    ExpiresByType application/javascript    "access plus 1 year"
+    ExpiresByType text/javascript           "access plus 1 year"
+
+    ExpiresByType image/svg+xml             "access plus 1 year"
+    ExpiresByType image/webp                "access plus 1 year"
+    ExpiresByType image/jpeg                "access plus 1 year"
+    ExpiresByType image/png                 "access plus 1 year"
+    ExpiresByType image/gif                 "access plus 1 year"
+    ExpiresByType image/x-icon              "access plus 1 year"
+
+    ExpiresByType font/woff2                "access plus 1 year"
+    ExpiresByType font/woff                 "access plus 1 year"
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(css|js|svg|webp|jpg|jpeg|png|gif|ico|woff2?)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    <FilesMatch "\.(php|html)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>
+
+# --- Correct MIME types -----------------------------------------------------
+<IfModule mod_mime.c>
+    AddType image/svg+xml   .svg
+    AddType image/webp      .webp
+    AddType font/woff2      .woff2
+    AddType application/json .json
+</IfModule>
+
+# --- Upload limits ----------------------------------------------------------
+<IfModule mod_php.c>
+    php_value upload_max_filesize 8M
+    php_value post_max_size 12M
+    php_value max_execution_time 120
+    php_value memory_limit 256M
+</IfModule>

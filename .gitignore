@@ -1,0 +1,54 @@
+# ShopInnKart
+
+# Local credentials — never commit these
+config/db.local.php
+config/mail.local.php
+# Encrypts stored SMTP passwords. Losing it means re-entering them; leaking it
+# means they can be read out of the settings table.
+config/app.key.php
+
+# Runtime
+storage/logs/*
+storage/cache/*
+storage/backups/*
+storage/installed.lock
+!storage/logs/.gitkeep
+!storage/cache/.gitkeep
+
+# Generated tax invoices — regenerable from the invoice records, and customer
+# financial data has no business in a repository.
+storage/invoices/*
+!storage/invoices/.gitkeep
+
+# Customer uploads (keep the folder structure, not the files)
+uploads/products/*
+uploads/categories/*
+uploads/brands/*
+uploads/banners/*
+uploads/blog/*
+uploads/users/*
+# Admin-uploaded logo/favicon. The packaged brand assets live in
+# assets/images/logo/, which is what brand.php falls back to, so a fresh
+# clone still renders a logo without carrying one account's upload.
+uploads/branding/*
+!uploads/**/.gitkeep
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
+config/db.production.php
+
+# Working files from audits and QA runs, not part of the application.
+.admin-audit-journal.jsonl
+FRONTEND-AUDIT.md
+inj.html
+# A stray file created by a malformed shell redirect during testing.
+c -l)|X|
+
+# Local-only helper scripts
+/bin/

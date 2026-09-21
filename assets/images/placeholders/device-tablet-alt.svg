@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Tablet, landscape angled view">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FBE7DC"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="486" rx="176" ry="20" fill="#0F2143" opacity=".07"/>
+<g transform="translate(300 300) skewY(-5) translate(-300 -300)">
+<rect x="104" y="168" width="392" height="286" rx="26" fill="url(#d)"/>
+<rect x="122" y="186" width="356" height="250" rx="14" fill="#F8F7F4"/>
+<rect x="142" y="208" width="96" height="12" rx="6" fill="#6B7280" opacity=".45"/>
+<rect x="142" y="232" width="150" height="12" rx="6" fill="#6B7280" opacity=".26"/>
+<rect x="142" y="266" width="152" height="146" rx="14" fill="url(#a)" opacity=".92"/>
+<rect x="310" y="266" width="148" height="66" rx="12" fill="#0F2143" opacity=".13"/>
+<rect x="310" y="346" width="148" height="66" rx="12" fill="#0F2143" opacity=".08"/>
+<circle cx="113" cy="311" r="5" fill="#F8F7F4" opacity=".7"/>
+</g>
+</svg>

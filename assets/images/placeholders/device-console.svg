@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Game console">
+<title>Game console</title>
+<defs>
+<radialGradient id="csBg" cx="50%" cy="36%" r="72%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1EFEA"/></radialGradient>
+<linearGradient id="csBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22406F"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+</defs>
+<rect width="600" height="600" fill="url(#csBg)"/>
+<ellipse cx="300" cy="414" rx="212" ry="24" fill="#0F2143" opacity="0.08"/>
+<rect x="146" y="176" width="308" height="80" rx="22" fill="#1B3462"/>
+<rect x="180" y="196" width="240" height="12" rx="6" fill="#FFFFFF" opacity="0.16"/>
+<rect x="96" y="230" width="408" height="150" rx="28" fill="url(#csBody)"/>
+<path d="M124 230 H476 a28 28 0 0 1 28 28 v6 H96 v-6 a28 28 0 0 1 28 -28 Z" fill="#2A4C82"/>
+<rect x="132" y="322" width="188" height="14" rx="7" fill="#0B1A36"/>
+<rect x="352" y="292" width="118" height="9" rx="4.5" fill="#0B1A36" opacity="0.55"/>
+<rect x="352" y="310" width="118" height="9" rx="4.5" fill="#0B1A36" opacity="0.55"/>
+<rect x="352" y="328" width="118" height="9" rx="4.5" fill="#0B1A36" opacity="0.55"/>
+<rect x="124" y="356" width="356" height="12" rx="6" fill="#F4511E"/>
+<circle cx="470" cy="266" r="8" fill="#8FA0BC" opacity="0.7"/>
+<rect x="146" y="380" width="72" height="16" rx="8" fill="#0F2143"/>
+<rect x="382" y="380" width="72" height="16" rx="8" fill="#0F2143"/>
+</svg>

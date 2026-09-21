@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="No results found">
+  <rect width="400" height="300" fill="none"/>
+  <ellipse cx="200" cy="258" rx="116" ry="13" fill="#0F2143" opacity="0.07"/>
+  <circle cx="188" cy="140" r="94" fill="#F4511E" opacity="0.07"/>
+  <circle cx="180" cy="132" r="66" fill="#FFFFFF" stroke="#0F2143" stroke-width="10"/>
+  <path d="M228 180l52 52" stroke="#F4511E" stroke-width="18" stroke-linecap="round"/>
+  <g stroke="#0F2143" stroke-width="9" stroke-linecap="round" opacity="0.35">
+    <path d="M152 112h56"/>
+    <path d="M152 140h40"/>
+    <path d="M152 164h24"/>
+  </g>
+  <g fill="#FF8A3D">
+    <path d="M310 88l6 14 14 6-14 6-6 14-6-14-14-6 14-6Z"/>
+    <circle cx="88" cy="200" r="8" opacity="0.7"/>
+    <circle cx="300" cy="146" r="6" opacity="0.55"/>
+    <circle cx="112" cy="62" r="6" opacity="0.6"/>
+  </g>
+</svg>

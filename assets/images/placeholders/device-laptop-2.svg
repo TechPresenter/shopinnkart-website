@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Laptop, closed lid from above">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="466" rx="176" ry="20" fill="#0F2143" opacity=".07"/>
+<rect x="118" y="164" width="364" height="266" rx="24" fill="url(#d)"/>
+<rect x="132" y="178" width="336" height="238" rx="16" fill="#16294A"/>
+<circle cx="300" cy="290" r="48" fill="none" stroke="url(#a)" stroke-width="11"/>
+<circle cx="300" cy="290" r="17" fill="url(#a)"/>
+<rect x="180" y="378" width="240" height="8" rx="4" fill="#6B7280" opacity=".35"/>
+<rect x="118" y="406" width="364" height="24" rx="12" fill="#0F2143"/>
+<rect x="264" y="414" width="72" height="8" rx="4" fill="#6B7280" opacity=".45"/>
+<rect x="150" y="196" width="54" height="8" rx="4" fill="#FFFFFF" opacity=".12"/>
+</svg>

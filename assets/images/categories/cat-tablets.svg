@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Tablets">
+<title>Tablets</title>
+<defs>
+<radialGradient id="bgTab" cx="50%" cy="32%" r="78%">
+<stop offset="0" stop-color="#F0FBF6"/><stop offset="1" stop-color="#D2EEE1"/>
+</radialGradient>
+<linearGradient id="ldTab" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/>
+</linearGradient>
+</defs>
+<circle cx="200" cy="200" r="200" fill="url(#bgTab)"/>
+<ellipse cx="200" cy="322" rx="98" ry="13" fill="#0F2143" opacity=".07"/>
+<rect x="128" y="92" width="144" height="216" rx="20" fill="#0F2143"/>
+<rect x="140" y="104" width="120" height="192" rx="11" fill="#F8F7F4"/>
+<circle cx="200" cy="98" r="3" fill="#6B7280"/>
+<rect x="152" y="118" width="96" height="52" rx="9" fill="#FF8A3D" opacity=".4"/>
+<circle cx="200" cy="144" r="15" fill="url(#ldTab)"/>
+<rect x="152" y="182" width="96" height="9" rx="4.5" fill="#F4511E"/>
+<rect x="152" y="199" width="70" height="9" rx="4.5" fill="#6B7280" opacity=".3"/>
+<rect x="152" y="216" width="84" height="9" rx="4.5" fill="#6B7280" opacity=".2"/>
+<rect x="152" y="233" width="56" height="9" rx="4.5" fill="#6B7280" opacity=".14"/>
+<circle cx="200" cy="302" r="5" fill="#6B7280" opacity=".5"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="72" viewBox="0 0 120 72" role="img" aria-label="Wallet offer">
+  <rect width="120" height="72" rx="12" fill="#FFFFFF"/>
+  <rect x=".75" y=".75" width="118.5" height="70.5" rx="11.25" fill="none" stroke="#E5E7EB" stroke-width="1.5"/>
+  <rect x="0" y="0" width="120" height="6" rx="3" fill="#6A1B9A"/>
+  <g transform="translate(60 38)" fill="none" stroke="#6A1B9A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-18-10a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v20a4 4 0 0 1-4 4h-24a4 4 0 0 1-4-4z"/>
+    <path d="M14-2h6v8h-6a4 4 0 0 1 0-8z"/>
+  </g>
+</svg>

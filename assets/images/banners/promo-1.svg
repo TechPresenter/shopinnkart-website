@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Gift boxes promo band">
+  <defs>
+    <linearGradient id="p1bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#132A54"/>
+      <stop offset="1" stop-color="#0F2143"/>
+    </linearGradient>
+    <linearGradient id="p1o" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="18" fill="url(#p1bg)"/>
+  <circle cx="1104" cy="42" r="128" fill="#F4511E" opacity="0.12"/>
+  <circle cx="980" cy="272" r="70" fill="#FF8A3D" opacity="0.08"/>
+
+  <g>
+    <ellipse cx="212" cy="252" rx="164" ry="16" fill="#000000" opacity="0.22"/>
+    <rect x="96" y="150" width="118" height="96" rx="12" fill="url(#p1o)"/>
+    <rect x="96" y="150" width="118" height="20" rx="8" fill="#FFFFFF" opacity="0.22"/>
+    <rect x="144" y="150" width="22" height="96" fill="#FFFFFF" opacity="0.35"/>
+    <path d="M155 150c-14-6-26-14-26-25a14 14 0 0 1 26-6 14 14 0 0 1 26 6c0 11-12 19-26 25Z" fill="#FF8A3D"/>
+    <rect x="222" y="112" width="140" height="134" rx="14" fill="#1B3B6B"/>
+    <rect x="222" y="112" width="140" height="24" rx="10" fill="#FFFFFF" opacity="0.16"/>
+    <rect x="278" y="112" width="26" height="134" fill="#F4511E" opacity="0.85"/>
+    <path d="M291 112c-16-7-30-16-30-28a16 16 0 0 1 30-7 16 16 0 0 1 30 7c0 12-14 21-30 28Z" fill="#F4511E"/>
+    <rect x="368" y="182" width="86" height="64" rx="10" fill="#FFFFFF" opacity="0.9"/>
+    <rect x="401" y="182" width="18" height="64" fill="#F4511E" opacity="0.8"/>
+  </g>
+
+  <g fill="#FF8A3D">
+    <path d="M540 70l6 14 14 6-14 6-6 14-6-14-14-6 14-6Z" opacity="0.9"/>
+    <path d="M760 210l5 11 11 5-11 5-5 11-5-11-11-5 11-5Z" opacity="0.7"/>
+    <circle cx="640" cy="180" r="7" opacity="0.8"/>
+    <circle cx="880" cy="96" r="9" opacity="0.6"/>
+    <circle cx="1020" cy="160" r="6" opacity="0.75"/>
+    <rect x="700" y="92" width="16" height="16" rx="4" transform="rotate(24 708 100)" opacity="0.55"/>
+    <rect x="940" y="212" width="14" height="14" rx="4" transform="rotate(-18 947 219)" opacity="0.5"/>
+  </g>
+  <g fill="#FFFFFF">
+    <circle cx="580" cy="230" r="5" opacity="0.35"/>
+    <circle cx="820" cy="60" r="6" opacity="0.3"/>
+    <circle cx="1112" cy="228" r="5" opacity="0.28"/>
+  </g>
+</svg>

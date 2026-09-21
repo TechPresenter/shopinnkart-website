@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="300" viewBox="0 0 360 300"
+     preserveAspectRatio="xMidYMid slice" role="img" aria-label="Welcome coupon">
+  <defs>
+    <linearGradient id="wcmBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F4511E"/>
+      <stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="300" fill="url(#wcmBg)"/>
+  <circle cx="42" cy="34" r="96" fill="#FFFFFF" opacity=".07"/>
+  <circle cx="326" cy="278" r="112" fill="#0F2143" opacity=".12"/>
+
+  <g transform="translate(88 92)">
+    <path d="M8 0h168a8 8 0 0 1 8 8v26a18 18 0 0 0 0 36v26a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V70a18 18 0 0 0 0-36V8a8 8 0 0 1 8-8z" fill="#FFFFFF"/>
+    <text x="92" y="42" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2.4" fill="#6B7280">WELCOME</text>
+    <text x="92" y="78" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="800" fill="#F4511E">&#8377;500</text>
+    <line x1="24" y1="94" x2="160" y2="94" stroke="#E5E7EB" stroke-width="2" stroke-dasharray="5 6"/>
+  </g>
+
+  <g fill="#FFFFFF" opacity=".55">
+    <rect x="46" y="216" width="9" height="9" rx="2" transform="rotate(24 50 220)"/>
+    <rect x="300" y="72" width="9" height="9" rx="2" transform="rotate(-18 304 76)"/>
+    <circle cx="322" cy="150" r="5"/>
+    <circle cx="34" cy="128" r="4"/>
+  </g>
+</svg>

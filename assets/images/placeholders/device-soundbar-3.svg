@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Soundbar grille detail">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F2EFE9"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="470" rx="164" ry="19" fill="#0F2143" opacity=".07"/>
+<rect x="120" y="164" width="360" height="288" rx="40" fill="url(#d)"/>
+<rect x="138" y="182" width="324" height="252" rx="28" fill="#16294A"/>
+<circle cx="216" cy="308" r="66" fill="#0F2143"/>
+<circle cx="216" cy="308" r="66" fill="none" stroke="url(#a)" stroke-width="9"/>
+<circle cx="216" cy="308" r="26" fill="url(#a)" opacity=".9"/>
+<circle cx="216" cy="308" r="10" fill="#F8F7F4" opacity=".8"/>
+<g fill="#3A5480">
+<circle cx="312" cy="240" r="8"/><circle cx="352" cy="240" r="8"/><circle cx="392" cy="240" r="8"/><circle cx="432" cy="240" r="8"/>
+<circle cx="312" cy="284" r="8"/><circle cx="352" cy="284" r="8"/><circle cx="392" cy="284" r="8"/><circle cx="432" cy="284" r="8"/>
+<circle cx="312" cy="328" r="8"/><circle cx="352" cy="328" r="8"/><circle cx="392" cy="328" r="8"/><circle cx="432" cy="328" r="8"/>
+<circle cx="312" cy="372" r="8"/><circle cx="352" cy="372" r="8"/><circle cx="392" cy="372" r="8"/><circle cx="432" cy="372" r="8"/>
+</g>
+<rect x="164" y="204" width="104" height="10" rx="5" fill="#FFFFFF" opacity=".14"/>
+</svg>

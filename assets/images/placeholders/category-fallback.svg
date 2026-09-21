@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"
+     preserveAspectRatio="xMidYMid slice" role="img" aria-label="Category">
+  <defs>
+    <linearGradient id="cfBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8F7F4"/>
+      <stop offset="1" stop-color="#EEF2F9"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="400" height="400" fill="url(#cfBg)"/>
+  <circle cx="200" cy="200" r="150" fill="#FFFFFF" opacity=".55"/>
+
+  <!-- Neutral grid glyph: reads as "a group of products" without implying a
+       category we do not know. -->
+  <g fill="none" stroke="#0F2143" stroke-width="9" stroke-linejoin="round" opacity=".28">
+    <rect x="132" y="132" width="60" height="60" rx="12"/>
+    <rect x="208" y="132" width="60" height="60" rx="12"/>
+    <rect x="132" y="208" width="60" height="60" rx="12"/>
+  </g>
+  <rect x="208" y="208" width="60" height="60" rx="12" fill="#F4511E" opacity=".72"/>
+</svg>

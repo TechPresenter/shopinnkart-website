@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Keyboard">
+<title>Keyboard</title>
+<defs>
+<radialGradient id="kbBg" cx="50%" cy="38%" r="72%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1EFEA"/></radialGradient>
+<linearGradient id="kbBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2A4C82"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<pattern id="kbKeys" width="34" height="34" patternUnits="userSpaceOnUse" patternTransform="translate(96,206)"><rect x="2" y="2" width="30" height="30" rx="7" fill="#E4E9F1"/></pattern>
+</defs>
+<rect width="600" height="600" fill="url(#kbBg)"/>
+<ellipse cx="300" cy="410" rx="230" ry="24" fill="#0F2143" opacity="0.08"/>
+<rect x="70" y="180" width="460" height="212" rx="28" fill="url(#kbBody)"/>
+<rect x="96" y="206" width="408" height="136" rx="6" fill="url(#kbKeys)"/>
+<rect x="98" y="208" width="30" height="30" rx="7" fill="#F4511E"/>
+<rect x="96" y="346" width="64" height="30" rx="7" fill="#E4E9F1"/>
+<rect x="168" y="346" width="44" height="30" rx="7" fill="#E4E9F1"/>
+<rect x="220" y="346" width="160" height="30" rx="7" fill="#E4E9F1"/>
+<rect x="388" y="346" width="44" height="30" rx="7" fill="#E4E9F1"/>
+<rect x="440" y="346" width="64" height="30" rx="7" fill="#E4E9F1"/>
+<rect x="96" y="188" width="408" height="8" rx="4" fill="#FFFFFF" opacity="0.14"/>
+</svg>

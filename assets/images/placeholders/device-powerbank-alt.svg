@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Power bank, angled view">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FBE7DC"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="490" rx="140" ry="19" fill="#0F2143" opacity=".07"/>
+<g transform="rotate(-13 300 300)">
+<rect x="192" y="128" width="216" height="344" rx="44" fill="url(#d)"/>
+<rect x="208" y="144" width="184" height="312" rx="34" fill="#16294A"/>
+<rect x="234" y="180" width="132" height="176" rx="20" fill="#0F2143"/>
+<path d="M312 206 h-40 l-14 74 h30 l-10 62 56 -90 h-34 Z" fill="url(#a)"/>
+<g fill="#3A5480">
+<rect x="240" y="396" width="26" height="12" rx="6"/><rect x="274" y="396" width="26" height="12" rx="6"/><rect x="308" y="396" width="26" height="12" rx="6"/>
+</g>
+<rect x="342" y="396" width="26" height="12" rx="6" fill="url(#a)"/>
+<rect x="256" y="424" width="88" height="16" rx="8" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+</g>
+</svg>

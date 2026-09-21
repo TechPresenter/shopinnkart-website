@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="300" viewBox="0 0 1440 300"
+     preserveAspectRatio="xMidYMid slice" role="img" aria-label="">
+  <defs>
+    <linearGradient id="pbpage-policy.svg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0F2143"/>
+      <stop offset="1" stop-color="#1B3A6B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1440" height="300" fill="url(#pbpage-policy.svg)"/>
+  <circle cx="120" cy="40" r="190" fill="#FFFFFF" opacity=".035"/>
+  <circle cx="1330" cy="280" r="210" fill="#F4511E" opacity=".10"/>
+  <path d="M1040 0h70L890 300h-70z" fill="#FFFFFF" opacity=".04"/>
+  <path d="M1150 0h26L956 300h-26z" fill="#F4511E" opacity=".16"/>
+  <g transform="translate(1180 96)" fill="none" stroke="#FFFFFF" stroke-width="6"
+     stroke-linecap="round" stroke-linejoin="round" opacity=".78">
+    <path d="M56 6 106 26v34c0 30-21 51-50 62-29-11-50-32-50-62V26z"/>
+    <path d="M36 62 51 77l30-30"/>
+  </g>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Headphones">
+<title>Headphones</title>
+<defs>
+<radialGradient id="hpBg" cx="50%" cy="36%" r="72%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1EFEA"/></radialGradient>
+<linearGradient id="hpBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22406F"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+</defs>
+<rect width="600" height="600" fill="url(#hpBg)"/>
+<ellipse cx="300" cy="486" rx="176" ry="24" fill="#0F2143" opacity="0.08"/>
+<path d="M150 366 V270 A150 150 0 0 1 450 270 V366" fill="none" stroke="#1B3462" stroke-width="30" stroke-linecap="round"/>
+<path d="M233 133 A150 150 0 0 1 367 133" fill="none" stroke="#F4511E" stroke-width="30" stroke-linecap="round"/>
+<rect x="104" y="292" width="92" height="152" rx="44" fill="url(#hpBody)"/>
+<rect x="404" y="292" width="92" height="152" rx="44" fill="url(#hpBody)"/>
+<rect x="120" y="308" width="60" height="120" rx="30" fill="#E4E9F1"/>
+<rect x="420" y="308" width="60" height="120" rx="30" fill="#E4E9F1"/>
+<rect x="136" y="330" width="28" height="76" rx="14" fill="#6B7280" opacity="0.22"/>
+<rect x="436" y="330" width="28" height="76" rx="14" fill="#6B7280" opacity="0.22"/>
+<circle cx="150" cy="464" r="7" fill="#22406F"/>
+<circle cx="450" cy="464" r="7" fill="#22406F"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Soundbar">
+<title>Soundbar</title>
+<defs>
+<radialGradient id="sbBg" cx="50%" cy="38%" r="72%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F1EFEA"/></radialGradient>
+<linearGradient id="sbBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22406F"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<pattern id="sbDots" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="translate(86,262)"><circle cx="11" cy="11" r="4.5" fill="#8FA0BC" opacity="0.55"/></pattern>
+</defs>
+<rect width="600" height="600" fill="url(#sbBg)"/>
+<ellipse cx="300" cy="404" rx="228" ry="22" fill="#0F2143" opacity="0.08"/>
+<rect x="62" y="236" width="476" height="132" rx="30" fill="url(#sbBody)"/>
+<rect x="86" y="262" width="330" height="88" rx="14" fill="url(#sbDots)"/>
+<circle cx="466" cy="290" r="22" fill="#0B1A36"/>
+<circle cx="466" cy="290" r="11" fill="#22406F"/>
+<circle cx="440" cy="330" r="8" fill="#F4511E"/>
+<rect x="458" y="322" width="52" height="9" rx="4.5" fill="#FFFFFF" opacity="0.22"/>
+<rect x="86" y="242" width="428" height="8" rx="4" fill="#FFFFFF" opacity="0.14"/>
+<rect x="112" y="368" width="72" height="16" rx="8" fill="#0F2143"/>
+<rect x="416" y="368" width="72" height="16" rx="8" fill="#0F2143"/>
+</svg>

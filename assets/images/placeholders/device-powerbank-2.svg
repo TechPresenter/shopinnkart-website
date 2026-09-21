@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Power bank port edge detail">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="440" rx="184" ry="19" fill="#0F2143" opacity=".07"/>
+<rect x="96" y="212" width="408" height="196" rx="50" fill="url(#d)"/>
+<rect x="112" y="228" width="376" height="164" rx="40" fill="#16294A"/>
+<rect x="150" y="286" width="80" height="46" rx="12" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="166" y="302" width="48" height="14" rx="7" fill="url(#a)"/>
+<rect x="252" y="286" width="80" height="46" rx="12" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="268" y="302" width="48" height="14" rx="7" fill="#3A5480"/>
+<rect x="354" y="292" width="46" height="34" rx="10" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="366" y="304" width="22" height="10" rx="5" fill="#3A5480"/>
+<g fill="#3A5480">
+<circle cx="428" cy="266" r="8"/><circle cx="452" cy="266" r="8"/>
+</g>
+<circle cx="428" cy="352" r="8" fill="url(#a)"/>
+<circle cx="452" cy="352" r="8" fill="#3A5480"/>
+<rect x="150" y="252" width="182" height="10" rx="5" fill="#FFFFFF" opacity=".12"/>
+<path d="M96 176 h-24 M504 176 h24" stroke="#0F2143" stroke-opacity=".16" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,108 @@
+<?php
+/**
+ * ShopInnKart - Customer sign in.
+ *
+ * The form posts through /api/auth/login.php when JavaScript is on. With it
+ * off the browser posts back to this file and the block below does the same
+ * work, so signing in never depends on scripting.
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/includes/init.php';
+require_once INCLUDES_PATH . '/auth-layout.php';
+
+if (is_logged_in()) {
+    redirect(url('account.php'));
+}
+
+$errors    = [];
+$formError = '';
+$email     = '';
+$remember  = false;
+
+if (is_post()) {
+    csrf_require();
+
+    $email = mb_strtolower((string) input('email', ''));
+    // Never trimmed: a trailing space is part of the password.
+    $password = isset($_POST['password']) && is_string($_POST['password']) ? $_POST['password'] : '';
+    $remember = input_bool('remember');
+
+    $validator = new Validator(
+        ['email' => $email, 'password' => $password],
+        ['email' => 'Email address', 'password' => 'Password']
+    );
+    $validator->required('email')->email('email')->required('password');
+
+    if ($validator->fails()) {
+        $errors = $validator->errors();
+    } else {
+        $attempt = attempt_login($email, $password);
+
+        if ($attempt['ok']) {
+            login_user($attempt['user'], $remember);
+            flash('success', 'Welcome back, ' . trim((string) $attempt['user']['first_name']) . '.');
+            // Sends them on to whatever page asked them to sign in.
+            redirect(intended_url());
+        }
+
+        // Kept off the individual fields on purpose: highlighting "email" or
+        // "password" would say which half was wrong, and whether the address
+        // has an account here at all.
+        $formError = (string) $attempt['error'];
+    }
+}
+
+$storeName = (string) setting('store_name', SITE_NAME);
+
+auth_layout_start([
+    'title'       => 'Sign In',
+    'description' => 'Sign in to your ' . $storeName . ' account to track orders, manage addresses and check out faster.',
+    'heading'     => 'Welcome back',
+    'subheading'  => 'Sign in to track your orders, save favourites and check out faster.',
+]);
+?>
+
+<?php if ($formError !== ''): ?>
+    <?= auth_alert('error', $formError) ?>
+<?php endif; ?>
+
+<form method="post" action="<?= e(url('login.php')) ?>" data-ajax-form="auth/login.php" novalidate>
+    <?= csrf_field() ?>
+
+    <div class="sik-field">
+        <label class="sik-label" for="sikLoginEmail">Email address</label>
+        <input class="sik-input<?= isset($errors['email']) ? ' is-invalid' : '' ?>"
+               type="email" id="sikLoginEmail" name="email" value="<?= e($email) ?>"
+               autocomplete="email" inputmode="email" placeholder="you@example.com" required autofocus>
+        <?php if (isset($errors['email'])): ?>
+            <span class="sik-error"><?= e($errors['email']) ?></span>
+        <?php endif; ?>
+    </div>
+
+    <?php auth_password_field([
+        'id'           => 'sikLoginPassword',
+        'label'        => 'Password',
+        'autocomplete' => 'current-password',
+        'placeholder'  => 'Enter your password',
+        'error'        => (string) ($errors['password'] ?? ''),
+        'aside'        => ['label' => 'Forgot password?', 'url' => url('forgot-password.php')],
+    ]); ?>
+
+    <label class="sik-check" style="margin-bottom:var(--sp-5)">
+        <input type="checkbox" name="remember" value="1"<?= $remember ? ' checked' : '' ?>>
+        <span>Keep me signed in on this device</span>
+    </label>
+
+    <button type="submit" class="sik-btn sik-btn--primary sik-btn--block sik-btn--lg">
+        <span class="sik-btn__label">Sign In</span>
+    </button>
+</form>
+
+<?php
+auth_layout_end([
+    'text'  => 'New to ' . $storeName . '?',
+    'label' => 'Create an account',
+    'url'   => url('register.php'),
+]);

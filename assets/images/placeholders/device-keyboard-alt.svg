@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Keyboard, angled view">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FBE7DC"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="452" rx="192" ry="20" fill="#0F2143" opacity=".07"/>
+<g transform="translate(300 300) rotate(-7) skewY(-4)">
+<rect x="-212" y="-96" width="424" height="196" rx="26" fill="url(#d)"/>
+<rect x="-198" y="-82" width="396" height="168" rx="18" fill="#16294A"/>
+<g fill="#3A5480">
+<rect x="-182" y="-66" width="34" height="30" rx="8"/><rect x="-140" y="-66" width="34" height="30" rx="8"/><rect x="-98" y="-66" width="34" height="30" rx="8"/><rect x="-56" y="-66" width="34" height="30" rx="8"/><rect x="-14" y="-66" width="34" height="30" rx="8"/><rect x="28" y="-66" width="34" height="30" rx="8"/><rect x="70" y="-66" width="34" height="30" rx="8"/><rect x="112" y="-66" width="34" height="30" rx="8"/><rect x="154" y="-66" width="30" height="30" rx="8"/>
+<rect x="-182" y="-26" width="34" height="30" rx="8"/><rect x="-140" y="-26" width="34" height="30" rx="8"/><rect x="-98" y="-26" width="34" height="30" rx="8"/><rect x="-56" y="-26" width="34" height="30" rx="8"/><rect x="-14" y="-26" width="34" height="30" rx="8"/><rect x="28" y="-26" width="34" height="30" rx="8"/><rect x="70" y="-26" width="34" height="30" rx="8"/><rect x="112" y="-26" width="34" height="30" rx="8"/><rect x="154" y="-26" width="30" height="30" rx="8"/>
+<rect x="-182" y="14" width="34" height="30" rx="8"/><rect x="-140" y="14" width="34" height="30" rx="8"/><rect x="-98" y="14" width="34" height="30" rx="8"/><rect x="112" y="14" width="34" height="30" rx="8"/><rect x="154" y="14" width="30" height="30" rx="8"/>
+</g>
+<rect x="-56" y="14" width="160" height="30" rx="8" fill="url(#a)" opacity=".9"/>
+<rect x="-120" y="54" width="240" height="18" rx="9" fill="#22395F"/>
+</g>
+</svg>

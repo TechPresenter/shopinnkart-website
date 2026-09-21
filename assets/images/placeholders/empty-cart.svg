@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Your cart is empty">
+  <rect width="400" height="300" fill="none"/>
+  <ellipse cx="200" cy="252" rx="120" ry="14" fill="#0F2143" opacity="0.07"/>
+  <circle cx="200" cy="146" r="96" fill="#F4511E" opacity="0.07"/>
+  <g fill="none" stroke="#0F2143" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M104 96h26l22 104h130"/>
+    <path d="M144 128h146l-14 60H157"/>
+  </g>
+  <circle cx="176" cy="228" r="15" fill="none" stroke="#0F2143" stroke-width="9"/>
+  <circle cx="262" cy="228" r="15" fill="none" stroke="#0F2143" stroke-width="9"/>
+  <circle cx="176" cy="228" r="4" fill="#F4511E"/>
+  <circle cx="262" cy="228" r="4" fill="#F4511E"/>
+  <g fill="#FF8A3D">
+    <path d="M296 76l7 15 15 7-15 7-7 15-7-15-15-7 15-7Z"/>
+    <circle cx="118" cy="52" r="8" opacity="0.7"/>
+    <circle cx="330" cy="150" r="6" opacity="0.6"/>
+  </g>
+  <path d="M188 148h56" stroke="#F4511E" stroke-width="9" stroke-linecap="round"/>
+</svg>

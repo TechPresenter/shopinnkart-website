@@ -1,0 +1,1811 @@
+/* ==========================================================================
+   ShopInnKart Admin - Dashboard design system
+
+   Deliberately distinct from the storefront: dark navy rail, cool neutral
+   canvas, dense tables, compact controls. Loaded after tailwind.css and
+   app.css (which supply the utilities, .sik-status pills and form controls).
+   ========================================================================== */
+
+/* ==========================================================================
+   1. DESIGN TOKENS
+
+   Every value below is a token. Components must not hardcode a colour, a
+   spacing step, a radius or a font size — that is what made the admin drift
+   into per-module styling. Because everything resolves through custom
+   properties, a dark theme later only has to re-declare this block.
+
+   Contrast note: the raw brand tones are decoration-grade, not text-grade.
+   Measured on #FFFFFF / #F5F7FA respectively:
+       the brand tone   ~3.5 / ~3.2   #16A34A  3.30 / 3.07
+       #F59E0B  2.15 / 2.00     #64748B  4.76 / 4.43
+   All four fail WCAG AA for the 12-14px text the admin actually renders, so
+   each has an "-ink" counterpart that is used for type and for any fill that
+   carries white text. The bright tone stays for chart fills, icon glyphs and
+   large numerals where 3:1 is the correct bar.
+   ========================================================================== */
+:root {
+    /* --- brand ------------------------------------------------------------ */
+    /* --ad-primary and --ad-sidebar are printed inline by
+       admin/includes/header.php from Admin > Settings > Admin theme. The two
+       shades below USED to be frozen hex - an operator who set a pink admin
+       colour got pink buttons with orange text beside them, because only the
+       base token followed the setting. Deriving them means one setting moves
+       the whole admin palette. */
+    --ad-primary:        #D4134E;   /* decoration / large text            */
+    /* 82% toward black: >=4.5:1 on both --ad-surface and --ad-bg for the
+       brand pinks this admin ships with. */
+    --ad-primary-ink:    color-mix(in srgb, var(--ad-primary) 82%, #000);
+    --ad-primary-soft:   color-mix(in srgb, var(--ad-primary) 8%, #fff);
+    --ad-navy:           #0B1F3A;
+
+    /* --- surfaces --------------------------------------------------------- */
+    --ad-bg:             #F5F7FA;
+    --ad-surface:        #FFFFFF;
+    --ad-surface-alt:    #F8FAFC;   /* table zebra, inset panels          */
+    --ad-border:         #E2E8F0;   /* dividers                           */
+    --ad-border-strong:  #CBD5E1;   /* interactive boundaries (inputs)    */
+
+    /* --- type ------------------------------------------------------------- */
+    --ad-text:           #111827;
+    --ad-muted:          #5F6B7E;   /* 5.40 / 5.03 — the spec's #64748B   */
+                                     /* measured 4.43 on the canvas and    */
+                                     /* failed AA, so it is one step down. */
+    --ad-faint:          #94A3B8;   /* decorative only, never body text   */
+
+    /* --- semantic --------------------------------------------------------- */
+    --ad-success:        #16A34A;   --ad-success-ink: #15803D;  --ad-success-soft: #ECFDF3;
+    --ad-warning:        #F59E0B;   --ad-warning-ink: #B45309;  --ad-warning-soft: #FFFBEB;
+    --ad-danger:         #DC2626;   --ad-danger-ink:  #B91C1C;  --ad-danger-soft:  #FEF2F2;
+    --ad-info:           #2563EB;   --ad-info-ink:    #1D4ED8;  --ad-info-soft:    #EFF6FF;
+
+    /* --- sidebar ---------------------------------------------------------- */
+    --ad-sidebar:        var(--ad-navy);
+    --ad-sidebar-hover:  #16304F;
+    --ad-sidebar-active: var(--ad-primary);
+    --ad-sidebar-text:   #A8B6CE;   /* 8.06 on the navy rail              */
+    --ad-sidebar-w:      256px;
+    --ad-sidebar-w-min:  72px;
+    --ad-topbar-h:       62px;
+
+    /* --- spacing scale ---------------------------------------------------- */
+    --ad-1:   4px;   --ad-2:   8px;   --ad-3:  12px;   --ad-4:  16px;
+    --ad-5:  20px;   --ad-6:  24px;   --ad-8:  32px;   --ad-10: 40px;
+    --ad-12: 48px;   --ad-16: 64px;
+
+    /* --- type scale ------------------------------------------------------- */
+    --ad-fs-caption:  11px;   /* metadata, table meta lines               */
+    --ad-fs-small:    12px;   /* helper text, badges                      */
+    --ad-fs-body:     13px;   /* table cells, form labels                 */
+    --ad-fs-base:     14px;   /* default body                             */
+    --ad-fs-lead:     15px;   /* card headings                            */
+    --ad-fs-h3:       17px;   /* section headings                         */
+    --ad-fs-h2:       20px;   /* page title                               */
+    --ad-fs-display:  28px;   /* KPI numerals                             */
+
+    /* --- radius ----------------------------------------------------------- */
+    --ad-radius-sm:  6px;
+    --ad-radius:     10px;
+    --ad-radius-lg:  14px;
+    --ad-radius-pill: 999px;
+
+    /* --- elevation -------------------------------------------------------- */
+    --ad-shadow:     0 1px 2px rgba(16, 35, 61, .06), 0 1px 3px rgba(16, 35, 61, .04);
+    --ad-shadow-md:  0 4px 14px rgba(16, 35, 61, .08);
+    --ad-shadow-lg:  0 10px 34px rgba(16, 35, 61, .12);
+
+    /* --- focus ------------------------------------------------------------ */
+    --ad-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ad-primary) 26%, transparent);
+
+    /* --- layering --------------------------------------------------------- */
+    --ad-z-sidebar:  60;
+    --ad-z-topbar:   50;
+    --ad-z-overlay:  55;
+    --ad-z-dropdown: 70;
+    --ad-z-modal:    90;
+    --ad-z-toast:    100;
+
+    /* --- motion ----------------------------------------------------------- */
+    --ad-ease:       cubic-bezier(.4, 0, .2, 1);
+    --ad-dur:        .18s;
+}
+
+/* One switch turns every transition in the admin off. */
+@media (prefers-reduced-motion: reduce) {
+    :root { --ad-dur: 0s; }
+    .ad-body *, .ad-body *::before, .ad-body *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* A single focus treatment for the whole admin. */
+.ad-body :focus-visible {
+    outline: 2px solid var(--ad-primary-ink);
+    outline-offset: 2px;
+    border-radius: var(--ad-radius-sm);
+}
+
+body.ad-body {
+    background: var(--ad-bg);
+    color: var(--ad-text);
+    font-size: 14px;
+    padding-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Layout
+   -------------------------------------------------------------------------- */
+.ad-shell { display: flex; min-height: 100vh; }
+
+.ad-main {
+    flex: 1;
+    min-width: 0;                 /* lets tables shrink instead of pushing the page wide */
+    display: flex;
+    flex-direction: column;
+    margin-left: var(--ad-sidebar-w);
+    transition: margin-left .22s ease;
+}
+/* The collapsed rail is desktop-only; see the min-width: 1024px block below. */
+@media (max-width: 1023px) { .ad-main { margin-left: 0; } }
+
+.ad-content { padding: 22px; flex: 1; }
+@media (max-width: 640px) { .ad-content { padding: 14px; } }
+
+.ad-container { max-width: 1560px; margin-inline: auto; }
+
+/* --------------------------------------------------------------------------
+   Sidebar
+   -------------------------------------------------------------------------- */
+.ad-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--ad-sidebar-w);
+    background: var(--ad-sidebar);
+    color: var(--ad-sidebar-text);
+    display: flex;
+    flex-direction: column;
+    z-index: 60;
+    transition: width .22s ease, transform .26s ease;
+}
+@media (max-width: 1023px) {
+    .ad-sidebar { transform: translateX(-102%); width: var(--ad-sidebar-w); box-shadow: var(--ad-shadow-lg); }
+    .ad-sidebar.is-open { transform: none; }
+}
+
+.ad-sidebar__head {
+    height: var(--ad-topbar-h);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, .08);
+    flex: none;
+}
+.ad-sidebar__head img { height: 32px; width: auto; }
+.ad-sidebar__logo-icon { display: none; }
+
+.ad-sidebar__nav { flex: 1; overflow-y: auto; padding: 12px 10px 24px; }
+.ad-sidebar__nav::-webkit-scrollbar { width: 5px; }
+.ad-sidebar__nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .16); border-radius: 999px; }
+
+.ad-sidebar__section {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .32);
+    padding: 16px 12px 7px;
+}
+
+.ad-nav__link {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ad-sidebar-text);
+    width: 100%;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    transition: background .15s ease, color .15s ease;
+    position: relative;
+}
+.ad-nav__link:hover { background: var(--ad-sidebar-hover); color: #fff; }
+.ad-nav__link.is-active { background: var(--ad-sidebar-active); color: #fff; font-weight: 600; }
+.ad-nav__link svg { flex: none; }
+.ad-nav__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-nav__caret { transition: transform .2s ease; opacity: .65; }
+.ad-nav__group.is-open > .ad-nav__link .ad-nav__caret { transform: rotate(180deg); }
+
+.ad-nav__badge {
+    background: var(--ad-primary);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+.ad-nav__link.is-active .ad-nav__badge { background: rgba(255, 255, 255, .25); }
+
+.ad-nav__sub { display: none; padding: 3px 0 6px 34px; }
+.ad-nav__group.is-open > .ad-nav__sub { display: block; }
+.ad-nav__sublink {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, .58);
+    transition: all .14s ease;
+}
+.ad-nav__sublink:hover { color: #fff; background: rgba(255, 255, 255, .07); }
+.ad-nav__sublink.is-active {
+    color: #fff;
+    font-weight: 600;
+    /* Was a frozen rgba(244, 81, 30) - the pre-rebrand orange - so the
+       current page was highlighted in a colour the admin no longer uses,
+       and changing the admin colour did nothing to it. */
+    background: color-mix(in srgb, var(--ad-primary) 22%, transparent);
+}
+
+.ad-sidebar__foot {
+    flex: none;
+    padding: 12px;
+    border-top: 1px solid rgba(255, 255, 255, .08);
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, .4);
+}
+
+/* --------------------------------------------------------------------------
+   Collapsed icon rail — desktop only.
+
+   Below 1024px the sidebar is an off-canvas drawer (see the max-width: 1023px
+   block above) and admin.js toggles `.is-open` on it rather than
+   `body.ad-collapsed`. Media queries add no specificity, so an unscoped
+   `body.ad-collapsed .ad-sidebar` (0,2,1) outranks the drawer's `.ad-sidebar`
+   (0,1,0) and would shrink the drawer to 72px of unlabelled icons — the
+   collapse cookie is set path=/ for a year, so one desktop click would follow
+   the admin onto every phone and tablet.
+   -------------------------------------------------------------------------- */
+@media (min-width: 1024px) {
+    body.ad-collapsed .ad-main { margin-left: var(--ad-sidebar-w-min); }
+    body.ad-collapsed .ad-sidebar { width: var(--ad-sidebar-w-min); }
+
+    body.ad-collapsed .ad-sidebar__head { padding: 0 14px; justify-content: center; }
+    body.ad-collapsed .ad-sidebar__logo-full { display: none; }
+    body.ad-collapsed .ad-sidebar__logo-icon { display: block; }
+
+    body.ad-collapsed .ad-sidebar__section { text-align: center; font-size: 0; padding: 12px 0 4px; }
+    body.ad-collapsed .ad-sidebar__section::after { content: "···"; font-size: 11px; letter-spacing: 0; }
+
+    /* Labels become hover tooltips - visually. The text itself stays in the
+       accessibility tree, clipped rather than removed: it is the only text
+       these links have (icons.php emits every glyph aria-hidden), so
+       display:none left a screen reader announcing twenty bare "link"s.
+       Clipping also keeps the badge audible, which an aria-label on the
+       link would have replaced. */
+    body.ad-collapsed .ad-nav__label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+    body.ad-collapsed .ad-nav__caret,
+    body.ad-collapsed .ad-nav__sub { display: none; }
+    body.ad-collapsed .ad-nav__link { justify-content: center; padding: 11px; }
+    body.ad-collapsed .ad-nav__badge { position: absolute; top: 4px; right: 6px; min-width: 15px; height: 15px; font-size: 9px; }
+    body.ad-collapsed .ad-nav__link::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 50%;
+        transform: translateY(-50%);
+        background: var(--ad-sidebar);
+        color: #fff;
+        padding: 6px 11px;
+        border-radius: 7px;
+        font-size: 12.5px;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .15s ease;
+        box-shadow: var(--ad-shadow-lg);
+        z-index: 5;
+    }
+    body.ad-collapsed .ad-nav__link:hover::after,
+    body.ad-collapsed .ad-nav__link:focus-visible::after { opacity: 1; }
+
+    body.ad-collapsed .ad-sidebar__foot { display: none; }
+}
+
+/* --------------------------------------------------------------------------
+   Topbar
+   -------------------------------------------------------------------------- */
+.ad-topbar {
+    height: var(--ad-topbar-h);
+    background: var(--ad-surface);
+    border-bottom: 1px solid var(--ad-border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 20px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+@media (max-width: 640px) { .ad-topbar { padding: 0 12px; gap: 8px; } }
+
+.ad-iconbtn {
+    width: 38px; height: 38px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--ad-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    flex: none;
+    transition: all .15s ease;
+}
+.ad-iconbtn:hover { background: var(--ad-bg); color: var(--ad-text); }
+
+/* Context label, not a heading — the page's h1 sits directly below it. Below
+   the width where global search appears it yields the row entirely. */
+.ad-topbar__title {
+    font-size: var(--ad-fs-lead);
+    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ad-text);
+}
+@media (max-width: 719px) { .ad-topbar__title { display: none; } }
+.ad-topbar__spacer { margin-left: auto; }
+
+/* Global search was hidden below 900px, which meant no search at all on any
+   phone or small tablet. It is now the element that gets the room. */
+.ad-topbar__search { position: relative; max-width: 340px; flex: 1; display: block; min-width: 0; }
+@media (max-width: 719px) { .ad-topbar__search { max-width: none; } }
+.ad-topbar__search input {
+    width: 100%;
+    border: 1px solid var(--ad-border);
+    background: var(--ad-bg);
+    border-radius: 9px;
+    padding: 9px 12px 9px 36px;
+    font-size: 13.5px;
+    outline: none;
+}
+.ad-topbar__search input:focus { border-color: var(--ad-primary); background: #fff; }
+.ad-topbar__search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ad-muted); }
+
+.ad-avatar {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: var(--ad-primary);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12.5px;
+    font-weight: 800;
+    flex: none;
+}
+
+.ad-dropdown { position: relative; }
+.ad-dropdown__panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    min-width: 230px;
+    background: #fff;
+    border: 1px solid var(--ad-border);
+    border-radius: var(--ad-radius);
+    box-shadow: var(--ad-shadow-lg);
+    padding: 7px;
+    display: none;
+    z-index: 70;
+}
+.ad-dropdown.is-open .ad-dropdown__panel { display: block; }
+.ad-dropdown__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    border-radius: 7px;
+    font-size: 13.5px;
+    color: var(--ad-text);
+    width: 100%;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+}
+.ad-dropdown__item:hover { background: var(--ad-bg); }
+.ad-dropdown__item--danger { color: var(--ad-danger-ink); }
+.ad-dropdown__head { padding: 11px; border-bottom: 1px solid var(--ad-border); margin-bottom: 5px; }
+.ad-dropdown__divider { height: 1px; background: var(--ad-border); margin: 5px 0; }
+
+.ad-dot {
+    position: absolute;
+    top: 7px; right: 7px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--ad-primary);
+    border: 2px solid #fff;
+}
+
+/* --------------------------------------------------------------------------
+   Page header
+   -------------------------------------------------------------------------- */
+.ad-page {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.ad-page__title { font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+.ad-page__sub { font-size: 13.5px; color: var(--ad-muted); margin-top: 3px; }
+.ad-page__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.ad-crumb { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ad-muted); margin-bottom: 6px; }
+.ad-crumb a:hover { color: var(--ad-primary); }
+
+/* --------------------------------------------------------------------------
+   Cards & panels
+   -------------------------------------------------------------------------- */
+.ad-card {
+    background: var(--ad-surface);
+    border: 1px solid var(--ad-border);
+    border-radius: var(--ad-radius);
+    box-shadow: var(--ad-shadow);
+    overflow: hidden;
+    margin-bottom: 18px;
+}
+.ad-card__head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--ad-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.ad-card__title { font-size: 14.5px; font-weight: 700; }
+.ad-card__sub { font-size: 12.5px; color: var(--ad-muted); }
+.ad-card__body { padding: 18px; }
+.ad-card__body--flush { padding: 0; }
+.ad-card__foot {
+    padding: 13px 18px;
+    border-top: 1px solid var(--ad-border);
+    background: var(--ad-bg);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+/* minmax(0, 1fr), never a bare `1fr`.
+   -------------------------------------------------------------------------
+   A bare `1fr` is shorthand for `minmax(auto, 1fr)`, and `auto` as a MINIMUM
+   resolves to the track's min-content size — so any child wider than the
+   viewport (on these screens, always a table) forces the track wider than the
+   page instead of being contained by it.
+
+   Every multi-column variant below already spells out minmax(0, 1fr); it was
+   only these single-column defaults that did not, which is why the admin
+   measured clean at 1280 and overflowed under 768: the correct rules only
+   applied from the 768 breakpoint up. Measured at 375 before this: dashboard
+   295px over, homepage 469px, popups 635px. */
+.ad-grid { display: grid; gap: 18px; }
+.ad-grid--2 { grid-template-columns: minmax(0, 1fr); }
+.ad-grid--3 { grid-template-columns: minmax(0, 1fr); }
+.ad-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ad-grid--sidebar { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 768px) {
+    .ad-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ad-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ad-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+    .ad-grid--sidebar { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; }
+}
+
+/* --------------------------------------------------------------------------
+   Stat tiles
+   -------------------------------------------------------------------------- */
+.ad-stat {
+    background: var(--ad-surface);
+    border: 1px solid var(--ad-border);
+    border-radius: var(--ad-radius);
+    box-shadow: var(--ad-shadow);
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    transition: transform .16s ease, box-shadow .16s ease;
+}
+a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); }
+.ad-stat__icon {
+    width: 42px; height: 42px;
+    border-radius: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+/* Tinted glyph chips. These carry an icon, not text, so the bright tone is the
+   correct one here — the -ink shades would read muddy at 20px. */
+.ad-stat__icon--primary { background: var(--ad-primary-soft);  color: var(--ad-primary-ink); }
+.ad-stat__icon--green   { background: var(--ad-success-soft);  color: var(--ad-success-ink); }
+.ad-stat__icon--blue    { background: var(--ad-info-soft);     color: var(--ad-info-ink); }
+.ad-stat__icon--amber   { background: var(--ad-warning-soft);  color: var(--ad-warning-ink); }
+.ad-stat__icon--red     { background: var(--ad-danger-soft);   color: var(--ad-danger-ink); }
+.ad-stat__icon--violet  { background: #F5F3FF;                 color: #6D28D9; }
+.ad-stat__icon--navy    { background: #EEF2F9;                 color: var(--ad-navy); }
+.ad-stat__body { min-width: 0; }
+.ad-stat__value {
+    display: block;
+    font-size: var(--ad-fs-display);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    color: var(--ad-text);
+    /* Figures line up column-to-column when several KPIs sit in a row. */
+    font-variant-numeric: tabular-nums;
+}
+.ad-stat__label { display: block; font-size: var(--ad-fs-body); color: var(--ad-muted); margin-top: var(--ad-1); }
+.ad-stat__sub { display: block; font-size: var(--ad-fs-caption); color: var(--ad-muted); margin-top: 3px; }
+
+.ad-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: var(--ad-fs-small);
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: var(--ad-radius-pill);
+    font-variant-numeric: tabular-nums;
+}
+.ad-delta--up   { background: var(--ad-success-soft); color: var(--ad-success-ink); }
+.ad-delta--down { background: var(--ad-danger-soft);  color: var(--ad-danger-ink); }
+.ad-delta--flat { background: #F1F5F9;                color: var(--ad-muted); }
+
+/* --------------------------------------------------------------------------
+   Tables
+   -------------------------------------------------------------------------- */
+.ad-tablewrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    /* min-width: 0 is what makes the overflow-x above actually do anything.
+       This wrapper is a grid/flex item on most admin screens, and such an item
+       floors at its automatic minimum size — the full width of the table
+       inside it. So the wrapper grew to fit the table and the PAGE scrolled
+       sideways, which is the one thing the wrapper exists to prevent. With the
+       floor removed it holds the container's width and the table scrolls
+       within it, as intended. */
+    min-width: 0;
+    /* A 640px-wide table inside a 320px viewport scrolls, but with the scrollbar
+       thin and the cut clean there was nothing telling anyone it could. The
+       right-edge shade appears only while there is more table to reach. */
+    background:
+        linear-gradient(to right, var(--ad-surface) 30%, transparent) left / 24px 100% no-repeat local,
+        linear-gradient(to left,  var(--ad-surface) 30%, transparent) right / 24px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, rgba(16,35,61,.14), transparent) left / 12px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, rgba(16,35,61,.14), transparent) right / 12px 100% no-repeat scroll;
+}
+.ad-tablewrap::-webkit-scrollbar { height: 8px; }
+.ad-tablewrap::-webkit-scrollbar-thumb { background: var(--ad-border-strong); border-radius: var(--ad-radius-pill); }
+.ad-tablewrap::-webkit-scrollbar-thumb:hover { background: var(--ad-faint); }
+
+.ad-table { width: 100%; border-collapse: collapse; font-size: var(--ad-fs-body); min-width: 640px; }
+.ad-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ad-muted);
+    padding: 11px 14px;
+    background: var(--ad-bg);
+    border-bottom: 1px solid var(--ad-border);
+    white-space: nowrap;
+}
+.ad-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ad-border);
+    vertical-align: middle;
+}
+.ad-table tbody tr:last-child td { border-bottom: 0; }
+.ad-table tbody tr:hover { background: var(--ad-surface-alt); }
+
+/* --- opt-in mobile card view ---------------------------------------------
+   A data table cannot be read 640px wide on a 360px phone. Adding
+   .ad-table--stack plus data-label="…" on each <td> turns every row into a
+   labelled card below 768px. Rows without a data-label keep their cell as a
+   full-width block, so a partially-migrated table degrades sanely rather than
+   losing its headers.
+   ------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+    /* !important because two tables carry an inline style="min-width:1180px"
+       (popups) and 940px (one other). An inline declaration outranks any
+       selector, so without this they keep their desktop width and drag the card
+       view sideways — the exact thing this block exists to stop. The inline
+       value is left in place so those tables still get their intended width on
+       a desktop, where the media query does not apply. */
+    .ad-table--stack { min-width: 0 !important; }
+    /* display:none, not the visually-hidden clip() trick.
+       `position:absolute; width:1px; overflow:hidden` does not reliably clip
+       table-internal boxes: the <th> cells kept laying out at their full width
+       and pushed the scroller 15px past its container on coupons, with header
+       cells measuring up to 314px beyond the right edge.
+       Nothing is lost by removing it outright — the rule below already sets
+       display:block on the table, tbody, tr and td, which drops the table
+       semantics a screen reader would have used the header row for, and every
+       cell now carries its own label via data-label + ::before. */
+    .ad-table--stack thead { display: none; }
+    .ad-table--stack, .ad-table--stack tbody, .ad-table--stack tr, .ad-table--stack td { display: block; width: auto; }
+    .ad-table--stack tr {
+        border: 1px solid var(--ad-border);
+        border-radius: var(--ad-radius);
+        padding: var(--ad-2) var(--ad-3);
+        margin-bottom: var(--ad-3);
+        background: var(--ad-surface);
+    }
+    .ad-table--stack tr:hover { background: var(--ad-surface); }
+    .ad-table--stack td {
+        border-bottom: 0;
+        padding: var(--ad-2) 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--ad-3);
+        text-align: right;
+        /* The label below is flex:none so it stays legible, which means it will
+           not give up a pixel when the value beside it is long — the row then
+           overflowed the card by a little rather than a lot: measured 15px on
+           coupons, 20px on deals, 23px on flash sales. Wrapping lets the value
+           drop to a second line instead, and min-width:0 lets a long value
+           shrink rather than setting the row's floor. */
+        flex-wrap: wrap;
+        min-width: 0;
+    }
+    /* Order numbers, coupon codes, slugs and e-mail addresses are single
+       unbreakable tokens; without this they set an unshrinkable minimum. */
+    .ad-table--stack td > * { min-width: 0; overflow-wrap: anywhere; }
+    .ad-table--stack td + td { border-top: 1px dashed var(--ad-border); }
+    .ad-table--stack td[data-label]::before {
+        content: attr(data-label);
+        flex: none;
+        text-align: left;
+        font-size: var(--ad-fs-caption);
+        font-weight: 800;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+        color: var(--ad-muted);
+    }
+    /* Actions and the row checkbox read better full width at the card's foot. */
+    .ad-table--stack .ad-table__actions { justify-content: flex-end; }
+    .ad-table--stack .ad-table__check { justify-content: flex-start; }
+    .ad-table--stack .ad-table__num { text-align: right; }
+}
+.ad-table__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ad-table__actions { text-align: right; white-space: nowrap; }
+.ad-table__actions > * { display: inline-block; vertical-align: middle; }
+.ad-table__check { width: 38px; }
+.ad-table input[type="checkbox"] { accent-color: var(--ad-primary); width: 16px; height: 16px; cursor: pointer; }
+
+.ad-thumb {
+    width: 42px; height: 42px;
+    border-radius: 8px;
+    object-fit: contain;
+    background: var(--ad-bg);
+    border: 1px solid var(--ad-border);
+    padding: 3px;
+    flex: none;
+}
+.ad-cellflex { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ad-cellflex__name { font-weight: 600; line-height: 1.35; }
+.ad-cellflex__meta { font-size: 11.5px; color: var(--ad-muted); }
+
+.ad-sort { display: inline-flex; align-items: center; gap: 4px; color: inherit; }
+.ad-sort:hover, .ad-sort.is-active { color: var(--ad-primary); }
+
+.ad-muted { color: var(--ad-muted); }
+.ad-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+.ad-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: var(--ad-fs-body);
+    font-weight: 600;
+    line-height: 1;
+    /* 38px tall: dense enough for a toolbar, still a comfortable pointer
+       target. --sm drops to 32px, --icon is square. */
+    padding: 11px var(--ad-4);
+    min-height: 38px;
+    border-radius: var(--ad-radius-sm);
+    border: 1px solid var(--ad-border-strong);
+    background: var(--ad-surface);
+    color: var(--ad-text);
+    cursor: pointer;
+    transition: background var(--ad-dur) var(--ad-ease),
+                border-color var(--ad-dur) var(--ad-ease),
+                color var(--ad-dur) var(--ad-ease);
+    white-space: nowrap;
+}
+.ad-btn:hover { background: var(--ad-bg); border-color: var(--ad-faint); color: var(--ad-text); }
+.ad-btn:disabled, .ad-btn.is-loading { opacity: .55; cursor: not-allowed; pointer-events: none; }
+/* Filled variants take the -ink shade: white on the raw brand tone is 3.48:1,
+   which fails AA for 13px button text. */
+.ad-btn--primary { background: var(--ad-primary-ink); border-color: var(--ad-primary-ink); color: #fff; }
+.ad-btn--primary:hover { background: color-mix(in srgb, var(--ad-primary) 66%, #000); border-color: transparent; color: #fff; }
+.ad-btn--navy { background: var(--ad-navy); border-color: var(--ad-navy); color: #fff; }
+.ad-btn--navy:hover { background: var(--ad-sidebar-hover); color: #fff; }
+.ad-btn--danger { background: var(--ad-danger); border-color: var(--ad-danger); color: #fff; }
+.ad-btn--danger:hover { background: var(--ad-danger-ink); border-color: var(--ad-danger-ink); color: #fff; }
+.ad-btn--danger-ghost { color: var(--ad-danger-ink); border-color: transparent; background: none; }
+.ad-btn--danger-ghost:hover { background: var(--ad-danger-soft); border-color: var(--ad-danger-soft); color: var(--ad-danger-ink); }
+.ad-btn--success { background: var(--ad-success-ink); border-color: var(--ad-success-ink); color: #fff; }
+.ad-btn--success:hover { background: #126A33; color: #fff; }
+.ad-btn--sm { padding: 8px var(--ad-3); min-height: 32px; font-size: var(--ad-fs-small); }
+.ad-btn--icon { padding: 0; width: 38px; height: 38px; min-height: 38px; }
+.ad-btn--block { width: 100%; }
+/* Every button can show a spinner without markup changes per module. */
+.ad-btn .ad-spinner { display: none; }
+.ad-btn.is-loading .ad-spinner { display: inline-block; }
+.ad-spinner {
+    width: 14px; height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: ad-spin .6s linear infinite;
+    flex: none;
+}
+@keyframes ad-spin { to { transform: rotate(360deg); } }
+.ad-inline-form { display: inline-block; }
+
+.ad-btngroup { display: inline-flex; border: 1px solid var(--ad-border); border-radius: 9px; overflow: hidden; background: #fff; }
+.ad-btngroup > * { border: 0; border-radius: 0; border-right: 1px solid var(--ad-border); }
+.ad-btngroup > *:last-child { border-right: 0; }
+
+/* --------------------------------------------------------------------------
+   Filters toolbar
+   -------------------------------------------------------------------------- */
+.ad-filters {
+    display: flex;
+    gap: 9px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--ad-border);
+    background: var(--ad-surface);
+}
+.ad-filters .sik-input,
+.ad-filters .sik-select { width: auto; min-width: 150px; padding: 8px 12px; font-size: 13px; }
+.ad-filters .sik-select { padding-right: 34px; }
+.ad-search { position: relative; flex: 1; min-width: 190px; max-width: 340px; }
+.ad-search input { width: 100%; padding-left: 34px !important; }
+.ad-search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ad-muted); }
+
+.ad-tabs { display: flex; gap: 3px; overflow-x: auto; border-bottom: 1px solid var(--ad-border); background: var(--ad-surface); }
+.ad-tabs::-webkit-scrollbar { display: none; }
+
+/* On a phone the strip wraps instead of scrolling.
+   The scrollbar is hidden above, so a strip wider than the screen gave no hint
+   that the tabs past the edge existed — measured on coupons at 375px, 410px of
+   tabs in a 331px rail, and on reviews 447px in 346px. Hidden overflow plus no
+   affordance is how a whole filter tab goes unnoticed. Wrapping keeps every tab
+   on screen and costs one extra line. overflow-x: visible so the wrapped rows
+   are not clipped by the scroller the desktop rule sets up. */
+@media (max-width: 767px) {
+    .ad-tabs { flex-wrap: wrap; overflow-x: visible; }
+}
+.ad-tab {
+    padding: 12px 16px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ad-muted);
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.ad-tab:hover { color: var(--ad-text); }
+.ad-tab.is-active { color: var(--ad-primary); border-bottom-color: var(--ad-primary); }
+.ad-tab__count {
+    background: var(--ad-bg);
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.ad-tab.is-active .ad-tab__count { background: var(--ad-primary-soft); color: var(--ad-primary-ink); }
+
+/* Bulk-action bar that slides in when rows are selected. */
+.ad-bulk {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 18px;
+    background: var(--ad-warning-soft);
+    border-bottom: 1px solid color-mix(in srgb, var(--ad-warning) 35%, #fff);
+    font-size: var(--ad-fs-body);
+    flex-wrap: wrap;
+}
+.ad-bulk.is-open { display: flex; }
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+.ad-form { display: grid; gap: 16px; }
+.ad-row { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 700px) {
+    .ad-row--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ad-row--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.ad-field { display: block; }
+/* app.css declares [hidden]{display:none} at the top of the file; admin.css is
+   loaded after it and the two selectors have the SAME specificity, so the
+   `display:block` above silently won and every `<div class="ad-field" hidden>`
+   in the admin rendered anyway — the conditional link-target, popup-type and
+   floating-action blocks all showed at once, several of them marked required.
+   Restated here, after the rule that beat it, so `hidden` means hidden on every
+   admin screen instead of each one shipping its own page-level patch. */
+.ad-field[hidden] { display: none; }
+.ad-field > .sik-label { margin-bottom: 6px; }
+
+.ad-fieldset {
+    border: 1px solid var(--ad-border);
+    border-radius: var(--ad-radius);
+    padding: 16px;
+}
+.ad-fieldset legend {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--ad-muted);
+    padding-inline: 7px;
+}
+
+.ad-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
+.ad-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.ad-switch__track {
+    width: 40px; height: 22px;
+    border-radius: 999px;
+    background: #CBD5E1;
+    position: relative;
+    transition: background .18s ease;
+    flex: none;
+}
+.ad-switch__track::after {
+    content: "";
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .18s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+.ad-switch input:checked + .ad-switch__track { background: var(--ad-primary); }
+.ad-switch input:checked + .ad-switch__track::after { transform: translateX(18px); }
+.ad-switch input:focus-visible + .ad-switch__track { outline: 2px solid var(--ad-primary); outline-offset: 2px; }
+
+.ad-drop {
+    border: 2px dashed var(--ad-border);
+    border-radius: var(--ad-radius);
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .16s ease;
+    background: var(--ad-bg);
+}
+.ad-drop:hover, .ad-drop.is-drag { border-color: var(--ad-primary); background: #FFF7F4; }
+.ad-drop input[type="file"] { display: none; }
+
+.ad-preview { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.ad-preview__item {
+    position: relative;
+    width: 92px; height: 92px;
+    border: 1px solid var(--ad-border);
+    border-radius: 9px;
+    overflow: hidden;
+    background: #fff;
+}
+.ad-preview__item img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
+.ad-preview__remove {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--ad-danger);
+    color: #fff;
+    border: 0;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
+}
+
+.ad-repeater__row {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 1fr;
+    padding: 12px;
+    border: 1px solid var(--ad-border);
+    border-radius: 9px;
+    margin-bottom: 8px;
+    background: var(--ad-bg);
+    position: relative;
+}
+@media (min-width: 700px) { .ad-repeater__row { grid-template-columns: 1fr 1fr auto; align-items: end; } }
+
+.ad-colorfield { display: flex; align-items: center; gap: 8px; }
+.ad-colorfield input[type="color"] {
+    width: 42px; height: 40px;
+    border: 1px solid var(--ad-border);
+    border-radius: 8px;
+    padding: 3px;
+    background: #fff;
+    cursor: pointer;
+    flex: none;
+}
+
+/* --------------------------------------------------------------------------
+   Chart & progress
+   -------------------------------------------------------------------------- */
+.ad-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 16px 4px 0;
+    overflow-x: auto;
+}
+.ad-chart__col {
+    flex: 1;
+    min-width: 26px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    height: 100%;
+    gap: 5px;
+}
+.ad-chart__bar {
+    width: 100%;
+    max-width: 42px;
+    border-radius: 6px 6px 2px 2px;
+    /* The dashboard chart follows the admin colour like everything else; a
+       frozen orange gradient here was the last thing ignoring the setting. */
+    background: linear-gradient(180deg, var(--ad-primary), color-mix(in srgb, var(--ad-primary) 58%, #fff));
+    transition: opacity .16s ease;
+    min-height: 3px;
+}
+.ad-chart__col:hover .ad-chart__bar { opacity: .78; }
+.ad-chart__label { font-size: 10.5px; color: var(--ad-muted); white-space: nowrap; }
+.ad-chart__value { font-size: 10px; font-weight: 700; color: var(--ad-muted); white-space: nowrap; }
+
+/* Phones: the chart fits instead of scrolling.
+   ---------------------------------------------------------------------------
+   The 26px column floor plus a 6px gap means a 30-day chart asks for ~954px;
+   in a 331px card that scrolled 671px sideways on Reports and 159px on the
+   dashboard. Dropping the floor lets flex:1 divide whatever width there is, so
+   the chart always fits by construction however many points it has.
+
+   The per-bar label and value go with it, and that is not information lost by
+   sleight of hand: at 9px per column a date and a figure cannot be rendered
+   legibly anyway — they were only ever readable because the chart was wider
+   than the screen and most of it was off it. The bars keep the shape of the
+   trend, which is what this component is for at this size, and the same figures
+   are in the table beneath it. */
+@media (max-width: 767px) {
+    .ad-chart { gap: 2px; overflow-x: visible; }
+    .ad-chart__col { min-width: 0; }
+    .ad-chart__bar { border-radius: 3px 3px 1px 1px; }
+    .ad-chart__label,
+    .ad-chart__value { display: none; }
+}
+
+.ad-progressrow { margin-bottom: 13px; }
+.ad-progressrow:last-child { margin-bottom: 0; }
+.ad-progressrow__head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    margin-bottom: 5px;
+}
+.ad-progressrow__head a:hover { color: var(--ad-primary); }
+
+/* --------------------------------------------------------------------------
+   Empty state
+   -------------------------------------------------------------------------- */
+.ad-empty { text-align: center; padding: 52px 20px; }
+.ad-empty__icon {
+    width: 66px; height: 66px;
+    border-radius: 50%;
+    background: var(--ad-bg);
+    color: var(--ad-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 15px;
+}
+.ad-empty__title { font-size: 16px; font-weight: 700; margin-bottom: 5px; }
+.ad-empty__text { font-size: 13.5px; color: var(--ad-muted); max-width: 400px; margin: 0 auto 18px; line-height: 1.6; }
+
+/* --------------------------------------------------------------------------
+   Modal
+   -------------------------------------------------------------------------- */
+.ad-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+.ad-modal.is-open { display: flex; }
+.ad-modal__backdrop { position: absolute; inset: 0; background: rgba(16, 35, 61, .55); }
+.ad-modal__panel {
+    position: relative;
+    background: #fff;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 620px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--ad-shadow-lg);
+}
+.ad-modal__panel--lg { max-width: 900px; }
+.ad-modal__panel--sm { max-width: 420px; }
+.ad-modal__head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--ad-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 2;
+}
+.ad-modal__body { padding: 20px; }
+.ad-modal__foot {
+    padding: 14px 20px;
+    border-top: 1px solid var(--ad-border);
+    background: var(--ad-bg);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    position: sticky;
+    bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Login screen
+   -------------------------------------------------------------------------- */
+.ad-login {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+        /* Same frozen orange as the sub-link above; the sign-in page is the
+           first thing anyone sees, so it should carry the store colour. */
+        radial-gradient(1100px 460px at 15% -10%, color-mix(in srgb, var(--ad-primary) 18%, transparent), transparent 60%),
+        var(--ad-sidebar);
+}
+.ad-login__card {
+    width: 100%;
+    max-width: 420px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, .3);
+    padding: 34px 30px;
+}
+.ad-login__logo { display: block; height: 42px; margin: 0 auto 22px; }
+
+/* --------------------------------------------------------------------------
+   Sidebar overlay for mobile
+   -------------------------------------------------------------------------- */
+.ad-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 35, 61, .5);
+    z-index: 55;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .22s ease, visibility .22s;
+}
+.ad-overlay.is-open { opacity: 1; visibility: visible; }
+@media (min-width: 1024px) { .ad-overlay { display: none; } }
+
+/* --------------------------------------------------------------------------
+   Print
+   -------------------------------------------------------------------------- */
+@media print {
+    .ad-sidebar, .ad-topbar, .ad-page__actions, .ad-filters, .ad-btn, .no-print { display: none !important; }
+    .ad-main { margin-left: 0 !important; }
+    .ad-content { padding: 0; }
+    .ad-card { box-shadow: none; border-color: #ddd; }
+    body.ad-body { background: #fff; }
+}
+
+/* ===========================================================================
+   SEO editor
+   One component, used by every record that can be indexed. The previews are
+   deliberately styled to resemble a real search result and a real social card,
+   because an abstract "preview" that looks like the admin panel does not tell
+   an editor whether their title is going to be truncated.
+   =========================================================================== */
+.sik-seo { --seo-ok: #16A34A; --seo-warn: #B45309; --seo-bad: #B91C1C; }
+
+.sik-seo__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
+@media (min-width: 1100px) {
+    /* The preview column is fixed so it stays readable; the fields take the
+       rest. Below this the preview drops underneath rather than being squeezed. */
+    .sik-seo__grid { grid-template-columns: minmax(0, 1fr) 330px; gap: var(--sp-7); }
+}
+
+.sik-seo__fields { display: grid; gap: var(--sp-4); min-width: 0; }
+.sik-seo__row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+@media (min-width: 720px) {
+    .sik-seo__row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+
+.sik-seo__more { border: 1px solid var(--sik-border); border-radius: var(--sik-radius-sm); padding: var(--sp-3); }
+.sik-seo__more > summary {
+    cursor: pointer; font-size: var(--fs-sm); font-weight: var(--fw-semibold);
+    color: var(--sik-navy); min-height: var(--tap); display: flex; align-items: center;
+}
+.sik-seo__more[open] > summary { margin-bottom: var(--sp-3); }
+.sik-seo__more .sik-field + .sik-field { margin-top: var(--sp-3); }
+.sik-seo__code { font-family: ui-monospace, Consolas, monospace; font-size: var(--fs-xs); }
+
+.sik-seo__side { display: grid; gap: var(--sp-2); align-content: start; min-width: 0; }
+.sik-seo__legend {
+    font-size: var(--fs-2xs); font-weight: var(--fw-bold); letter-spacing: var(--ls-wider);
+    text-transform: uppercase; color: var(--sik-muted-ink); margin-top: var(--sp-3);
+}
+.sik-seo__legend:first-child { margin-top: 0; }
+
+/* Google result */
+.sik-seo__serp {
+    display: grid; gap: 2px; padding: var(--sp-3);
+    border: 1px solid var(--sik-border); border-radius: var(--sik-radius-sm); background: #fff;
+}
+.sik-seo__serp-url { font-size: var(--fs-xs); color: #202124; overflow-wrap: anywhere; }
+.sik-seo__serp-title {
+    font-size: 18px; line-height: 1.3; color: #1a0dab;
+    overflow-wrap: anywhere;
+}
+.sik-seo__serp-desc { font-size: var(--fs-sm); line-height: var(--lh-normal); color: #4d5156; overflow-wrap: anywhere; }
+
+/* Social card */
+.sik-seo__card {
+    border: 1px solid var(--sik-border); border-radius: var(--sik-radius-sm);
+    overflow: hidden; background: #fff;
+}
+.sik-seo__card-img { aspect-ratio: 1.91 / 1; background: var(--sik-soft); }
+.sik-seo__card-body { display: grid; gap: 2px; padding: var(--sp-3); }
+.sik-seo__card-site {
+    font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: var(--ls-wide);
+    color: var(--sik-muted-ink);
+}
+.sik-seo__card-title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--sik-navy); overflow-wrap: anywhere; }
+.sik-seo__card-desc { font-size: var(--fs-xs); color: var(--sik-muted-ink); overflow-wrap: anywhere; }
+
+/* Checklist */
+.sik-seo__checks { display: grid; gap: var(--sp-1); list-style: none; margin: 0; padding: 0; }
+.sik-seo__check {
+    position: relative; padding-left: var(--sp-6);
+    font-size: var(--fs-xs); line-height: var(--lh-normal); color: var(--sik-text);
+}
+.sik-seo__check::before {
+    position: absolute; left: 0; top: 0;
+    width: var(--sp-5); text-align: center; font-weight: var(--fw-bold);
+}
+.sik-seo__check.is-ok::before   { content: "\2713"; color: var(--seo-ok); }
+.sik-seo__check.is-todo::before { content: "\2022"; color: var(--seo-warn); }
+
+/* Counters colour at the real truncation points. */
+[data-seo-count].is-warn { color: var(--seo-warn); font-weight: var(--fw-semibold); }
+[data-seo-count].is-over { color: var(--seo-bad);  font-weight: var(--fw-bold); }
+[data-seo-schema-status].is-ok  { color: var(--seo-ok); }
+[data-seo-schema-status].is-bad { color: var(--seo-bad); }
+
+/* Checklist used by the SEO health report. Each line states a fact the page
+   verified, so the marker is a result, not decoration. */
+/* A checkbox with a title and a line of help under it. The admin had only the
+   switch and the bare table checkbox, neither of which carries an explanation,
+   so any multi-choice setting had to invent its own layout. */
+.ad-check {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--ad-border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color .15s ease, background-color .15s ease;
+}
+.ad-check:hover { border-color: var(--ad-border-strong); background: var(--ad-surface-alt); }
+.ad-check input[type="checkbox"] {
+    accent-color: var(--ad-primary);
+    width: 16px; height: 16px;
+    margin-top: 2px;
+    cursor: pointer;
+}
+/* The whole row reads as selected, not just the box. */
+.ad-check:has(input:checked) { border-color: var(--ad-primary); background: var(--ad-primary-soft); }
+.ad-check strong { font-size: 13px; font-weight: 600; color: var(--ad-text); }
+
+.ad-checklist { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.ad-checklist > li {
+    position: relative; padding-left: 24px;
+    font-size: 13px; line-height: 1.5; color: #111827;
+}
+.ad-checklist > li::before {
+    position: absolute; left: 0; top: 0; width: 18px; text-align: center; font-weight: 700;
+}
+.ad-checklist > li.is-ok::before   { content: "\2713"; color: #16A34A; }
+.ad-checklist > li.is-bad::before  { content: "\2715"; color: #B91C1C; }
+.ad-checklist > li.is-todo::before { content: "\2022"; color: #B45309; }
+
+/* Horizontal scroll for wide tables instead of pushing the page out. */
+.ad-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ===========================================================================
+   40. Touch and narrow viewports
+   ---------------------------------------------------------------------------
+   Measured, not guessed. A headless sweep of 89 admin pages at 390px found the
+   layout shell sound - two pages with unreachable content, no page-level
+   overflow anywhere else - but 626 controls below the 24px minimum and a
+   closed drawer that never leaves the tab order. The fixes therefore belong
+   here, in one place, rather than spread across 206 admin PHP files.
+
+   `--tap` is 44px and comes from app.css, which the admin also loads.
+   =========================================================================== */
+
+/* --- The off-canvas drawer must actually be gone when it is closed --------
+   It was parked off-screen with a transform alone, which hides it from the eye
+   and from nobody else: ~57 nav links stayed in the tab order and in the
+   accessibility tree ahead of every phone page, so the first Tab on any admin
+   screen walked into an invisible menu. `visibility` is animatable and the
+   transition already names a duration, so the panel still slides. */
+@media (max-width: 1023px) {
+    .ad-sidebar {
+        visibility: hidden;
+        transition: transform .26s ease, visibility 0s linear .26s;
+    }
+    .ad-sidebar.is-open {
+        visibility: visible;
+        transition: transform .26s ease, visibility 0s;
+    }
+}
+
+/* --- A zero-width extender, not a bigger control -------------------------
+   Growing a 19px breadcrumb link to 44px would wreck every row it sits in. The
+   storefront already solved this: an absolutely positioned ::after centred on
+   the control claims the touch area without occupying any layout space. Same
+   trick, same token. */
+/* Both conditions, because a phone-width window on a laptop deserves the same
+   targets as a phone - and because a headless browser reports pointer: fine,
+   so a coarse-only rule could never be verified by measurement. */
+@media (pointer: coarse), (max-width: 767px) {
+    .ad-crumb a,
+    .ad-sidebar__foot a,
+    .ad-iconbtn,
+    .ad-topbar__action {
+        position: relative;
+    }
+    .ad-crumb a::after,
+    .ad-sidebar__foot a::after,
+    .ad-iconbtn::after,
+    .ad-topbar__action::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 100%;
+        height: 100%;
+        min-width: var(--tap, 44px);
+        min-height: var(--tap, 44px);
+        transform: translate(-50%, -50%);
+        /* Decoration only: it must never paint over the thing it enlarges. */
+        pointer-events: auto;
+    }
+}
+
+/* --- Switches and checkboxes are controls, not decoration ----------------
+   The switch was a 40x22 target and the row checkbox 16x16 - both below the
+   24px floor, and the switch is the primary control on every builder row. */
+/* Both conditions, because a phone-width window on a laptop deserves the same
+   targets as a phone - and because a headless browser reports pointer: fine,
+   so a coarse-only rule could never be verified by measurement. */
+@media (pointer: coarse), (max-width: 767px) {
+    .ad-switch { min-height: var(--tap, 44px); }
+    .ad-switch__track { width: 48px; height: 28px; }
+    .ad-switch__track::after { width: 22px; height: 22px; }
+    .ad-switch input:checked + .ad-switch__track::after { transform: translateX(20px); }
+
+    .ad-table input[type="checkbox"],
+    .ad-check input[type="checkbox"] { width: 24px; height: 24px; }
+    .ad-table__check { width: var(--tap, 44px); }
+}
+
+/* --- iOS zooms the page when a focused field is under 16px ---------------
+   app.css sets 16px deliberately for exactly this reason; the admin's denser
+   13px filter fields re-broke it, so every search or filter tap on an iPhone
+   zoomed the layout and left it zoomed. Density is worth keeping on a mouse,
+   so the override is scoped to the width where the zoom actually happens. */
+@media (max-width: 767px) {
+    .ad-filters .sik-input,
+    .ad-filters .sik-select,
+    .ad-search input,
+    .ad-codearea { font-size: 16px; }
+}
+
+/* --- A button group that cannot be reached is not a button group ---------
+   `.ad-btngroup` is an inline-flex with `overflow: hidden`, so on Homepage the
+   third link ("Newsletter") was clipped 66px past the viewport and, with
+   body{overflow-x:clip}, could not be scrolled to at all. Wrapping keeps the
+   grouped look on a wide screen and makes every button reachable on a narrow
+   one. */
+@media (max-width: 767px) {
+    .ad-btngroup {
+        display: flex;
+        flex-wrap: wrap;
+        overflow: visible;
+        border-radius: 9px;
+    }
+    .ad-btngroup > * { flex: 1 1 auto; justify-content: center; }
+    .ad-btngroup > *:not(:last-child) { border-bottom: 1px solid var(--ad-border); }
+}
+
+/* --- Big figures need room before they need company ----------------------
+   A 4-up KPI grid gives each tile ~83px at 390px, which a 28px numeral does
+   not fit; the spill was clipped rather than scrollable. Two columns hold a
+   lakh-scale figure, one column holds anything. */
+@media (max-width: 640px) {
+    .ad-grid--4,
+    .ad-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 400px) {
+    .ad-grid--4,
+    .ad-grid--3 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- The bulk bar has to stay with the selection -------------------------
+   In the stacked card view the toolbar sat above a long list, so choosing
+   anything scrolled Apply off the top of the screen. */
+@media (max-width: 767px) {
+    .ad-bulk.is-open {
+        position: sticky;
+        top: var(--ad-topbar-h, 62px);
+        z-index: 20;
+        box-shadow: var(--ad-shadow-lg);
+    }
+}
+
+/* --- Modals are measured against the visible viewport --------------------
+   A phone's collapsing browser toolbar is inside `vh` but outside `dvh`, so a
+   vh-capped modal put its sticky Save/Cancel footer behind the toolbar, where
+   it could not be tapped. The vh rules above remain as the fallback for
+   browsers without dvh. */
+@supports (height: 100dvh) {
+    .ad-modal { height: 100dvh; }
+    .ad-modal__panel { max-height: calc(100dvh - 32px); }
+}
+
+/* --- The collapsed rail is a mouse affordance ----------------------------
+   Its icons are labelled only by :hover tooltips, so on a touch tablet one tap
+   on the hamburger replaced thirty labelled links with thirty anonymous
+   glyphs and no way to read them. Gate the collapse on a pointer that can
+   actually hover; touch tablets keep the labelled sidebar. */
+@media (min-width: 1024px) and (hover: none) {
+    .ad-shell.is-collapsed .ad-sidebar { width: var(--ad-sidebar-w); }
+    .ad-shell.is-collapsed .ad-main { margin-left: var(--ad-sidebar-w); }
+    .ad-shell.is-collapsed .ad-nav__label,
+    .ad-shell.is-collapsed .ad-sidebar__section { display: block; }
+    .ad-shell.is-collapsed .ad-sidebar__logo-icon { display: none; }
+}
+
+/* --- The HTML body editor ------------------------------------------------
+   Was styled inline, where a font-size outranks every media query and so kept
+   re-triggering the iOS zoom. The 16px phone override lives in the block above. */
+.ad-codearea {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+/* --- Nothing below 11px on a phone --------------------------------------- */
+@media (max-width: 767px) {
+    .ad-nav__badge { font-size: 11px; }
+}
+
+/* --- The bar that carries what the card view hides ------------------------
+   addStackControls() in admin.js builds this above a stacked table, holding
+   the sort control and the select-all box that live in the hidden <thead>. It
+   exists only while the table is in card form. */
+.ad-stackbar { display: none; }
+@media (max-width: 767px) {
+    .ad-stackbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        border: 1px solid var(--ad-border);
+        border-bottom: 0;
+        border-radius: 10px 10px 0 0;
+        background: var(--ad-surface-alt, var(--ad-bg));
+    }
+    .ad-stackbar__all {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: var(--tap, 44px);
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+    .ad-stackbar__all input { width: 24px; height: 24px; accent-color: var(--ad-primary); }
+    .ad-stackbar__sort { margin-left: auto; font-size: 16px; min-width: 150px; }
+}
+
+/* --- Filters stack on a phone instead of straggling ----------------------
+   The toolbar is a wrap-flex whose controls carry `min-width: 150px`, so the
+   custom date-range pair measured 356px as one unwrappable unit and hung 14px
+   past a 375px viewport - unreachable, because body is overflow-x: clip.
+   Raising the filter font to 16px for the iOS zoom fix is what tipped it over,
+   so the two belong together. Full-width rows are the right phone pattern for
+   a filter bar anyway. */
+@media (max-width: 767px) {
+    .ad-filters { padding: 13px 14px; }
+    .ad-filters > * { flex: 1 1 100%; min-width: 0; }
+    .ad-filters .sik-input,
+    .ad-filters .sik-select { width: 100%; min-width: 0; }
+    /* The date pair keeps its own row but shares it evenly. */
+    .ad-filters [data-range-custom] { display: flex; width: 100%; }
+    .ad-filters [data-range-custom] .sik-input { flex: 1 1 0; min-width: 0; }
+    .ad-search { flex: 1 1 100%; max-width: none; }
+}
+
+/* --- Links inside a data row are sized, not extended ---------------------
+   A 44px extender centred on a 19px link inside a ~40px row overlaps the
+   rows above and below, so adjacent links steal each other's taps - a worse
+   defect than the small target it was meant to cure. Padding grows the real
+   box instead, which cannot overlap anything, and 32px clears the 24px
+   WCAG 2.2 minimum with room to spare. The 44px extender stays for the
+   standalone controls above, where there is nothing adjacent to collide with. */
+@media (pointer: coarse), (max-width: 767px) {
+    .ad-table td a,
+    .ad-cellflex__name a,
+    a.ad-mono {
+        display: inline-block;
+        min-height: 32px;
+        padding-block: 6px;
+        vertical-align: middle;
+    }
+}
+
+/* ===========================================================================
+   41. Homepage designer - three panes
+   ---------------------------------------------------------------------------
+   Canvas (live storefront preview) | section list | inspector.
+
+   Three panes do not fit a phone, and shrinking them until they do gives three
+   unusable columns instead of one usable one. So below 1100px the panes become
+   a single column driven by the segmented switch at the top, and only one is
+   mounted at a time. The switch is hidden on a wide screen, where all three
+   are visible at once and switching would mean nothing.
+   =========================================================================== */
+.ad-designer {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) 330px 370px;
+    align-items: start;
+    /* The panes scroll inside themselves, so the page itself does not grow to
+       the height of the tallest one and leave the other two stranded. */
+    height: calc(100vh - var(--ad-topbar-h, 62px) - 44px);
+}
+@supports (height: 100dvh) {
+    .ad-designer { height: calc(100dvh - var(--ad-topbar-h, 62px) - 44px); }
+}
+
+.ad-designer__pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    border: 1px solid var(--ad-border);
+    border-radius: 12px;
+    background: var(--ad-surface);
+    overflow: hidden;
+}
+.ad-designer__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    padding: 11px 13px;
+    border-bottom: 1px solid var(--ad-border);
+    background: var(--ad-surface-alt, var(--ad-bg));
+}
+.ad-designer__title { font-size: 13.5px; font-weight: 700; color: var(--ad-text); }
+.ad-designer__count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--ad-primary-soft, #FDE7F1);
+    color: var(--ad-primary);
+    font-size: 11.5px;
+    font-weight: 700;
+}
+.ad-designer__body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.ad-designer__body--flush { padding: 0; }
+
+/* --- The canvas ---------------------------------------------------------- */
+.ad-canvas {
+    display: flex;
+    justify-content: center;
+    background:
+        repeating-conic-gradient(#EEF1F6 0% 25%, #F7F9FC 0% 50%) 0 0 / 18px 18px;
+    padding: 14px;
+}
+.ad-canvas__frame {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: 420px;
+    border: 0;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: var(--ad-shadow-lg);
+    transition: max-width .24s ease;
+}
+/* Device widths are real CSS pixels, so the storefront's own media queries do
+   the simulating - there is no second set of breakpoints to keep in step. */
+.ad-canvas[data-device="phone"]  .ad-canvas__frame { max-width: 390px; }
+.ad-canvas[data-device="tablet"] .ad-canvas__frame { max-width: 820px; }
+
+/* --- The section list ---------------------------------------------------- */
+.ad-seclist { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ad-sec {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 10px;
+    border: 1px solid var(--ad-border);
+    border-radius: 10px;
+    background: #fff;
+    /* Only the transform is animated; animating the box would relayout the
+       whole list on every pointer move during a drag. */
+    transition: box-shadow .16s ease, border-color .16s ease;
+}
+.ad-sec.is-selected { border-color: var(--ad-primary); box-shadow: 0 0 0 2px var(--ad-primary-soft, #FDE7F1); }
+.ad-sec.is-off .ad-sec__name { color: var(--ad-muted); }
+.ad-sec.is-dragging {
+    /* The row must not answer elementFromPoint while it is the thing being
+       carried, or the drop target would always be itself. Pointer capture on
+       the grip keeps delivering the move events regardless. */
+    pointer-events: none;
+    opacity: .9;
+    box-shadow: var(--ad-shadow-lg);
+    border-color: var(--ad-primary);
+    /* Lifted out of the flow while the pointer carries it. */
+    position: relative;
+    z-index: 5;
+}
+/* Where the dragged row will land. */
+.ad-sec-gap {
+    height: 3px;
+    border-radius: 999px;
+    background: var(--ad-primary);
+    margin: -5px 0;
+}
+
+.ad-sec__grip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    color: var(--ad-muted);
+    cursor: grab;
+    border: 0;
+    background: none;
+    padding: 0;
+    /* Claims the pointer for dragging instead of the page for scrolling - and
+       unlike the old menu grip, there IS a touch drag here to protect. */
+    touch-action: none;
+}
+.ad-sec__grip:active { cursor: grabbing; }
+.ad-sec__body { min-width: 0; text-align: left; border: 0; background: none; padding: 0; cursor: pointer; }
+.ad-sec__name {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 650;
+    color: var(--ad-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ad-sec__type {
+    display: inline-block;
+    margin-top: 3px;
+    padding: 1px 7px;
+    border-radius: 6px;
+    background: var(--ad-bg);
+    border: 1px solid var(--ad-border);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ad-muted);
+}
+.ad-sec__side { display: flex; align-items: center; gap: 6px; }
+/* The keyboard and screen-reader path to reordering. Pointer drag is the fast
+   way, not the only way. */
+.ad-sec__move {
+    display: grid;
+    gap: 2px;
+}
+.ad-sec__move button {
+    width: 24px;
+    height: 19px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--ad-border);
+    border-radius: 5px;
+    background: #fff;
+    color: var(--ad-muted);
+    cursor: pointer;
+}
+.ad-sec__move button:disabled { opacity: .35; cursor: default; }
+
+/* --- The inspector ------------------------------------------------------- */
+.ad-insp__empty { padding: 34px 18px; text-align: center; color: var(--ad-muted); font-size: 13.5px; }
+.ad-insp__tabs { display: flex; gap: 3px; flex: none; border-bottom: 1px solid var(--ad-border); }
+.ad-insp__tab {
+    flex: 1;
+    padding: 10px 6px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    font-size: 12.5px;
+    font-weight: 650;
+    color: var(--ad-muted);
+    cursor: pointer;
+}
+.ad-insp__tab.is-active { color: var(--ad-primary); border-bottom-color: var(--ad-primary); }
+.ad-insp__panel[hidden] { display: none; }
+
+/* --- One pane at a time below 1100px ------------------------------------- */
+.ad-designer__switch { display: none; }
+@media (max-width: 1099px) {
+    .ad-designer {
+        grid-template-columns: minmax(0, 1fr);
+        height: auto;
+    }
+    .ad-designer__pane { height: auto; max-height: calc(100vh - 210px); }
+    .ad-designer__switch {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        margin-bottom: 12px;
+        border: 1px solid var(--ad-border);
+        border-radius: 11px;
+        background: var(--ad-surface);
+    }
+    .ad-designer__switch button {
+        flex: 1;
+        min-height: var(--tap, 44px);
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        font-size: 13.5px;
+        font-weight: 650;
+        color: var(--ad-muted);
+        cursor: pointer;
+    }
+    .ad-designer__switch button.is-active { background: var(--ad-primary); color: #fff; }
+    /* Only the chosen pane is mounted, so the other two cannot steal taps or
+       stretch the page behind it. */
+    .ad-designer__pane[data-pane]:not(.is-shown) { display: none; }
+}
+
+/* --- The collapsed rail expands to be read ---------------------------------
+   The tooltip this rail relied on was never visible. `.ad-sidebar__nav` sets
+   `overflow-y: auto`, and per CSS Overflow 3 that forces the other axis to
+   `auto` as well - so the nav is a scroll container in BOTH directions, and a
+   tooltip positioned at `left: calc(100% + 10px)` starts exactly at the rail's
+   right edge, entirely outside the scrollport. It was clipped, never painted,
+   on hover and on keyboard focus alike. (`overflow-clip-margin` does not help:
+   beside a scrolling axis the clip axis computes to `hidden` and the margin is
+   ignored.)
+
+   So instead of trying to paint outside the rail, the rail widens. It overlays
+   the page rather than reflowing it - `.ad-main`'s margin is untouched - and
+   `:focus-within` means the keyboard gets the same reveal as the mouse. This
+   also returns the 43 sub-links the rail otherwise hides: collapsed, it could
+   reach only 12 of 55 destinations.
+
+   Gated on `hover: hover` because a touch tablet never enters this state and
+   would be left with the unreadable rail; those devices keep the full sidebar
+   via the rule above. */
+@media (min-width: 1024px) and (hover: hover) {
+    body.ad-collapsed .ad-sidebar:hover,
+    body.ad-collapsed .ad-sidebar:focus-within {
+        width: var(--ad-sidebar-w);
+        box-shadow: var(--ad-shadow-lg);
+        z-index: 70;
+    }
+    /* Undo the sr-only clip the rail applies to the label. */
+    body.ad-collapsed .ad-sidebar:hover .ad-nav__label,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-nav__label {
+        position: static;
+        width: auto;
+        height: auto;
+        margin: 0;
+        padding: 0;
+        clip-path: none;
+    }
+    body.ad-collapsed .ad-sidebar:hover .ad-nav__caret,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-nav__caret { display: inline-flex; }
+    body.ad-collapsed .ad-sidebar:hover .ad-nav__group.is-open > .ad-nav__sub,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-nav__group.is-open > .ad-nav__sub { display: block; }
+    body.ad-collapsed .ad-sidebar:hover .ad-nav__link,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-nav__link { justify-content: flex-start; padding: 10px 12px; }
+    body.ad-collapsed .ad-sidebar:hover .ad-nav__badge,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-nav__badge { position: static; min-width: 19px; height: 19px; font-size: 10px; }
+    /* The tooltip is redundant once the label itself is readable - and it was
+       never visible anyway. */
+    body.ad-collapsed .ad-sidebar:hover .ad-nav__link::after,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-nav__link::after { content: none; }
+    body.ad-collapsed .ad-sidebar:hover .ad-sidebar__logo-full,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-sidebar__logo-full { display: block; }
+    body.ad-collapsed .ad-sidebar:hover .ad-sidebar__logo-icon,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-sidebar__logo-icon { display: none; }
+    body.ad-collapsed .ad-sidebar:hover .ad-sidebar__foot,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-sidebar__foot { display: block; }
+    /* A section heading collapses to "···" in the rail; give it its words back. */
+    body.ad-collapsed .ad-sidebar:hover .ad-sidebar__section,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-sidebar__section { text-align: left; font-size: 10px; padding: 16px 12px 7px; }
+    body.ad-collapsed .ad-sidebar:hover .ad-sidebar__section::after,
+    body.ad-collapsed .ad-sidebar:focus-within .ad-sidebar__section::after { content: none; }
+}

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Article cover: layered cards">
+  <defs>
+    <radialGradient id="b2bg" cx="30%" cy="20%" r="95%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EFE9E0"/>
+    </radialGradient>
+    <linearGradient id="b2o" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="500" fill="url(#b2bg)"/>
+  <path d="M800 0v250A250 250 0 0 0 550 0Z" fill="url(#b2o)" opacity="0.85"/>
+  <circle cx="98" cy="416" r="86" fill="#0F2143" opacity="0.07"/>
+
+  <g transform="rotate(-8 400 260)">
+    <rect x="196" y="150" width="300" height="196" rx="24" fill="#0F2143" opacity="0.16"/>
+  </g>
+  <g transform="rotate(-4 400 260)">
+    <rect x="216" y="164" width="300" height="196" rx="24" fill="#1B3B6B"/>
+  </g>
+  <g>
+    <rect x="240" y="180" width="300" height="196" rx="24" fill="#FFFFFF"/>
+    <rect x="268" y="210" width="96" height="14" rx="7" fill="#F4511E"/>
+    <rect x="268" y="240" width="204" height="10" rx="5" fill="#6B7280" opacity="0.35"/>
+    <rect x="268" y="262" width="164" height="10" rx="5" fill="#6B7280" opacity="0.25"/>
+    <rect x="268" y="296" width="70" height="56" rx="12" fill="#FF8A3D" opacity="0.85"/>
+    <rect x="352" y="296" width="70" height="56" rx="12" fill="#0F2143" opacity="0.12"/>
+    <rect x="436" y="296" width="70" height="56" rx="12" fill="#0F2143" opacity="0.06"/>
+  </g>
+  <g fill="#F4511E">
+    <circle cx="600" cy="366" r="12" opacity="0.5"/>
+    <circle cx="646" cy="416" r="8" opacity="0.35"/>
+    <path d="M150 118l8 18 18 8-18 8-8 18-8-18-18-8 18-8Z" opacity="0.5"/>
+  </g>
+</svg>

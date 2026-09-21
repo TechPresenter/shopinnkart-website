@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500" viewBox="0 0 600 500" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Smartphone, earbuds and speaker">
+  <defs>
+    <radialGradient id="h2mbg" cx="30%" cy="22%" r="95%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0EBE2"/>
+    </radialGradient>
+    <linearGradient id="h2mo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="500" fill="url(#h2mbg)"/>
+  <path d="M600 0v244A244 244 0 0 0 356 0Z" fill="url(#h2mo)"/>
+  <circle cx="80" cy="130" r="48" fill="#F4511E" opacity="0.1"/>
+  <ellipse cx="300" cy="412" rx="238" ry="22" fill="#0F2143" opacity="0.09"/>
+
+  <g>
+    <rect x="238" y="122" width="152" height="278" rx="30" fill="#0F2143"/>
+    <rect x="248" y="132" width="132" height="258" rx="22" fill="#FFFFFF"/>
+    <rect x="292" y="139" width="44" height="7" rx="3.5" fill="#0F2143" opacity="0.32"/>
+    <rect x="262" y="160" width="104" height="66" rx="11" fill="#FF8A3D" opacity="0.9"/>
+    <rect x="262" y="240" width="74" height="9" rx="4.5" fill="#0F2143" opacity="0.6"/>
+    <rect x="262" y="260" width="104" height="7" rx="3.5" fill="#6B7280" opacity="0.3"/>
+    <rect x="262" y="276" width="84" height="7" rx="3.5" fill="#6B7280" opacity="0.22"/>
+    <rect x="262" y="300" width="48" height="48" rx="10" fill="#0F2143" opacity="0.1"/>
+    <rect x="318" y="300" width="48" height="48" rx="10" fill="#F4511E" opacity="0.25"/>
+    <rect x="288" y="366" width="52" height="7" rx="3.5" fill="#0F2143" opacity="0.2"/>
+  </g>
+
+  <g>
+    <rect x="72" y="310" width="104" height="90" rx="24" fill="#0F2143"/>
+    <path d="M72 342h104" stroke="#FFFFFF" stroke-width="3" opacity="0.25"/>
+    <circle cx="124" cy="372" r="13" fill="#F4511E"/>
+    <circle cx="110" cy="272" r="21" fill="#FFFFFF" stroke="#0F2143" stroke-width="6"/>
+    <path d="M105 290c0 18 3 28 3 28" stroke="#0F2143" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="166" cy="252" r="18" fill="#FFFFFF" stroke="#0F2143" stroke-width="6"/>
+    <path d="M163 268c0 16 2 24 2 24" stroke="#0F2143" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g>
+    <rect x="440" y="246" width="102" height="154" rx="28" fill="#0F2143"/>
+    <circle cx="491" cy="304" r="33" fill="#12294F"/>
+    <circle cx="491" cy="304" r="19" fill="#F4511E"/>
+    <circle cx="491" cy="304" r="7" fill="#0F2143" opacity="0.6"/>
+    <rect x="464" y="358" width="54" height="8" rx="4" fill="#FFFFFF" opacity="0.28"/>
+    <rect x="475" y="374" width="32" height="6" rx="3" fill="#FF8A3D" opacity="0.8"/>
+  </g>
+
+  <circle cx="412" cy="98" r="9" fill="#FFFFFF" opacity="0.5"/>
+  <circle cx="204" cy="212" r="6" fill="#F4511E" opacity="0.35"/>
+</svg>

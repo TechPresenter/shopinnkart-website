@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Monitor desk setup with keyboard">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F2EFE9"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="500" rx="188" ry="20" fill="#0F2143" opacity=".07"/>
+<rect x="112" y="112" width="376" height="238" rx="18" fill="url(#d)"/>
+<rect x="126" y="126" width="348" height="204" rx="10" fill="#F8F7F4"/>
+<rect x="148" y="150" width="152" height="156" rx="12" fill="url(#a)" opacity=".9"/>
+<rect x="316" y="150" width="136" height="68" rx="10" fill="#0F2143" opacity=".13"/>
+<rect x="316" y="234" width="136" height="72" rx="10" fill="#0F2143" opacity=".08"/>
+<path d="M274 350 h52 l14 44 h-80 Z" fill="#22395F"/>
+<rect x="220" y="390" width="160" height="16" rx="8" fill="url(#d)"/>
+<g transform="translate(300 452) skewY(-3)">
+<rect x="-186" y="-24" width="372" height="60" rx="14" fill="url(#d)"/>
+<rect x="-172" y="-14" width="344" height="40" rx="8" fill="#16294A"/>
+<g fill="#3A5480">
+<rect x="-158" y="-6" width="26" height="10" rx="4"/><rect x="-122" y="-6" width="26" height="10" rx="4"/><rect x="-86" y="-6" width="26" height="10" rx="4"/><rect x="-50" y="-6" width="26" height="10" rx="4"/><rect x="-14" y="-6" width="26" height="10" rx="4"/><rect x="22" y="-6" width="26" height="10" rx="4"/><rect x="58" y="-6" width="26" height="10" rx="4"/><rect x="94" y="-6" width="26" height="10" rx="4"/><rect x="130" y="-6" width="26" height="10" rx="4"/>
+</g>
+<rect x="-70" y="10" width="140" height="10" rx="5" fill="url(#a)" opacity=".8"/>
+</g>
+</svg>

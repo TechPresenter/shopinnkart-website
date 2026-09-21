@@ -1,0 +1,25 @@
+# ShopInnKart - user uploads.
+# Static files are served; anything executable is refused, so a file that
+# slips past validation still cannot run.
+Options -ExecCGI -Indexes
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phps .pl .py .jsp .asp .sh .cgi
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .phps
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+
+<FilesMatch "\.(?i:php[0-9]*|phtml|phps|pl|py|jsp|asp|aspx|sh|cgi|htaccess)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set Content-Disposition "inline"
+</IfModule>

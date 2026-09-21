@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="240" viewBox="0 0 640 240" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Welcome coupon">
+  <defs>
+    <linearGradient id="wcBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F4511E"/>
+      <stop offset="1" stop-color="#FF8A3D"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="240" fill="url(#wcBg)"/>
+  <circle cx="90" cy="42" r="118" fill="#FFFFFF" opacity=".07"/>
+  <circle cx="566" cy="212" r="140" fill="#0F2143" opacity=".12"/>
+
+  <!-- coupon ticket -->
+  <g transform="translate(228 58)">
+    <path d="M8 0h168a8 8 0 0 1 8 8v26a18 18 0 0 0 0 36v26a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8V70a18 18 0 0 0 0-36V8a8 8 0 0 1 8-8z" fill="#FFFFFF"/>
+    <text x="92" y="42" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2.4" fill="#6B7280">WELCOME</text>
+    <text x="92" y="78" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="800" fill="#F4511E">&#8377;500</text>
+    <line x1="24" y1="94" x2="160" y2="94" stroke="#E5E7EB" stroke-width="2" stroke-dasharray="5 6"/>
+  </g>
+
+  <!-- confetti -->
+  <g fill="#FFFFFF" opacity=".85">
+    <rect x="96" y="86" width="12" height="12" rx="2" transform="rotate(24 102 92)"/>
+    <rect x="150" y="164" width="9" height="9" rx="2" transform="rotate(-18 154 168)"/>
+    <circle cx="118" cy="150" r="6"/>
+    <rect x="486" y="60" width="11" height="11" rx="2" transform="rotate(35 491 65)"/>
+    <circle cx="540" cy="118" r="5"/>
+    <rect x="452" y="164" width="8" height="8" rx="2" transform="rotate(-28 456 168)"/>
+  </g>
+  <g fill="#0F2143" opacity=".5">
+    <circle cx="72" cy="196" r="5"/>
+    <circle cx="580" cy="52" r="6"/>
+  </g>
+</svg>

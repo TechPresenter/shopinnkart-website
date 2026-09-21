@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" preserveAspectRatio="xMidYMid meet" role="img" aria-label="User avatar">
+  <defs><clipPath id="av2"><circle cx="60" cy="60" r="60"/></clipPath></defs>
+  <g clip-path="url(#av2)">
+    <rect width="120" height="120" fill="#E8EEF6"/>
+    <path d="M60 74c23 0 41 15 45 36v10H15v-10c4-21 22-36 45-36Z" fill="#F4511E"/>
+    <path d="M45 78h30v10a15 15 0 0 1-30 0Z" fill="#F2CDA8"/>
+    <circle cx="60" cy="48" r="22" fill="#F2CDA8"/>
+    <path d="M36 62V47a24 24 0 0 1 48 0v15c0-9-3-13-6-15-8 4-28 4-36 0-3 2-6 6-6 15Z" fill="#6B4A2F"/>
+  </g>
+</svg>

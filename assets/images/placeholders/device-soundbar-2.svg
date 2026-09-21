@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Soundbar back panel with ports">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="428" rx="190" ry="19" fill="#0F2143" opacity=".07"/>
+<rect x="86" y="220" width="428" height="184" rx="44" fill="url(#d)"/>
+<rect x="102" y="236" width="396" height="152" rx="34" fill="#16294A"/>
+<rect x="140" y="280" width="180" height="72" rx="14" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="160" y="298" width="60" height="16" rx="6" fill="#3A5480"/>
+<rect x="232" y="298" width="60" height="16" rx="6" fill="#3A5480"/>
+<rect x="160" y="324" width="60" height="12" rx="6" fill="url(#a)"/>
+<rect x="232" y="324" width="36" height="12" rx="6" fill="#3A5480"/>
+<circle cx="374" cy="316" r="26" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<circle cx="374" cy="316" r="10" fill="#3A5480"/>
+<rect x="418" y="292" width="56" height="48" rx="10" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="430" y="308" width="32" height="16" rx="5" fill="url(#a)" opacity=".85"/>
+<path d="M140 254 h218" stroke="#3A5480" stroke-width="5" stroke-linecap="round" opacity=".6"/>
+</svg>

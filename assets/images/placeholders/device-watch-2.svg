@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Smartwatch back with sensor array">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="502" rx="122" ry="18" fill="#0F2143" opacity=".07"/>
+<rect x="232" y="86" width="136" height="120" rx="26" fill="#22395F"/>
+<rect x="232" y="394" width="136" height="120" rx="26" fill="#22395F"/>
+<g fill="#0F2143" opacity=".25">
+<rect x="248" y="110" width="104" height="8" rx="4"/><rect x="248" y="136" width="104" height="8" rx="4"/><rect x="248" y="162" width="104" height="8" rx="4"/>
+<rect x="248" y="430" width="104" height="8" rx="4"/><rect x="248" y="456" width="104" height="8" rx="4"/><rect x="248" y="482" width="104" height="8" rx="4"/>
+</g>
+<rect x="216" y="176" width="168" height="248" rx="54" fill="url(#d)"/>
+<rect x="232" y="192" width="136" height="216" rx="44" fill="#16294A"/>
+<circle cx="300" cy="300" r="66" fill="#0F2143"/>
+<circle cx="300" cy="300" r="66" fill="none" stroke="#2E4874" stroke-width="4"/>
+<circle cx="300" cy="300" r="26" fill="url(#a)" opacity=".9"/>
+<circle cx="264" cy="264" r="10" fill="#3A5480"/>
+<circle cx="336" cy="264" r="10" fill="#3A5480"/>
+<circle cx="264" cy="336" r="10" fill="#3A5480"/>
+<circle cx="336" cy="336" r="10" fill="#3A5480"/>
+<rect x="384" y="252" width="14" height="46" rx="7" fill="#0F2143"/>
+</svg>

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" preserveAspectRatio="xMidYMid slice" role="img" aria-label="ShopInnKart">
+  <defs>
+    <linearGradient id="ogbg" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#132A54"/>
+      <stop offset="1" stop-color="#0B1930"/>
+    </linearGradient>
+    <linearGradient id="ogo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#ogbg)"/>
+  <path d="M1200 0v300A300 300 0 0 0 900 0Z" fill="#F4511E" opacity="0.14"/>
+  <circle cx="112" cy="558" r="150" fill="#FF8A3D" opacity="0.08"/>
+  <circle cx="1046" cy="580" r="58" fill="#F4511E" opacity="0.16"/>
+  <circle cx="168" cy="118" r="26" fill="#FF8A3D" opacity="0.35"/>
+  <path d="M986 118l9 21 21 9-21 9-9 21-9-21-21-9 21-9Z" fill="#FF8A3D" opacity="0.6"/>
+  <path d="M262 466l7 16 16 7-16 7-7 16-7-16-16-7 16-7Z" fill="#F4511E" opacity="0.5"/>
+
+  <g transform="translate(492,180) scale(3.4)">
+    <rect width="40" height="40" rx="12" fill="url(#ogo)"/>
+    <path d="M12 15H28a3 3 0 0 1 3 3l0.5 11a3.5 3.5 0 0 1-3.5 3.5H12A3.5 3.5 0 0 1 8.5 29L9 18a3 3 0 0 1 3-3Z" fill="#FFFFFF"/>
+    <path d="M15.5 15v-2a4.5 4.5 0 0 1 9 0v2" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M20 20.4l1.2 2.6 2.6 1.2-2.6 1.2L20 28l-1.2-2.6L16.2 24l2.6-1.2Z" fill="#F4511E"/>
+  </g>
+
+  <text x="600" y="400" text-anchor="middle" font-family="'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="76" font-weight="700" letter-spacing="-1">
+    <tspan fill="#FFFFFF">Shop</tspan><tspan fill="#FF8A3D">InnKart</tspan>
+  </text>
+  <text x="600" y="452" text-anchor="middle" font-family="'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="26" letter-spacing="5" fill="#FFFFFF" opacity="0.62">SHOP SMART. LIVE BETTER.</text>
+  <rect x="540" y="490" width="120" height="6" rx="3" fill="url(#ogo)"/>
+</svg>

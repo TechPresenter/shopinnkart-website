@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500" viewBox="0 0 600 500" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Television, console and gamepad">
+  <defs>
+    <radialGradient id="h3mbg" cx="30%" cy="22%" r="95%">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F0EBE2"/>
+    </radialGradient>
+    <linearGradient id="h3mo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F4511E"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="500" fill="url(#h3mbg)"/>
+  <path d="M600 0v240A240 240 0 0 0 360 0Z" fill="url(#h3mo)"/>
+  <circle cx="76" cy="136" r="46" fill="#F4511E" opacity="0.1"/>
+  <ellipse cx="300" cy="418" rx="244" ry="22" fill="#0F2143" opacity="0.09"/>
+
+  <g>
+    <rect x="140" y="128" width="356" height="218" rx="16" fill="#0F2143"/>
+    <rect x="151" y="139" width="334" height="186" rx="10" fill="#12294F"/>
+    <path d="M151 272l72-54 60 46 72-78 130 96v33a10 10 0 0 1-10 10H161a10 10 0 0 1-10-10Z" fill="#F4511E" opacity="0.35"/>
+    <circle cx="232" cy="182" r="20" fill="#FF8A3D" opacity="0.9"/>
+    <rect x="292" y="332" width="52" height="46" rx="6" fill="#0F2143" opacity="0.9"/>
+    <rect x="232" y="372" width="172" height="13" rx="6.5" fill="#0F2143"/>
+  </g>
+
+  <g>
+    <rect x="502" y="212" width="66" height="176" rx="13" fill="#0F2143"/>
+    <rect x="513" y="232" width="44" height="6" rx="3" fill="#FFFFFF" opacity="0.25"/>
+    <circle cx="535" cy="284" r="17" fill="#12294F"/>
+    <circle cx="535" cy="284" r="7" fill="#FF8A3D"/>
+    <rect x="513" y="326" width="44" height="8" rx="4" fill="#F4511E" opacity="0.7"/>
+    <rect x="513" y="344" width="44" height="8" rx="4" fill="#FFFFFF" opacity="0.14"/>
+  </g>
+
+  <g>
+    <path d="M84 316h98a34 34 0 0 1 32 24l12 40a23 23 0 0 1-41 20l-17-21H98l-17 21a23 23 0 0 1-41-20l12-40a34 34 0 0 1 32-24Z" fill="#0F2143"/>
+    <rect x="72" y="345" width="31" height="9" rx="4.5" fill="#FFFFFF" opacity="0.8"/>
+    <rect x="83" y="334" width="9" height="31" rx="4.5" fill="#FFFFFF" opacity="0.8"/>
+    <circle cx="176" cy="341" r="8" fill="#F4511E"/>
+    <circle cx="196" cy="360" r="8" fill="#FF8A3D"/>
+    <circle cx="156" cy="360" r="8" fill="#FFFFFF" opacity="0.75"/>
+    <circle cx="176" cy="379" r="8" fill="#FFFFFF" opacity="0.5"/>
+  </g>
+
+  <circle cx="424" cy="86" r="9" fill="#FFFFFF" opacity="0.5"/>
+  <circle cx="96" cy="256" r="6" fill="#F4511E" opacity="0.35"/>
+</svg>

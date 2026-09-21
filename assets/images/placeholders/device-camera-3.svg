@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Camera body with spare lens">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F2EFE9"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="452" rx="182" ry="20" fill="#0F2143" opacity=".07"/>
+<g transform="rotate(-5 246 288)">
+<rect x="182" y="140" width="86" height="28" rx="10" fill="#22395F"/>
+<rect x="104" y="168" width="288" height="212" rx="34" fill="url(#d)"/>
+<rect x="118" y="182" width="260" height="184" rx="24" fill="#16294A"/>
+<circle cx="234" cy="276" r="88" fill="#0F2143"/>
+<circle cx="234" cy="276" r="88" fill="none" stroke="#2E4874" stroke-width="5"/>
+<circle cx="234" cy="276" r="58" fill="#22395F"/>
+<circle cx="234" cy="276" r="34" fill="url(#a)" opacity=".92"/>
+<circle cx="216" cy="258" r="11" fill="#F8F7F4" opacity=".5"/>
+<circle cx="338" cy="216" r="14" fill="url(#a)"/>
+<rect x="136" y="200" width="58" height="12" rx="6" fill="#3A5480"/>
+</g>
+<g transform="translate(438 358)">
+<rect x="-58" y="-70" width="116" height="140" rx="18" fill="url(#d)"/>
+<rect x="-58" y="-70" width="116" height="22" rx="11" fill="#22395F"/>
+<circle cx="0" cy="14" r="40" fill="#0F2143"/>
+<circle cx="0" cy="14" r="40" fill="none" stroke="#2E4874" stroke-width="4"/>
+<circle cx="0" cy="14" r="20" fill="url(#a)" opacity=".9"/>
+<rect x="-44" y="-32" width="88" height="8" rx="4" fill="#3A5480"/>
+</g>
+</svg>

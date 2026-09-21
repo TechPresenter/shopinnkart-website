@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Smart Home">
+<title>Smart Home</title>
+<defs>
+<radialGradient id="bgHome" cx="50%" cy="32%" r="78%">
+<stop offset="0" stop-color="#F3FAF3"/><stop offset="1" stop-color="#D7EBD8"/>
+</radialGradient>
+<linearGradient id="ldHome" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/>
+</linearGradient>
+</defs>
+<circle cx="200" cy="200" r="200" fill="url(#bgHome)"/>
+<ellipse cx="200" cy="316" rx="100" ry="13" fill="#0F2143" opacity=".07"/>
+<path d="M200 108 L308 194 H92 Z" fill="#0F2143" stroke="#0F2143" stroke-width="14" stroke-linejoin="round"/>
+<rect x="118" y="190" width="164" height="118" rx="14" fill="#0F2143"/>
+<rect x="182" y="248" width="36" height="60" rx="8" fill="#F8F7F4"/>
+<circle cx="210" cy="278" r="3.5" fill="#6B7280"/>
+<rect x="136" y="220" width="36" height="36" rx="9" fill="url(#ldHome)"/>
+<rect x="228" y="220" width="36" height="36" rx="9" fill="#FF8A3D" opacity=".65"/>
+<path d="M186 170 a20 20 0 0 1 28 0" fill="none" stroke="#FF8A3D" stroke-width="7" stroke-linecap="round"/>
+<circle cx="200" cy="180" r="6" fill="#FF8A3D"/>
+</svg>

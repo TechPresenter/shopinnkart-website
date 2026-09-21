@@ -1,0 +1,78 @@
+<?php
+/**
+ * ShopInnKart - Newsletter subscribe.
+ *
+ * The footer, the exit popup and the account page all post here, so the
+ * response has to read sensibly in a toast for all three: a fresh signup, a
+ * repeat signup and a returning unsubscriber each get their own message.
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/../../includes/init.php';
+
+api_require_method(['POST']);
+api_require_csrf();
+api_rate_limit('newsletter_subscribe', 6, 300);
+
+$v = new Validator(request_all(), ['email' => 'Email address', 'name' => 'Name']);
+$v->required('email')->email('email')->max('email', 190)
+  ->max('name', 150);
+
+if ($v->fails()) {
+    json_validation_error($v->errors());
+}
+
+// Stored lowercase so the unique index catches "Me@x.com" vs "me@x.com".
+$email = mb_strtolower(trim((string) request_input('email', '')));
+$name  = trim((string) request_input('name', ''));
+
+// The source is a form identifier from data-newsletter-form, never free text.
+$source = strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', (string) request_input('source', '')) ?? '');
+$source = $source === '' ? 'website' : mb_substr($source, 0, 60);
+
+$existing = Database::fetch(
+    'SELECT `id`, `name`, `status` FROM `newsletter_subscribers` WHERE `email` = :email LIMIT 1',
+    ['email' => $email]
+);
+
+if ($existing !== null && $existing['status'] === 'active') {
+    json_success('You are already on the list - offers land in your inbox every week.', [
+        'email'              => $email,
+        'status'             => 'active',
+        'already_subscribed' => true,
+    ]);
+}
+
+if ($existing !== null) {
+    Database::update('newsletter_subscribers', [
+        'status'     => 'active',
+        'source'     => $source,
+        'ip_address' => client_ip(),
+        'name'       => $name === '' ? ($existing['name'] ?? null) : $name,
+    ], '`id` = :id', ['id' => (int) $existing['id']]);
+
+    json_success('Welcome back - your subscription is active again.', [
+        'email'              => $email,
+        'status'             => 'active',
+        'already_subscribed' => false,
+    ]);
+}
+
+$id = Database::insert('newsletter_subscribers', [
+    'email'      => $email,
+    'name'       => $name === '' ? null : $name,
+    'source'     => $source,
+    'ip_address' => client_ip(),
+    'status'     => 'active',
+]);
+
+// Only genuinely new subscribers get the welcome mail; reactivations already had it.
+notify_newsletter_welcome($email);
+
+json_success('You are subscribed. Watch your inbox for offers and early access to flash sales.', [
+    'email'              => $email,
+    'status'             => 'active',
+    'already_subscribed' => false,
+    'subscriber_id'      => $id,
+], 201);

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="72" viewBox="0 0 120 72" role="img" aria-label="UPI offer">
+  <rect width="120" height="72" rx="12" fill="#FFFFFF"/>
+  <rect x=".75" y=".75" width="118.5" height="70.5" rx="11.25" fill="none" stroke="#E5E7EB" stroke-width="1.5"/>
+  <rect x="0" y="0" width="120" height="6" rx="3" fill="#2E7D32"/>
+  <g transform="translate(60 38)" fill="none" stroke="#2E7D32" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-16-13 4-13-6 0 8 0-14 15-6 1-18 1z" stroke-width="2"/>
+    <circle cx="15" cy="-9" r="3.5"/>
+  </g>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet" role="img" aria-label="SSD back label view">
+<defs>
+<radialGradient id="bg" cx="50%" cy="36%" r="74%"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E8EDF5"/></radialGradient>
+<linearGradient id="d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1C3358"/><stop offset="1" stop-color="#0F2143"/></linearGradient>
+<linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A3D"/><stop offset="1" stop-color="#F4511E"/></linearGradient>
+</defs>
+<rect width="600" height="600" rx="32" fill="url(#bg)"/>
+<circle cx="300" cy="296" r="200" fill="none" stroke="#0F2143" stroke-opacity=".07" stroke-width="2"/>
+<ellipse cx="300" cy="486" rx="146" ry="19" fill="#0F2143" opacity=".07"/>
+<rect x="164" y="130" width="272" height="336" rx="38" fill="url(#d)"/>
+<rect x="180" y="146" width="240" height="304" rx="28" fill="#16294A"/>
+<rect x="204" y="180" width="192" height="136" rx="14" fill="#F8F7F4"/>
+<rect x="224" y="204" width="110" height="14" rx="7" fill="#6B7280" opacity=".55"/>
+<rect x="224" y="230" width="152" height="10" rx="5" fill="#6B7280" opacity=".35"/>
+<g fill="#0F2143" opacity=".75">
+<rect x="224" y="256" width="8" height="40"/><rect x="238" y="256" width="4" height="40"/><rect x="248" y="256" width="10" height="40"/><rect x="264" y="256" width="4" height="40"/><rect x="274" y="256" width="8" height="40"/><rect x="288" y="256" width="4" height="40"/><rect x="298" y="256" width="10" height="40"/><rect x="314" y="256" width="6" height="40"/><rect x="326" y="256" width="4" height="40"/><rect x="336" y="256" width="10" height="40"/><rect x="352" y="256" width="4" height="40"/><rect x="362" y="256" width="8" height="40"/>
+</g>
+<rect x="204" y="344" width="192" height="70" rx="14" fill="#0F2143" stroke="#2E4874" stroke-width="3"/>
+<rect x="252" y="368" width="96" height="24" rx="10" fill="url(#a)" opacity=".9"/>
+<circle cx="228" cy="436" r="8" fill="#3A5480"/>
+<circle cx="372" cy="436" r="8" fill="#3A5480"/>
+</svg>
