@@ -43,6 +43,7 @@ function admin_menu(): array
                 ['label' => 'Delivered',  'url' => 'orders/?status=delivered',        'permission' => 'orders.view'],
                 ['label' => 'Cancelled',  'url' => 'orders/?status=cancelled',        'permission' => 'orders.view'],
                 ['label' => 'Returns',    'url' => 'orders/returns.php',              'permission' => 'orders.view'],
+                ['label' => 'Shipping',   'url' => 'shipping/',                       'permission' => 'orders.view'],
             ],
         ],
         [
