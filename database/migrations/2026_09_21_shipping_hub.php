@@ -269,6 +269,20 @@ function migration_shipping_hub_run(): array
     });
 
     // =======================================================================
+    //  5b. The provider-side order id, which some couriers cancel by
+    // =======================================================================
+    $run('+ shipments.order_ref', static function (): ?string {
+        // Shiprocket tracks by shipment id but cancels by ORDER id - two
+        // different numbers for one booking. Without this column a booked
+        // consignment could be tracked but never cancelled from the admin.
+        return mig_add_column(
+            'shipments',
+            'order_ref',
+            "VARCHAR(80) NULL COMMENT 'Provider order id, where it differs from shipment_ref' AFTER `shipment_ref`"
+        );
+    });
+
+    // =======================================================================
     //  6. The mock provider, so the hub is usable before any account exists
     // =======================================================================
     $run('+ mock shipping provider', static function (): ?string {
