@@ -343,8 +343,8 @@ function shipping_book(int $orderId, string $providerCode, array $opts = []): ar
     if ($order === null) {
         return shipping_fail('Order not found.');
     }
-    if (in_array($order['status'], [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED, ORDER_STATUS_RETURNED], true)) {
-        return shipping_fail('A ' . strtolower(ORDER_STATUSES[$order['status']] ?? $order['status']) . ' order cannot be shipped.');
+    if (($blocked = shipping_order_block_reason($order)) !== null) {
+        return shipping_fail($blocked);
     }
     if ($order['is_cod'] && (int) $provider['supports_cod'] !== 1) {
         return shipping_fail('COD is switched off for ' . $provider['name'] . '.');
@@ -405,13 +405,15 @@ function shipping_book(int $orderId, string $providerCode, array $opts = []): ar
         return shipping_fail((string) ($created['message'] ?? 'Booking failed.'), ['shipment_id' => $shipmentId]);
     }
 
+    // Only from 'pending': if anything moved the row meanwhile, the courier
+    // booking is orphaned and must not overwrite that.
     Database::update('shipments', [
         'status'        => 'ready',
         'shipment_ref'  => (string) ($created['shipment_ref'] ?? ''),
         'order_ref'     => isset($created['order_ref']) && $created['order_ref'] !== '' ? (string) $created['order_ref'] : null,
         'courier_name'  => (string) ($created['courier_name'] ?? $opts['courier'] ?? '') ?: null,
         'status_detail' => mb_substr((string) ($created['message'] ?? ''), 0, 255),
-    ], '`id` = :id', ['id' => $shipmentId]);
+    ], "`id` = :id AND `status` = 'pending'", ['id' => $shipmentId]);
 
     shipping_record_events($shipmentId, [[
         'status'      => 'ready',
@@ -450,6 +452,11 @@ function shipping_assign_awb(int $shipmentId, array $opts = []): array
     }
     if ($shipment['status'] !== 'ready') {
         return shipping_fail('Only a shipment that is ready can be given an AWB.');
+    }
+    // The order may have been cancelled since the booking.
+    $awbOrder = get_order((int) $shipment['order_id']);
+    if ($awbOrder === null || ($blocked = shipping_order_block_reason($awbOrder)) !== null) {
+        return shipping_fail($blocked ?? 'Order not found.');
     }
 
     $driver = ShippingProviderFactory::makeByCode((string) $shipment['provider_code']);
@@ -529,6 +536,10 @@ function shipping_schedule_pickup(int $shipmentId, array $opts = []): array
     if (shipping_is_terminal((string) $shipment['status'])) {
         return shipping_fail('A ' . shipping_status_label((string) $shipment['status']) . ' shipment cannot be picked up.');
     }
+    $pickupOrder = get_order((int) $shipment['order_id']);
+    if ($pickupOrder === null || ($blocked = shipping_order_block_reason($pickupOrder)) !== null) {
+        return shipping_fail($blocked ?? 'Order not found.');
+    }
     $driver = ShippingProviderFactory::makeByCode((string) $shipment['provider_code']);
     if ($driver === null) {
         return shipping_fail('The courier for this shipment is no longer installed.');
@@ -566,6 +577,12 @@ function shipping_cancel(int $shipmentId, string $reason = ''): array
     if (shipping_is_terminal((string) $shipment['status'])) {
         return shipping_fail('A ' . strtolower(shipping_status_label((string) $shipment['status'])) . ' shipment cannot be cancelled.');
     }
+    // 'pending' lasts only while the courier call is in flight. Cancelling
+    // it here would free the order, the call would then succeed and write the
+    // row back to 'ready' - and the order could be booked a second time.
+    if ((string) $shipment['status'] === 'pending') {
+        return shipping_fail('This booking is still being made. Try again in a moment.');
+    }
 
     // Nothing reached the courier yet: cancel locally, nothing to call.
     if ((string) $shipment['shipment_ref'] !== '') {
@@ -594,11 +611,7 @@ function shipping_cancel(int $shipmentId, string $reason = ''): array
     // The order row still carries this consignment's AWB, and the storefront
     // shows it to the customer. Clear it - but only if it is this one, not a
     // replacement booked since.
-    Database::query(
-        'UPDATE `orders` SET `tracking_number` = NULL, `courier_name` = NULL, `shipment_id` = NULL
-          WHERE `id` = :o AND `shipment_id` = :s',
-        ['o' => (int) $shipment['order_id'], 's' => $shipmentId]
-    );
+    shipping_detach_order($shipmentId, (int) $shipment['order_id']);
 
     log_activity('shipment.cancelled', 'shipment', $shipmentId, 'Cancelled shipment #' . $shipmentId);
 
@@ -652,6 +665,22 @@ function shipping_record_events(int $shipmentId, array $events, string $source =
         return 0;
     }
 
+    // Oldest first. A poll resubmits the courier's whole history and a
+    // Shiprocket webhook carries every scan so far, so one batch can hold the
+    // RTO and the return leg's arrival together - and whether "delivered"
+    // means delivered depends on what came BEFORE it, not on array order.
+    usort($events, static fn (array $a, array $b): int =>
+        strcmp((string) ($a['occurred_at'] ?? ''), (string) ($b['occurred_at'] ?? '')));
+
+    // Is this parcel on its way back? Seeded from the shipment AND its stored
+    // timeline, then updated as the batch is walked - a flag read once before
+    // the loop missed an RTO arriving in the same batch as its "delivered".
+    $inRto = in_array((string) $shipment['status'], ['rto_initiated', 'rto_delivered'], true)
+        || (int) Database::fetchColumn(
+            "SELECT COUNT(*) FROM `shipment_events` WHERE `shipment_id` = :s AND `status` IN ('rto_initiated','rto_delivered')",
+            ['s' => $shipmentId]
+        ) > 0;
+
     $added = 0;
     $best  = null;   // the most advanced status among the NEW events
 
@@ -661,11 +690,15 @@ function shipping_record_events(int $shipmentId, array $events, string $source =
             continue;
         }
 
+        if ($status === 'rto_initiated' || $status === 'rto_delivered') {
+            $inRto = true;
+        }
+
         // Once a parcel is on its way back, a plain "delivered" is the return
         // leg arriving at our warehouse. Reading it as a delivery would mark
         // the order delivered - and a COD order PAID - for a parcel the
         // customer refused.
-        if ($status === 'delivered' && in_array((string) $shipment['status'], ['rto_initiated', 'rto_delivered'], true)) {
+        if ($status === 'delivered' && $inRto) {
             $status = 'rto_delivered';
         }
 
@@ -707,7 +740,14 @@ function shipping_record_events(int $shipmentId, array $events, string $source =
     $current = (string) $shipment['status'];
     $next    = (string) $best['status'];
 
-    if (!shipping_is_terminal($current) && shipping_status_rank($next) > shipping_status_rank($current)) {
+    // The one exception to "terminal means final": a shipment wrongly left
+    // delivered (a manual override, or history from before this rule) that the
+    // courier later confirms came back. Leaving it delivered would keep a
+    // refused COD parcel marked paid and its stock off the shelf forever.
+    $override = $current === 'delivered' && $next === 'rto_delivered';
+
+    if ((!shipping_is_terminal($current) || $override)
+        && shipping_status_rank($next) > shipping_status_rank($current)) {
         $update = [
             'status'        => $next,
             'status_detail' => mb_substr((string) ($best['message'] ?? ''), 0, 255),
@@ -718,8 +758,31 @@ function shipping_record_events(int $shipmentId, array $events, string $source =
         if ($next === 'delivered') {
             $update['delivered_at'] = (string) ($best['occurred_at'] ?? date('Y-m-d H:i:s'));
         }
-        Database::update('shipments', $update, '`id` = :id', ['id' => $shipmentId]);
+
+        // Conditional on the status we read. Two webhooks processed at once
+        // both see the old status; only one of them may move the shipment,
+        // or both move the order and the customer gets two emails.
+        $sets   = [];
+        $params = ['id' => $shipmentId, 'was' => $current];
+        foreach ($update as $col => $val) {
+            $sets[] = '`' . $col . '` = :u_' . $col;
+            $params['u_' . $col] = $val;
+        }
+        $moved = Database::query(
+            'UPDATE `shipments` SET ' . implode(', ', $sets) . ' WHERE `id` = :id AND `status` = :was',
+            $params
+        )->rowCount();
+
+        if ($moved === 0) {
+            return $added;   // another request advanced it first and will sync the order
+        }
         $shipment = array_merge($shipment, $update);
+
+        // A courier-side cancellation, not just ours, must take the dead AWB
+        // off the order the customer is looking at.
+        if ($next === 'cancelled') {
+            shipping_detach_order($shipmentId, (int) $shipment['order_id']);
+        }
     }
 
     shipping_sync_order($shipment);
@@ -727,6 +790,72 @@ function shipping_record_events(int $shipmentId, array $events, string $source =
     return $added;
 }
 
+/** Remove a dead consignment's AWB from its order - only if the order still points at it. */
+function shipping_detach_order(int $shipmentId, int $orderId): void
+{
+    Database::query(
+        'UPDATE `orders` SET `tracking_number` = NULL, `courier_name` = NULL, `shipment_id` = NULL
+          WHERE `id` = :o AND `shipment_id` = :s',
+        ['o' => $orderId, 's' => $shipmentId]
+    );
+}
+
+/**
+ * Why this order must not be sent anywhere, or null if it may.
+ *
+ * Checked at booking AND at every later step that commits the courier - AWB,
+ * pickup - because the order can be cancelled in between, and the retry paths
+ * skipped the check booking made.
+ */
+function shipping_order_block_reason(array $order): ?string
+{
+    $status = (string) $order['status'];
+    if (in_array($status, [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED, ORDER_STATUS_RETURNED], true)) {
+        return 'A ' . strtolower(ORDER_STATUSES[$status] ?? $status) . ' order cannot be shipped.';
+    }
+    // Prepaid means paid first. An abandoned card payment leaves the order
+    // pending with nothing collected; shipping it gives the goods away.
+    $isCod = strtolower((string) ($order['payment_method'] ?? '')) === 'cod';
+    if (!$isCod && (string) ($order['payment_status'] ?? '') !== PAYMENT_STATUS_PAID) {
+        return 'This prepaid order has not been paid yet.';
+    }
+    return null;
+}
+
+/**
+ * Called before an ORDER is cancelled. Cancels the live consignment with the
+ * courier first, or refuses.
+ *
+ * Returns null when the order may be cancelled, else the reason it may not.
+ * Without this, cancelling an order restored its stock while the parcel kept
+ * moving: the courier delivered, collected the cash, and the cash matched a
+ * cancelled order.
+ */
+function shipping_release_for_order_cancel(int $orderId): ?string
+{
+    $live = shipment_live_for_order($orderId);
+    if ($live === null) {
+        return null;
+    }
+
+    $status = (string) $live['status'];
+
+    if ($status === 'pending') {
+        return 'A courier booking for this order is being made right now. Try again in a moment.';
+    }
+
+    // Physically with the courier: cancelling the order cannot stop the parcel.
+    if (shipping_status_rank($status) >= shipping_status_rank('in_transit')) {
+        return 'The parcel is already with the courier (' . strtolower(shipping_status_label($status))
+            . '). Cancelling the order would not stop it - handle it as a return (RTO) instead.';
+    }
+
+    $res = shipping_cancel((int) $live['id'], 'Order cancelled');
+    if (empty($res['ok'])) {
+        return 'The courier booking could not be cancelled, so the order was not either: ' . ($res['message'] ?? 'unknown error');
+    }
+    return null;
+}
 /**
  * Carry a shipment's state onto its order.
  *
@@ -772,8 +901,19 @@ function shipping_sync_order(array $shipment): void
     }
 
     $current = (string) $order['status'];
-    // Terminal orders stay put: a courier cannot un-cancel or un-refund.
+
+    // A courier cannot un-cancel an order - but a parcel that reached the
+    // customer (or came back) after the order was cancelled is money and
+    // stock out of step with the books. Say so loudly instead of returning
+    // in silence, which is what hid it before.
     if (in_array($current, [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED], true)) {
+        if (in_array($target, [ORDER_STATUS_DELIVERED, ORDER_STATUS_RETURNED], true)) {
+            $note = 'Courier reports ' . shipping_status_label((string) $shipment['status'])
+                . ' for ' . strtolower(ORDER_STATUSES[$current] ?? $current) . ' order ' . ($order['order_number'] ?? $orderId)
+                . ' (AWB ' . ($shipment['awb'] ?? '-') . '). Check payment and stock by hand.';
+            log_activity('shipment.mismatch', 'shipment', (int) $shipment['id'], $note);
+            ErrorHandler::log('warning', 'Shipping: ' . $note);
+        }
         return;
     }
     if (shipping_order_rank($target) <= shipping_order_rank($current)) {
@@ -787,4 +927,22 @@ function shipping_sync_order(array $shipment): void
             . ((string) ($shipment['awb'] ?? '') !== '' ? ' (AWB ' . $shipment['awb'] . ')' : ''),
         'system'
     );
+
+    // A COD parcel that came back was never paid for - but if the order had
+    // been marked delivered first (by hand, or before the RTO rule), the
+    // delivery already marked it paid. Undo that, or the books show cash the
+    // courier will never remit.
+    if ($target === ORDER_STATUS_RETURNED
+        && strtolower((string) $order['payment_method']) === 'cod'
+        && (string) ($order['payment_status'] ?? '') === PAYMENT_STATUS_PAID) {
+        Database::update('orders', ['payment_status' => PAYMENT_STATUS_FAILED], '`id` = :id', ['id' => $orderId]);
+        Database::update('payments', ['status' => PAYMENT_STATUS_FAILED, 'paid_at' => null], '`order_id` = :id', ['id' => $orderId]);
+        Database::insert('order_status_history', [
+            'order_id'   => $orderId,
+            'status'     => ORDER_STATUS_RETURNED,
+            'note'       => 'COD not collected: the parcel came back (RTO). Payment reset from paid to failed.',
+            'changed_by' => 'system',
+            'admin_id'   => null,
+        ]);
+    }
 }

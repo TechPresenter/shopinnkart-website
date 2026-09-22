@@ -351,7 +351,10 @@ require ADMIN_PATH . '/includes/header.php';
                 . '<input type="hidden" name="return" value="' . e_attr($returnPath) . '">';
         };
         $actionUrl = admin_url('shipping/action.php');
+        // Only an http(s) link is rendered as one: escaping stops markup, not a
+        // javascript: URL, and this value is stored per shipment.
         $trackUrl  = (string) ($live['tracking_url'] ?? '');
+        $trackUrl  = preg_match('~^https?://~i', $trackUrl) === 1 ? $trackUrl : '';
         ?>
         <div class="ad-card">
             <div class="ad-card__head">

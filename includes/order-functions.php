@@ -915,6 +915,13 @@ function update_order_status(
         return ['ok' => true, 'message' => 'Order is already ' . ORDER_STATUSES[$newStatus] . '.'];
     }
 
+    // An order with a live courier consignment is cancelled at the courier
+    // FIRST. Otherwise the stock comes back below while the parcel keeps
+    // moving, and the courier collects COD for an order the books say is dead.
+    if ($newStatus === ORDER_STATUS_CANCELLED && ($refusal = order_shipment_cancel_refusal($orderId)) !== null) {
+        return ['ok' => false, 'message' => $refusal];
+    }
+
     try {
         Database::transaction(static function () use ($order, $orderId, $oldStatus, $newStatus, $note, $changedBy) {
             $update = ['status' => $newStatus];
@@ -1017,6 +1024,13 @@ function can_cancel_order(array $order): bool
         return false;
     }
 
+    // Once a courier holds a booking for it, the customer's button would free
+    // stock the warehouse has already packed and handed over. Support can
+    // still cancel - update_order_status() then cancels the consignment too.
+    if (order_has_live_shipment((int) $order['id'])) {
+        return false;
+    }
+
     $windowHours = setting_int('cancel_window_hours', 24);
     if ($windowHours <= 0) {
         return true;
@@ -1071,4 +1085,35 @@ function customer_orders(int $userId, int $page = 1, int $perPage = 10, string $
     unset($order);
 
     return ['items' => $orders, 'pagination' => $pagination];
+}
+
+// ===========================================================================
+//  SHIPPING HOOKS
+//
+//  The order module does not depend on the shipping module: these load it
+//  lazily and treat "not installed yet" (no shipments table on a site that
+//  has not run the migration) as "no shipment".
+// ===========================================================================
+
+function order_has_live_shipment(int $orderId): bool
+{
+    if ($orderId <= 0 || !is_file(INCLUDES_PATH . '/shipping-service.php')) {
+        return false;
+    }
+    try {
+        require_once INCLUDES_PATH . '/shipping-service.php';
+        return shipment_live_for_order($orderId) !== null;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/** Null when the order may be cancelled; otherwise why not. */
+function order_shipment_cancel_refusal(int $orderId): ?string
+{
+    if (!order_has_live_shipment($orderId)) {
+        return null;
+    }
+    require_once INCLUDES_PATH . '/shipping-service.php';
+    return shipping_release_for_order_cancel($orderId);
 }

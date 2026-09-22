@@ -491,40 +491,88 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
     // ---------------------------------------------------------------------
 
     /**
-     * Shiprocket's free-text status to the hub's vocabulary.
+     * Shiprocket's status text to the hub's vocabulary.
      *
-     * Order matters: every label is tested against the rules top to bottom and
-     * the first match wins. RTO comes before DELIVERED because "RTO DELIVERED"
-     * contains "DELIVERED" and means the parcel came BACK; OUT FOR DELIVERY
-     * comes before DELIVERED for the same reason.
+     * Two tiers. Shiprocket's OWN status labels are matched exactly (after
+     * "_" becomes a space and case is folded), so "PARTIAL_DELIVERED" and
+     * "NOT DELIVERED" can never collide with "DELIVERED" the way a substring
+     * test let them. Anything else falls through to keywords - and a keyword
+     * match may only ever produce a status that moves no money and ends
+     * nothing. A courier's free-text remark like "Shipment Not Delivered -
+     * Consignee refused" must not mark a COD order paid, and "order cancelled"
+     * in a remark must not kill the consignment.
+     *
+     * $allowTerminal = false is for the free-text `activity` fallback: even
+     * an exact match there is not trusted with delivered/cancelled/RTO-delivered.
      */
-    public static function mapStatus(string $label): ?string
+    public static function mapStatus(string $label, bool $allowTerminal = true): ?string
     {
-        $label = strtoupper(trim($label));
-        if ($label === '') {
+        $label = strtoupper(trim(preg_replace('/[_\s]+/', ' ', $label) ?? ''));
+        if ($label === '' || $label === 'NA' || $label === 'N A') {
             return null;
         }
 
-        $rules = [
-            'RTO DELIVERED'     => 'rto_delivered',
-            'RTO'               => 'rto_initiated',
-            'CANCEL'            => 'cancelled',
-            'OUT FOR DELIVERY'  => 'out_for_delivery',
-            'UNDELIVERED'       => 'failed',
-            'LOST'              => 'failed',
-            'DAMAGED'           => 'failed',
-            'DELIVERED'         => 'delivered',
-            'OUT FOR PICKUP'    => 'pickup_scheduled',
-            'PICKUP SCHEDULED'  => 'pickup_scheduled',
-            'PICKUP GENERATED'  => 'pickup_scheduled',
-            'AWB ASSIGNED'      => 'booked',
-            'PICKED UP'         => 'in_transit',
-            'SHIPPED'           => 'in_transit',
-            'IN TRANSIT'        => 'in_transit',
-            'REACHED'           => 'in_transit',
+        static $exact = [
+            'DELIVERED'                  => 'delivered',
+            'RTO DELIVERED'              => 'rto_delivered',
+            'RTO INITIATED'              => 'rto_initiated',
+            'RTO IN TRANSIT'             => 'rto_initiated',
+            'RTO OFD'                    => 'rto_initiated',
+            'RTO ACKNOWLEDGED'           => 'rto_initiated',
+            'RTO NDR'                    => 'rto_initiated',
+            'CANCELED'                   => 'cancelled',
+            'CANCELLED'                  => 'cancelled',
+            'OUT FOR DELIVERY'           => 'out_for_delivery',
+            'IN TRANSIT'                 => 'in_transit',
+            'SHIPPED'                    => 'in_transit',
+            'PICKED UP'                  => 'in_transit',
+            'REACHED AT DESTINATION HUB' => 'in_transit',
+            'REACHED DESTINATION HUB'    => 'in_transit',
+            'MISROUTED'                  => 'in_transit',
+            'OUT FOR PICKUP'             => 'pickup_scheduled',
+            'PICKUP SCHEDULED'           => 'pickup_scheduled',
+            'PICKUP GENERATED'           => 'pickup_scheduled',
+            'PICKUP QUEUED'              => 'pickup_scheduled',
+            'PICKUP RESCHEDULED'         => 'pickup_scheduled',
+            'AWB ASSIGNED'               => 'booked',
+            // Money is not settled by any of these, so none may read as delivered.
+            'UNDELIVERED'                => 'failed',
+            'NOT DELIVERED'              => 'failed',
+            'PARTIAL DELIVERED'          => 'failed',
+            'PARTIALLY DELIVERED'        => 'failed',
+            'LOST'                       => 'failed',
+            'DAMAGED'                    => 'failed',
+            'DESTROYED'                  => 'failed',
+            // Only a request; the consignment is still live until confirmed.
+            'CANCELLATION REQUESTED'     => null,
         ];
 
-        foreach ($rules as $needle => $status) {
+        $terminal = ['delivered', 'rto_delivered', 'cancelled', 'returned'];
+
+        if (array_key_exists($label, $exact)) {
+            $status = $exact[$label];
+            if ($status !== null && !$allowTerminal && in_array($status, $terminal, true)) {
+                return null;
+            }
+            return $status;
+        }
+
+        // Keywords: negatives first, and never a terminal or paying status.
+        foreach (['NOT DELIVERED', 'UNDELIVERED', 'REFUSED', 'PARTIAL', 'NDR', 'FAILED'] as $negative) {
+            if (strpos($label, $negative) !== false) {
+                return 'failed';
+            }
+        }
+        $keywords = [
+            'OUT FOR DELIVERY' => 'out_for_delivery',
+            'RTO'              => 'rto_initiated',
+            'IN TRANSIT'       => 'in_transit',
+            'PICKED UP'        => 'in_transit',
+            'REACHED'          => 'in_transit',
+            'SHIPPED'          => 'in_transit',
+            'PICKUP'           => 'pickup_scheduled',
+        ];
+        foreach ($keywords as $needle => $status) {
             if (strpos($label, $needle) !== false) {
                 return $status;
             }
@@ -552,7 +600,7 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
         $events = [];
         foreach ($activities as $activity) {
             $label  = (string) ($activity['sr-status-label'] ?? $activity['activity'] ?? '');
-            $status = self::mapStatus($label) ?? self::mapStatus((string) ($activity['activity'] ?? ''));
+            $status = self::mapStatus($label) ?? self::mapStatus((string) ($activity['activity'] ?? ''), false);
             $at     = (string) ($activity['date'] ?? '');
             if ($at === '' || $status === null) {
                 continue;
@@ -709,7 +757,7 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
         $events = [];
         foreach ((array) ($payload['scans'] ?? []) as $scan) {
             $scanLabel = (string) ($scan['sr-status-label'] ?? $scan['activity'] ?? '');
-            $status    = self::mapStatus($scanLabel) ?? self::mapStatus((string) ($scan['activity'] ?? ''));
+            $status    = self::mapStatus($scanLabel) ?? self::mapStatus((string) ($scan['activity'] ?? ''), false);
             $at        = (string) ($scan['date'] ?? '');
             if ($status === null || $at === '') {
                 continue;
