@@ -14,6 +14,8 @@ require_once __DIR__ . '/../includes/auth.php';
 
 $admin = admin_require('orders.view');
 
+require_once INCLUDES_PATH . '/shipping-service.php';
+
 $orderId = input_int('id');
 $order   = $orderId > 0 ? get_order($orderId) : null;
 
@@ -969,10 +971,39 @@ require ADMIN_PATH . '/includes/header.php';
             </div>
         </div>
 
+        <?php
+        // The consignment the courier integration manages for this order, if any.
+        $liveShipment    = shipment_live_for_order($orderId);
+        $couriersActive  = ShippingProviderFactory::available() !== [];
+        ?>
         <div class="ad-card">
             <div class="ad-card__head"><div class="ad-card__title">Shipment</div></div>
             <div class="ad-card__body">
-                <?php if (!$canEdit): ?>
+                <?php if ($liveShipment !== null): ?>
+                    <?php $liveStatus = (string) $liveShipment['status']; ?>
+                    <div style="display:grid;gap:9px;font-size:13.5px">
+                        <div style="display:flex;justify-content:space-between;gap:12px">
+                            <span class="ad-muted">Status</span>
+                            <span class="sik-status sik-status--<?= e_attr(shipping_status_tone($liveStatus)) ?>">
+                                <?= e(shipping_status_label($liveStatus)) ?>
+                            </span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;gap:12px">
+                            <span class="ad-muted">Courier</span>
+                            <span><?= e((string) ($liveShipment['courier_name'] ?? '')) ?: e((string) $liveShipment['provider_code']) ?></span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;gap:12px">
+                            <span class="ad-muted">AWB</span>
+                            <span class="ad-mono"><?= e((string) ($liveShipment['awb'] ?? '')) ?: 'not assigned' ?></span>
+                        </div>
+                    </div>
+                    <p class="ad-muted" style="margin:10px 0 12px;font-size:12.5px">
+                        Managed by the courier integration - tracking updates arrive automatically.
+                    </p>
+                    <a class="ad-btn ad-btn--block" href="<?= e(admin_url('shipping/book.php?order=' . $orderId)) ?>">
+                        <?= icon('truck', 'w-4 h-4') ?> Manage shipment
+                    </a>
+                <?php elseif (!$canEdit): ?>
                     <div style="display:grid;gap:9px;font-size:13.5px">
                         <div style="display:flex;justify-content:space-between;gap:12px">
                             <span class="ad-muted">Courier</span><span><?= e((string) ($order['courier_name'] ?? '')) ?: '—' ?></span>
@@ -986,6 +1017,13 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
                     </div>
                 <?php else: ?>
+                    <?php if ($couriersActive && !in_array((string) $order['status'], [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED, ORDER_STATUS_RETURNED], true)): ?>
+                        <a class="ad-btn ad-btn--primary ad-btn--block" style="margin-bottom:14px"
+                           href="<?= e(admin_url('shipping/book.php?order=' . $orderId)) ?>">
+                            <?= icon('truck', 'w-4 h-4') ?> Book with a courier
+                        </a>
+                        <p class="ad-muted" style="margin:0 0 10px;font-size:12.5px">Or record a parcel sent some other way:</p>
+                    <?php endif; ?>
                     <form class="ad-form" method="post" action="<?= e(admin_url('orders/update-shipping.php')) ?>"
                           data-guard-unsaved>
                         <?= csrf_field() ?>

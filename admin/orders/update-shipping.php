@@ -20,6 +20,16 @@ if ($order === null) {
     redirect(admin_url('orders/'));
 }
 
+// A courier integration owns courier_name and tracking_number while it has a
+// live consignment for this order. A manual form opened before the booking can
+// still be submitted after it, and would put a stale AWB in front of the
+// customer until the next webhook quietly replaced it.
+require_once INCLUDES_PATH . '/shipping-service.php';
+if (shipment_live_for_order($orderId) !== null) {
+    flash('error', 'This order has a courier-booked shipment. Change it from the shipment page instead.');
+    redirect(admin_url('shipping/book.php?order=' . $orderId));
+}
+
 $courier  = mb_substr(trim((string) input('courier_name', '')), 0, 100);
 $tracking = mb_substr(trim((string) input('tracking_number', '')), 0, 100);
 $eta      = trim((string) input('estimated_delivery', ''));

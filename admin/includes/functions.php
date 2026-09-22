@@ -43,7 +43,21 @@ function admin_menu(): array
                 ['label' => 'Delivered',  'url' => 'orders/?status=delivered',        'permission' => 'orders.view'],
                 ['label' => 'Cancelled',  'url' => 'orders/?status=cancelled',        'permission' => 'orders.view'],
                 ['label' => 'Returns',    'url' => 'orders/returns.php',              'permission' => 'orders.view'],
-                ['label' => 'Shipping',   'url' => 'shipping/',                       'permission' => 'orders.view'],
+            ],
+        ],
+        [
+            // Fulfilment has enough screens to be its own group rather than a
+            // tail on Orders. Same permission as orders, because it IS orders:
+            // a shipping.* key would resolve to nobody until every role was edited.
+            'label' => 'Shipping', 'icon' => 'truck', 'permission' => 'orders',
+            'children' => [
+                // book.php is a shipment's own page, so it lights Shipments -
+                // `also` lets one entry own a page outside its path.
+                ['label' => 'Shipments',    'url' => 'shipping/shipments.php', 'permission' => 'orders.view',
+                 'also' => ['shipping/book.php']],
+                ['label' => 'Tracking',     'url' => 'shipping/track.php',     'permission' => 'orders.view'],
+                // The directory entry catches index.php and configure.php.
+                ['label' => 'Integrations', 'url' => 'shipping/',              'permission' => 'orders.view'],
             ],
         ],
         [
@@ -224,11 +238,26 @@ function admin_menu_current_url(): string
                 $candidates[] = (string) $child['url'];
             }
         }
+
+        // Each candidate is [the url to match, the entry url that wins]. An
+        // entry's `also` pages match on their own path but credit the entry.
+        $pairs = [];
         foreach ($candidates as $url) {
-            $score = admin_menu_match_score($url, $current, $adminBase);
+            $pairs[] = [$url, $url];
+        }
+        foreach (array_merge([$item], $item['children'] ?? []) as $entry) {
+            foreach ((array) ($entry['also'] ?? []) as $alias) {
+                if (!empty($entry['url'])) {
+                    $pairs[] = [(string) $alias, (string) $entry['url']];
+                }
+            }
+        }
+
+        foreach ($pairs as [$match, $owner]) {
+            $score = admin_menu_match_score($match, $current, $adminBase);
             if ($score > $best) {
                 $best    = $score;
-                $bestUrl = $url;
+                $bestUrl = $owner;
             }
         }
     }

@@ -85,7 +85,7 @@ interface ShippingProviderInterface
      *
      * ['ok'=>bool, 'awb'=>?string, 'shipment_ref'=>?string, 'events'=>[...], 'message'=>string]
      */
-    public function parseWebhook(array $payload, array $headers = []): array;
+    public function parseWebhook(array $payload, array $headers = [], string $rawBody = ''): array;
 }
 
 /**

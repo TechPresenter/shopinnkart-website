@@ -679,7 +679,7 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
      * as the provider's webhook secret. It is compared with hash_equals so the
      * check cannot be timed.
      */
-    public function parseWebhook(array $payload, array $headers = []): array
+    public function parseWebhook(array $payload, array $headers = [], string $rawBody = ''): array
     {
         $secretRaw = (string) ($this->provider['webhook_secret'] ?? '');
         if ($secretRaw === '') {

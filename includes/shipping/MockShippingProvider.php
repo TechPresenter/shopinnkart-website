@@ -177,9 +177,11 @@ final class MockShippingProvider implements ShippingProviderInterface
             return shipping_fail('Mock courier does not serve ' . $pin . '.');
         }
 
-        // Derived from the order, so re-booking the same order in a test gives
-        // the same reference rather than a new random one each run.
-        $ref = 'MOCK' . str_pad((string) (int) ($order['id'] ?? 0), 8, '0', STR_PAD_LEFT);
+        // Deterministic, so a test asserts a value - but per shipment, not per
+        // order: a real courier issues a fresh AWB when a cancelled order is
+        // rebooked, and the AWB is derived from this reference.
+        $ref = 'MOCK' . str_pad((string) (int) ($order['id'] ?? 0), 6, '0', STR_PAD_LEFT)
+            . str_pad((string) ((int) ($options['shipment_id'] ?? 0) % 10000), 4, '0', STR_PAD_LEFT);
 
         return [
             'ok'           => true,
@@ -366,13 +368,18 @@ final class MockShippingProvider implements ShippingProviderInterface
      * be exercised from the start rather than written for the first time
      * against a courier that is also new.
      */
-    public function parseWebhook(array $payload, array $headers = []): array
+    public function parseWebhook(array $payload, array $headers = [], string $rawBody = ''): array
     {
         $secretRaw = (string) ($this->provider['webhook_secret'] ?? '');
         if ($secretRaw !== '') {
             $secret    = secret_decrypt($secretRaw);
             $signature = (string) ($headers['x-mock-signature'] ?? $headers['X-Mock-Signature'] ?? '');
-            $expected  = hash_hmac('sha256', (string) json_encode($payload), $secret);
+            // Over the exact bytes received, never a re-encoding: json_encode
+            // reorders keys and changes whitespace, so a courier's real
+            // signature would never match. The fallback exists only for callers
+            // that have no raw body, i.e. unit tests.
+            $signed    = $rawBody !== '' ? $rawBody : (string) json_encode($payload);
+            $expected  = hash_hmac('sha256', $signed, $secret);
 
             // hash_equals, not ===: a timing-safe compare is the whole point of
             // signing, and the habit matters more in the template than here.
