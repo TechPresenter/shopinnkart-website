@@ -44,6 +44,19 @@ final class MockShippingProvider implements ShippingProviderInterface
     }
 
     /**
+     * Yes: this carries nothing and invents its own scans from the clock.
+     *
+     * shipping_is_simulated() would already answer true from the code alone,
+     * but the driver saying so itself is what that hook is for - and it keeps
+     * the unattended tracking cron away from test parcels without the cron
+     * needing a list of driver names.
+     */
+    public function isSimulated(): bool
+    {
+        return true;
+    }
+
+    /**
      * Nothing is needed to talk to nothing, but the admin form should still
      * have something to save so the configure screen can be exercised.
      */
@@ -111,6 +124,15 @@ final class MockShippingProvider implements ShippingProviderInterface
         ];
     }
 
+    /**
+     * Takes weight_grams and, optionally, length_cm / width_cm / height_cm.
+     *
+     * A measured parcel is priced on the greater of its dead and volumetric
+     * weight (L x W x H / 5000), the way a real courier bills, so the quote
+     * screen shows what the dimensions cost. Unmeasured, it is dead weight -
+     * the mock declares no box of its own at booking, so there is nothing
+     * else for the quote to match.
+     */
     public function getRates(array $shipment): array
     {
         $origin      = (string) ($shipment['origin_pin'] ?? '');
@@ -118,6 +140,13 @@ final class MockShippingProvider implements ShippingProviderInterface
         $grams       = max(100, (int) ($shipment['weight_grams'] ?? 500));
         $isCod       = !empty($shipment['is_cod']);
         $codAmount   = (float) ($shipment['cod_amount'] ?? 0);
+
+        $length = (float) ($shipment['length_cm'] ?? 0);
+        $width  = (float) ($shipment['width_cm'] ?? 0);
+        $height = (float) ($shipment['height_cm'] ?? 0);
+        if ($length > 0 && $width > 0 && $height > 0) {
+            $grams = max($grams, (int) ceil($length * $width * $height / 5000 * 1000));
+        }
 
         $service = $this->checkServiceability($origin, $destination);
         if (!$service['serviceable']) {
@@ -222,12 +251,13 @@ final class MockShippingProvider implements ShippingProviderInterface
             return shipping_fail('Generate an AWB before the label.');
         }
 
-        // The hub renders the PDF itself from the shipment record, so the mock
-        // only has to say where it will live. A real courier returns its own URL.
+        // The mock hosts no label: the hub draws it from the shipment record.
+        // `url` is only ever a courier-hosted https label, so here it is null
+        // and the caller opens the hub's own label page.
         return [
             'ok'      => true,
-            'url'     => admin_url('shipping/label.php?awb=' . rawurlencode($awb)),
-            'message' => 'Label ready.',
+            'url'     => null,
+            'message' => 'Label ready. The mock courier hosts none; the hub prints its own.',
         ];
     }
 
@@ -315,7 +345,16 @@ final class MockShippingProvider implements ShippingProviderInterface
             ];
         }
 
-        return ['ok' => true, 'status' => $status, 'events' => $events, 'message' => 'Tracking updated.'];
+        return [
+            'ok'           => true,
+            'status'       => $status,
+            'events'       => $events,
+            'awb'          => $awb,
+            'shipment_ref' => (string) ($shipment['shipment_ref'] ?? ''),
+            'order_ref'    => (string) ($shipment['order_ref'] ?? ''),
+            'courier_name' => (string) ($shipment['courier_name'] ?? ''),
+            'message'      => 'Tracking updated.',
+        ];
     }
 
     public function cancelShipment(array $shipment, string $reason = ''): array
@@ -372,7 +411,12 @@ final class MockShippingProvider implements ShippingProviderInterface
     {
         $secretRaw = (string) ($this->provider['webhook_secret'] ?? '');
         if ($secretRaw !== '') {
-            $secret    = secret_decrypt($secretRaw);
+            $secret = secret_decrypt($secretRaw);
+            if ($secret === '') {
+                // Stored but unreadable (the app key changed). Verifying with
+                // an empty key would accept anyone's HMAC over "".
+                return shipping_fail('The webhook secret cannot be read. Save it again.');
+            }
             $signature = (string) ($headers['x-mock-signature'] ?? $headers['X-Mock-Signature'] ?? '');
             // Over the exact bytes received, never a re-encoding: json_encode
             // reorders keys and changes whitespace, so a courier's real
@@ -394,22 +438,77 @@ final class MockShippingProvider implements ShippingProviderInterface
             return shipping_fail('Webhook is missing awb or status.');
         }
 
-        $occurredAt = (string) ($payload['occurred_at'] ?? date('Y-m-d H:i:s'));
+        // Store time, or refused. Passed through raw, an ISO-8601 time with an
+        // offset was coerced by the event INSERT IGNORE but rejected by the
+        // strict shipments UPDATE - so the event was stored, the status change
+        // failed, and the courier's retry was then a "duplicate".
+        $given = trim((string) ($payload['occurred_at'] ?? ''));
+        $occurredAt = $given === '' ? null : self::readTime($given);
+        if ($given !== '' && $occurredAt === null) {
+            return shipping_fail('Webhook occurred_at is not a date: ' . mb_substr($given, 0, 40));
+        }
+
+        // Prefer the courier's own event id, then the time the courier gave.
+        // With neither, key on the body itself - never on the time it arrived,
+        // which made every resend a new event.
+        $eventId = trim((string) ($payload['event_id'] ?? ''));
+        if ($eventId !== '') {
+            $key = $eventId;
+        } elseif ($occurredAt !== null) {
+            // The shape keys always had, so an event stored before still
+            // matches its resend.
+            $key = $awb . ':' . $status . ':' . $occurredAt;
+        } else {
+            $canonical = $payload;
+            ksort($canonical);
+            $key = $awb . ':' . $status . ':h' . substr(sha1((string) json_encode($canonical)), 0, 16);
+        }
 
         return [
             'ok'           => true,
             'awb'          => $awb,
             'shipment_ref' => (string) ($payload['shipment_ref'] ?? ''),
+            'order_ref'    => (string) ($payload['order_ref'] ?? ''),
+            'courier_name' => (string) ($payload['courier_name'] ?? ''),
             'events'       => [[
                 'status'      => $status,
                 'message'     => (string) ($payload['message'] ?? ucfirst(str_replace('_', ' ', $status))),
                 'location'    => (string) ($payload['location'] ?? ''),
-                'occurred_at' => $occurredAt,
-                // Prefer the courier's own event id; fall back to something
-                // stable so a resend is still recognised as the same event.
-                'event_key'   => (string) ($payload['event_id'] ?? $awb . ':' . $status . ':' . $occurredAt),
+                // Unstated, the event is dated at receipt - but only its time;
+                // its key above never depends on it.
+                'occurred_at' => $occurredAt ?? date('Y-m-d H:i:s'),
+                'event_key'   => $key,
             ]],
             'message' => 'Webhook accepted.',
         ];
+    }
+
+    /**
+     * A courier time as store time ('Y-m-d H:i:s'), or null if unreadable.
+     *
+     * Plain "2026-09-22 15:00:00" is already store time. ISO-8601 with an
+     * offset or Z is converted. Anything else - including an impossible date
+     * that would silently roll over ("30 Feb") - is refused, not guessed.
+     */
+    private static function readTime(string $raw): ?string
+    {
+        $store = new DateTimeZone(date_default_timezone_get());
+
+        foreach (['!Y-m-d H:i:s', '!Y-m-d\TH:i:s', '!Y-m-d H:i'] as $format) {
+            $at = DateTimeImmutable::createFromFormat($format, $raw, $store);
+            if ($at !== false && DateTimeImmutable::getLastErrors() === false) {
+                return $at->format('Y-m-d H:i:s');
+            }
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)$/', $raw) === 1) {
+            try {
+                $at = new DateTimeImmutable($raw);
+            } catch (Exception $e) {
+                return null;
+            }
+            return DateTimeImmutable::getLastErrors() === false ? $at->setTimezone($store)->format('Y-m-d H:i:s') : null;
+        }
+        return null;
     }
 }

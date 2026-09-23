@@ -4,8 +4,10 @@
  *
  *   ?shipment=12            one label
  *   ?shipments=12,13,14     a batch, one label per page, in the order given
- *   ?awb=MK019000031        how the mock courier's generateLabel() links here
+ *   ?ids[]=12&ids[]=13      the same, as the shipments list's bulk bar sends it
+ *   ?awb=MK019000031        a label by AWB
  *   &provider=mock          narrows an AWB to one courier
+ *   &reprint=1              also print shipments already past pickup, marked REPRINT
  *   &return=/admin/...      where Back goes (checked by admin_safe_return)
  *
  * Why it is shaped like this:
@@ -23,7 +25,20 @@
  * cancelled and rebooked order has a new one, and the old label must die with
  * the old consignment. That is why a cancelled shipment is refused rather than
  * printed, as is one without an AWB: a label with no barcode gets stuck on a
- * parcel anyway, and the courier refuses it at pickup.
+ * parcel anyway, and the courier refuses it at pickup. An RTO-delivered or
+ * returned consignment is refused the same way - its AWB is closed.
+ *
+ * A label is for a parcel still on our shelf. One already past pickup (in
+ * transit, delivered ...) is held back unless the operator asks for it with
+ * "Reprint anyway" (&reprint=1, behind a confirm), and then it says REPRINT on
+ * its face, so a second label for a live parcel is always a decision.
+ *
+ * Nothing on it is ever cut short. A long address is set in smaller type, the
+ * contents list gives up its space first, and if the ship-to still does not
+ * fit, the label grows past 150 mm and the screen says it will print across
+ * two labels. A clipped address or a return address pushed off the bottom
+ * edge is a parcel that cannot be delivered or come back; a two-part label is
+ * only untidy.
  *
  * Everything comes from the shipment row where the shipment has it. The COD
  * figure is what the courier was told at booking, which is what the rider
@@ -47,12 +62,47 @@ $notes     = $selection['notes'];
 $context   = shipping_print_context($selection['shipments']);
 $printable = shipping_print_printable($selection['shipments'], $context, $notes);
 $storeName = (string) setting('store_name', SITE_NAME);
+$reprint   = ($_GET['reprint'] ?? '') === '1';
+
+/**
+ * The largest type size, from $sizes (points, largest first), at which $lines
+ * wrap into no more than $budgetMm of height across the label's 94 mm.
+ *
+ * An estimate, not a layout: Arial averages a little over half an em per
+ * character. It only has to choose well for the common long address; the
+ * label grows rather than clips when it is wrong, and the screen says so.
+ * Returns [size, index into $sizes].
+ */
+$fitType = static function (array $lines, array $sizes, float $budgetMm, float $lineHeight): array {
+    foreach ($sizes as $i => $pt) {
+        $mm      = $pt * 0.3528;
+        $perLine = max(1, (int) floor(94 / ($mm * 0.52)));
+        $rows    = 0;
+        foreach ($lines as $line) {
+            $rows += max(1, (int) ceil(mb_strlen($line) / $perLine));
+        }
+        if ($rows * $mm * $lineHeight <= $budgetMm) {
+            return [$pt, $i];
+        }
+    }
+    return [end($sizes), count($sizes) - 1];
+};
 
 $labels         = [];
 $incompleteFrom = [];   // provider names, once each
+$held           = [];   // past pickup, not asked for as a reprint
 
 foreach ($printable as $shipment) {
-    $awb = (string) $shipment['awb'];
+    $awb    = (string) $shipment['awb'];
+    $status = (string) $shipment['status'];
+
+    // Already with the courier or finished: a new label is a replacement at
+    // best, and a second live label for one parcel at worst.
+    $pastPickup = shipping_status_rank($status) >= shipping_status_rank('in_transit');
+    if ($pastPickup && !$reprint) {
+        $held[] = '#' . (int) $shipment['id'] . ' (' . strtolower(shipping_status_label($status)) . ')';
+        continue;
+    }
 
     // Bar height grows with the AWB: the SVG scales to the label's width, so
     // a longer code is drawn smaller and would otherwise come out squat.
@@ -73,7 +123,7 @@ foreach ($printable as $shipment) {
     // that exists nowhere.
     $fromLines = [];
     if (trim((string) ($provider['pickup_address'] ?? '')) !== '') {
-        $fromLines[] = str_limit((string) $provider['pickup_address'], 110);
+        $fromLines[] = trim((string) $provider['pickup_address']);
     }
     $fromCity = trim(implode(', ', array_filter([
         trim((string) ($provider['pickup_city'] ?? '')),
@@ -86,15 +136,27 @@ foreach ($printable as $shipment) {
         $incompleteFrom[$provName] = true;
     }
 
-    // Items: the four lines that fit, then a count. Names are clipped here
-    // rather than by CSS alone so the text in the DOM matches what prints.
+    // Ship-to type size. The address gets about 34 mm of the label; a longer
+    // one is set smaller rather than cut (see the docblock). The name gets two
+    // lines' worth at 12 pt. Past the second address step the label also
+    // goes dense: shorter barcodes and fewer content lines buy the address room.
+    $toName  = trim((string) ($order['shipping_name'] ?: $order['customer_name']));
+    $toLines = shipping_print_address_lines($order);
+    $toCity  = trim(implode(', ', array_filter([trim((string) $order['shipping_city']), trim((string) $order['shipping_state'])])));
+    [, $addrStep] = $fitType(array_merge($toLines, [$toCity]), [9.5, 8.5, 7.5, 6.5], 34.0, 1.25);
+    [, $nameStep] = $fitType([$toName], [12, 10.5, 9, 8], 10.5, 1.15);
+    $dense = $addrStep >= 2;
+
+    // Items: the lines that fit, then a count. Item names MAY be summarised -
+    // the contents list is the part of the label that gives way - but by a
+    // plain clip, never str_limit()'s strip_tags(), which ate "Kids toy <3 pack".
     $lines    = $context['items'][(int) $order['id']] ?? [];
     $itemRows = [];
     $units    = 0;
     foreach ($lines as $i => $line) {
         $units += (int) $line['quantity'];
-        if ($i < 4) {
-            $itemRows[] = str_limit((string) $line['product_name'], 44) . ' × ' . (int) $line['quantity'];
+        if ($i < ($dense ? 2 : 4)) {
+            $itemRows[] = shipping_print_clip((string) $line['product_name'], 60) . ' × ' . (int) $line['quantity'];
         }
     }
 
@@ -106,18 +168,25 @@ foreach ($printable as $shipment) {
 
     $orderNumber = (string) $order['order_number'];
 
+    $courierName = trim((string) $shipment['courier_name']) !== '' ? (string) $shipment['courier_name'] : $provName;
+
     $labels[] = [
         'id'          => (int) $shipment['id'],
         'awb'         => $awb,
         'awb_svg'     => $awbSvg,
-        'courier'     => trim((string) $shipment['courier_name']) !== '' ? (string) $shipment['courier_name'] : $provName,
+        'courier'     => $courierName,
+        'courier_long' => mb_strlen($courierName) > 24,
         'provider'    => $provName,
         'show_via'    => trim((string) $shipment['courier_name']) !== '' && strcasecmp(trim((string) $shipment['courier_name']), $provName) !== 0,
+        'reprint'     => $pastPickup ? shipping_status_label($status) : '',
+        'dense'       => $dense,
         'is_cod'      => (int) $shipment['is_cod'] === 1,
         'cod_amount'  => (float) $shipment['cod_amount'],
-        'to_name'     => str_limit((string) ($order['shipping_name'] ?: $order['customer_name']), 48),
-        'to_lines'    => shipping_print_address_lines($order),
-        'to_city'     => trim(implode(', ', array_filter([trim((string) $order['shipping_city']), trim((string) $order['shipping_state'])]))),
+        'to_name'     => $toName,
+        'name_step'   => $nameStep,
+        'to_lines'    => $toLines,
+        'addr_step'   => $addrStep,
+        'to_city'     => $toCity,
         'to_pin'      => (string) $order['shipping_pincode'],
         'to_phone'    => (string) ($order['shipping_phone'] ?: $order['customer_phone']),
         'order_no'    => $orderNumber,
@@ -140,6 +209,20 @@ foreach (array_keys($incompleteFrom) as $name) {
         . 'Fill it in under Shipping > Integrations > ' . $name . ' > Configure.';
 }
 
+// Held-back reprints are offered, never printed silently: the button carries
+// a confirm, and what it prints says REPRINT.
+$actions = '';
+if ($held !== []) {
+    $notes[] = 'Held back, already past pickup: ' . shipping_print_list($held) . '. A label is for a parcel still '
+        . 'with us; use Reprint anyway only to replace a damaged label on a parcel the courier already has.';
+    $again   = admin_url('shipping/label.php?' . http_build_query(array_merge($_GET, ['reprint' => '1'])));
+    $confirm = count($held) === 1
+        ? 'Print a replacement label for a consignment that is already past pickup? It will be marked REPRINT.'
+        : 'Print replacement labels for ' . count($held) . ' consignments that are already past pickup? They will be marked REPRINT.';
+    $actions = '<a class="pr-btn" href="' . e($again) . '" onclick="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+        . icon('printer', 'pr-ico') . '<span>Reprint anyway</span></a>';
+}
+
 // A status a script (or a test) can read; the screen says the same in words.
 if (!$selection['requested']) {
     http_response_code(400);
@@ -149,15 +232,20 @@ if (!$selection['requested']) {
     http_response_code(422);
 }
 
-// Back: to the order when one shipment was asked for, otherwise the shipping
-// hub, unless the page that linked here said where it lives.
+// Back: to the order when one shipment was asked for, otherwise the shipments
+// list, unless the page that linked here said where it lives. Not the
+// Integrations page (shipping/): that needs settings.view, and a label is
+// printed by orders roles.
 $fallback = count($selection['shipments']) === 1
     ? admin_url('orders/view.php?id=' . (int) ($selection['shipments'][0]['order_id'] ?? 0))
-    : admin_url('shipping/');
+    : admin_url('shipping/shipments.php');
 $backUrl  = admin_safe_return(is_string($_GET['return'] ?? null) ? $_GET['return'] : '', $fallback);
 
 $count = count($labels);
 $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labels');
+
+$addrSteps = ['', ' lbl-to__addr--s1', ' lbl-to__addr--s2', ' lbl-to__addr--s3'];
+$nameSteps = ['', ' lbl-to__name--s1', ' lbl-to__name--s2', ' lbl-to__name--s3'];
 ?>
 <!doctype html>
 <html lang="en">
@@ -177,10 +265,15 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
 
         <?= shipping_print_toolbar_css() ?>
 
-        /* ---- the label: 100 x 150 mm, 3 mm inside the edge ------------- */
+        /* ---- the label: 100 x 150 mm, 3 mm inside the edge -------------
+           At least 150 mm, never clipped. The contents list takes its
+           height from what is left (flex-basis 0), so it is the part that
+           gives way; everything else keeps its natural height, and when that
+           alone is over 150 mm the label grows (and the screen says so). */
         .lbl-sheet { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 20px 16px 40px; }
-        .lbl { width: 100mm; height: 150mm; padding: 3mm; display: flex; flex-direction: column;
-               overflow: hidden; background: #fff; color: #000; line-height: 1.2; }
+        .lbl { position: relative; width: 100mm; min-height: 150mm; padding: 3mm; display: flex; flex-direction: column;
+               background: #fff; color: #000; line-height: 1.2; }
+        .lbl > * { flex: 0 0 auto; }
         .lbl > * + * { border-top: .4mm solid #000; }
 
         .lbl-cap { display: block; font-size: 6.5pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -188,7 +281,11 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
         .lbl-head { display: flex; align-items: stretch; gap: 2mm; padding-bottom: 2mm; }
         .lbl-courier { flex: 1 1 auto; min-width: 0; align-self: center; }
         .lbl-courier strong { display: block; font-size: 15pt; line-height: 1.05; overflow-wrap: anywhere; }
+        .lbl-courier--long strong { font-size: 11.5pt; }
         .lbl-courier span { display: block; margin-top: .8mm; font-size: 7.5pt; }
+        /* Heavy border, not a fill: see the docblock on thermal heads. */
+        .lbl-reprint { display: inline-block; margin-top: 1mm; padding: .3mm 1.5mm; border: .5mm solid #000;
+                       font-size: 8pt; font-weight: 700; font-style: normal; letter-spacing: .08em; }
         .lbl-pay { flex: 0 0 auto; min-width: 36mm; max-width: 50mm; padding: 1mm 2mm; text-align: center;
                    display: flex; flex-direction: column; justify-content: center; border: .5mm solid #000; }
         .lbl-pay--cod { border-width: 1.2mm; }
@@ -198,10 +295,18 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
 
         .lbl-awb { padding: 1.5mm 0; }
         .lbl-awb .sik-barcode { display: block; width: 100%; height: auto; max-height: 27mm; margin: 0 auto; }
+        /* Still well above the 15%-of-width height scanners want. */
+        .lbl--dense .lbl-awb .sik-barcode { max-height: 20mm; }
 
         .lbl-to { padding: 1.8mm 0; }
-        .lbl-to__name { margin-top: .6mm; font-size: 12pt; font-weight: 700; overflow-wrap: anywhere; }
+        .lbl-to__name { margin-top: .6mm; font-size: 12pt; line-height: 1.15; font-weight: 700; overflow-wrap: anywhere; }
+        .lbl-to__name--s1 { font-size: 10.5pt; }
+        .lbl-to__name--s2 { font-size: 9pt; }
+        .lbl-to__name--s3 { font-size: 8pt; }
         .lbl-to__addr { margin-top: .6mm; font-size: 9.5pt; line-height: 1.25; overflow-wrap: anywhere; }
+        .lbl-to__addr--s1 { font-size: 8.5pt; }
+        .lbl-to__addr--s2 { font-size: 7.5pt; }
+        .lbl-to__addr--s3 { font-size: 6.5pt; }
         .lbl-to__pin { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; margin-top: .8mm; }
         .lbl-to__pin strong { font-size: 22pt; letter-spacing: .05em; line-height: 1; }
         .lbl-to__pin span { font-size: 10pt; font-weight: 700; white-space: nowrap; }
@@ -209,10 +314,13 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
         .lbl-order { display: flex; align-items: center; gap: 2.5mm; padding: 1.5mm 0; }
         .lbl-order__code { flex: 0 0 50mm; min-width: 0; }
         .lbl-order__code .sik-barcode { display: block; width: 100%; height: auto; max-height: 13mm; }
+        .lbl--dense .lbl-order__code .sik-barcode { max-height: 10mm; }
         .lbl-order__meta { flex: 1 1 auto; min-width: 0; font-size: 8pt; line-height: 1.35; }
         .lbl-order__meta b { font-weight: 700; }
 
-        .lbl-items { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 1.5mm 0; font-size: 8pt; }
+        /* Basis 0 with a floor of its caption: the list is sized from the room
+           left over, so it never adds height of its own to the label. */
+        .lbl > .lbl-items { flex: 1 1 0; min-height: 6mm; overflow: hidden; padding: 1.5mm 0; font-size: 8pt; }
         .lbl-items ul { margin: .6mm 0 0; padding: 0; list-style: none; }
         .lbl-items li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -241,7 +349,8 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
     'Label printer, 100 × 150 mm (4 × 6 in) stock, scale 100%, margins none.',
     $notes,
     $backUrl,
-    $count > 0
+    $count > 0,
+    $actions
 ) ?>
 
 <?php if ($labels === []): ?>
@@ -259,12 +368,16 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
 <?php else: ?>
     <main class="lbl-sheet">
         <?php foreach ($labels as $label): ?>
-            <section class="lbl" aria-label="Shipping label, AWB <?= e_attr($label['awb']) ?>">
+            <section class="lbl<?= $label['dense'] ? ' lbl--dense' : '' ?>" data-awb="<?= e_attr($label['awb']) ?>"
+                     aria-label="Shipping label, AWB <?= e_attr($label['awb']) ?>">
 
                 <div class="lbl-head">
-                    <div class="lbl-courier">
+                    <div class="lbl-courier<?= $label['courier_long'] ? ' lbl-courier--long' : '' ?>">
                         <strong><?= e($label['courier']) ?></strong>
                         <?php if ($label['show_via']): ?><span>via <?= e($label['provider']) ?></span><?php endif; ?>
+                        <?php if ($label['reprint'] !== ''): ?>
+                            <em class="lbl-reprint">REPRINT &middot; <?= e($label['reprint']) ?></em>
+                        <?php endif; ?>
                     </div>
                     <?php if ($label['is_cod']): ?>
                         <div class="lbl-pay lbl-pay--cod">
@@ -284,8 +397,8 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
 
                 <div class="lbl-to">
                     <span class="lbl-cap">Deliver to</span>
-                    <div class="lbl-to__name"><?= e($label['to_name']) ?></div>
-                    <div class="lbl-to__addr">
+                    <div class="lbl-to__name<?= $nameSteps[$label['name_step']] ?? '' ?>"><?= e($label['to_name']) ?></div>
+                    <div class="lbl-to__addr<?= $addrSteps[$label['addr_step']] ?? '' ?>">
                         <?php foreach ($label['to_lines'] as $line): ?><?= e($line) ?><br><?php endforeach; ?>
                         <?= e($label['to_city']) ?>
                     </div>
@@ -333,6 +446,49 @@ $title = $count === 1 ? 'Label ' . $labels[0]['awb'] : ($count . ' shipping labe
             </section>
         <?php endforeach; ?>
     </main>
+
+    <script>
+    // A label taller than its 150 mm stock prints across two. The layout grows
+    // rather than clip an address, so say so here, before the print job does.
+    // The yardstick is a 150 mm box inside each label, so the small-screen zoom
+    // applies to both sides of the comparison.
+    (function () {
+        var long = [];
+        document.querySelectorAll('.lbl').forEach(function (label) {
+            var stock = document.createElement('div');
+            stock.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:150mm;visibility:hidden';
+            label.appendChild(stock);
+            if (label.offsetHeight > stock.offsetHeight + 1) {
+                long.push(label.getAttribute('data-awb'));
+            }
+            label.removeChild(stock);
+        });
+        var bar = document.querySelector('.pr-bar');
+        if (!long.length || !bar) {
+            return;
+        }
+        var box = bar.querySelector('.pr-notes');
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'pr-notes';
+            box.setAttribute('role', 'status');
+            box.appendChild(document.createElement('strong'));
+            box.appendChild(document.createElement('ul'));
+            bar.appendChild(box);
+        }
+        var list = box.querySelector('ul');
+        long.forEach(function (awb) {
+            var item = document.createElement('li');
+            item.textContent = 'AWB ' + awb + ': the address is too long for one 100 x 150 mm label, so it will print '
+                + 'across two labels. Nothing is cut off; stick both on the parcel.';
+            list.appendChild(item);
+        });
+        var n = list.children.length;
+        box.querySelector('strong').textContent = n === 1
+            ? '1 thing was left out or needs a look:'
+            : n + ' things were left out or need a look:';
+    }());
+    </script>
 <?php endif; ?>
 
 </body>

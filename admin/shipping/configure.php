@@ -9,17 +9,22 @@
  * a courier that wants five fields where another wants two needs no edit to
  * this file.
  *
- * A stored secret is never rendered back into the HTML. The field shows a
- * placeholder when one exists and an empty submission means "keep it", the way
- * the settings screens already handle passwords - a secret echoed into a form
- * is a secret in the browser cache, the page source and any screenshot.
+ * A stored secret (a password-type field, the webhook secret) is never
+ * rendered back into the HTML. The field shows a placeholder when one exists
+ * and an empty submission means "keep it", the way the settings screens
+ * already handle passwords - a secret echoed into a form is a secret in the
+ * browser cache, the page source and any screenshot. A plain field (an email,
+ * a pickup nickname, a channel id) IS rendered with its value, so there an
+ * empty submission means what it looks like: the admin cleared it.
+ *
+ * Permission: settings.view to see, settings.edit to change - see index.php.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 
-$admin = admin_require('orders.view');
+$admin = admin_require('settings.view');
 
 require_once INCLUDES_PATH . '/shipping-functions.php';
 
@@ -31,13 +36,21 @@ if ($provider === null || !ShippingProviderFactory::implemented($code)) {
     redirect(admin_url('shipping/'));
 }
 
+$canEdit = admin_can('settings.edit');
 $driver  = ShippingProviderFactory::make($provider);
 $fields  = $driver->credentialFields();
 $stored  = shipping_credentials($provider);
 $errors  = [];
 
+// Stored, but encrypted under an application key this install no longer has.
+$credsUnreadable  = shipping_credentials_unreadable($provider);
+$secretUnreadable = shipping_webhook_secret_unreadable($provider);
+$secretUsable     = shipping_webhook_secret($provider) !== '';
+
+$isSecretField = static fn (array $meta): bool => ($meta['type'] ?? 'text') === 'password';
+
 if (is_post()) {
-    admin_require_action('orders.edit');   // POST + CSRF + permission
+    admin_require_action('settings.edit');   // POST + CSRF + permission
 
     $v = new Validator($_POST, [
         'name'           => 'Display name',
@@ -64,8 +77,11 @@ if (is_post()) {
     $submitted   = [];
     foreach ($fields as $key => $meta) {
         $value = trim((string) input('cred_' . $key, ''));
-        if ($value === '' && isset($stored[$key])) {
-            $submitted[$key] = $stored[$key];   // blank means keep
+        // Blank keeps the stored value only for a secret, which is never shown
+        // and so cannot be edited to blank; its own "Clear" box removes it.
+        // A plain field was shown with its value, so blank means cleared.
+        if ($value === '' && $isSecretField($meta) && isset($stored[$key]) && !input_bool('clear_' . $key)) {
+            $submitted[$key] = $stored[$key];
             continue;
         }
         if ($value === '' && $wantsActive && !empty($meta['required'])) {
@@ -113,6 +129,9 @@ if (is_post()) {
                     ['id' => (int) $provider['id']]);
             }
             Database::update('shipping_providers', $columns, '`id` = :id', ['id' => (int) $provider['id']]);
+            // A row added by hand has no slug; the save is where it gets one,
+            // so that merely viewing this page never writes the integration.
+            shipping_webhook_slug($provider, true);
             shipping_store_credentials((int) $provider['id'], $submitted);
         });
 
@@ -137,10 +156,31 @@ require ADMIN_PATH . '/includes/header.php';
 ?>
 
 <div class="ad-container">
+    <?php if ($credsUnreadable): ?>
+        <div class="sik-alert sik-alert--warning" style="margin-bottom:16px">
+            The saved credentials cannot be read: they were encrypted with a different application key
+            (<code>config/app.key.php</code> was replaced or regenerated). Enter them again and save.
+        </div>
+    <?php endif; ?>
+    <?php if ($secretUnreadable): ?>
+        <div class="sik-alert sik-alert--warning" style="margin-bottom:16px">
+            The saved webhook signing secret cannot be read (the application key changed), so every
+            webhook is being refused. Enter the secret again below.
+        </div>
+    <?php endif; ?>
+
     <form method="post" class="ad-form">
         <?= csrf_field() ?>
 
-        <div class="ad-grid" style="grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start">
+        <?php // A read-only admin sees the configuration, not a form that would bounce off the permission check. ?>
+        <fieldset <?= $canEdit ? '' : 'disabled' ?> style="border:0;margin:0;padding:0;min-width:0">
+        <?php /* The sidebar column was a flat 340px with no media query behind it, so at
+                 360px the grid asked for 356px inside 332px (the page scrolled sideways by
+                 10px) and at 390px the 1fr column collapsed to ~6px and every card in it was
+                 clipped by .ad-card's overflow:hidden - 64px, 75px and 170px of content with
+                 no way to reach it. The same two tracks, expressed so they can become one:
+                 the sidebar keeps its width only while there is room for the form beside it. */ ?>
+        <div class="ad-grid ad-grid--aside" style="gap:16px;align-items:start">
             <div>
                 <!-- Credentials ------------------------------------------ -->
                 <div class="ad-card" style="margin:0 0 16px">
@@ -162,7 +202,12 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
 
                         <?php foreach ($fields as $key => $meta): ?>
-                            <?php $has = isset($stored[$key]); ?>
+                            <?php
+                            $has    = isset($stored[$key]);
+                            $secret = $isSecretField($meta);
+                            // After a refused save, what the admin typed; otherwise what is stored.
+                            $shown  = is_post() ? (string) input('cred_' . $key, '') : (string) ($stored[$key] ?? '');
+                            ?>
                             <div class="ad-field">
                                 <label class="sik-label" for="cred_<?= e_attr($key) ?>">
                                     <?= e((string) ($meta['label'] ?? $key)) ?>
@@ -170,9 +215,18 @@ require ADMIN_PATH . '/includes/header.php';
                                 </label>
                                 <input class="sik-input<?= isset($errors[$key]) ? ' is-invalid' : '' ?>"
                                        id="cred_<?= e_attr($key) ?>" name="cred_<?= e_attr($key) ?>"
-                                       type="<?= ($meta['type'] ?? 'text') === 'password' ? 'password' : 'text' ?>"
+                                       type="<?= $secret ? 'password' : 'text' ?>"
                                        autocomplete="off"
-                                       placeholder="<?= $has ? 'Saved — leave blank to keep it' : '' ?>">
+                                       <?php if ($secret): ?>
+                                       placeholder="<?= $has ? 'Saved — leave blank to keep it' : '' ?>"
+                                       <?php else: ?>
+                                       value="<?= e_attr($shown) ?>"
+                                       <?php endif; ?>>
+                                <?php if ($secret && $has && empty($meta['required'])): ?>
+                                    <label class="ad-check" style="margin-top:6px;font-size:12.5px">
+                                        <input type="checkbox" name="clear_<?= e_attr($key) ?>" value="1"> Clear the saved value
+                                    </label>
+                                <?php endif; ?>
                                 <?php if (isset($errors[$key])): ?>
                                     <span class="sik-error"><?= e($errors[$key]) ?></span>
                                 <?php elseif (!empty($meta['help'])): ?>
@@ -261,19 +315,46 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
                     </div>
                     <div class="ad-card__body">
+                        <?php // Read only: a page that is merely looked at never creates the slug. ?>
+                        <?php $hookUrl = shipping_webhook_url($provider); ?>
                         <div class="ad-field">
-                            <label class="sik-label">Endpoint to give the courier</label>
-                            <input class="sik-input ad-mono" type="text" readonly
-                                   value="<?= e(url('api/shipping/webhook.php?provider=' . urlencode($code))) ?>">
-                            <span class="sik-help">Read-only. Paste this into the courier's dashboard.</span>
+                            <label class="sik-label" for="webhookUrl">Endpoint to give the courier</label>
+                            <?php if ($hookUrl === ''): ?>
+                                <p class="ad-muted" style="margin:0">
+                                    Save this integration once and its webhook URL appears here.
+                                </p>
+                            <?php else: ?>
+                                <div style="display:flex;gap:8px">
+                                    <input class="sik-input ad-mono" id="webhookUrl" type="text" readonly
+                                           value="<?= e($hookUrl) ?>" style="flex:1;min-width:0">
+                                    <?php // A link, not a button: a disabled fieldset disables buttons, and copying is not a change. ?>
+                                    <a href="#" role="button" class="ad-btn" data-copy="<?= e_attr($hookUrl) ?>"
+                                       title="Copy the webhook URL"><?= icon('copy', 'w-4 h-4') ?> Copy URL</a>
+                                </div>
+                            <?php endif; ?>
+                            <span class="sik-help">
+                                Paste this into the courier's webhook settings. It carries no courier name
+                                (Shiprocket rejects URLs containing "shiprocket", "sr" or "kr"), and its random
+                                part identifies this integration, so treat it as private. It keeps working while
+                                the courier is switched off, so parcels already out keep being tracked.
+                            </span>
                         </div>
 
                         <div class="ad-field">
                             <label class="sik-label" for="webhookSecret">Signing secret</label>
-                            <input class="sik-input" id="webhookSecret" name="webhook_secret" type="password"
+                            <input class="sik-input<?= $secretUnreadable ? ' is-invalid' : '' ?>" id="webhookSecret" name="webhook_secret" type="password"
                                    autocomplete="off"
-                                   placeholder="<?= !empty($provider['webhook_secret']) ? 'Saved — leave blank to keep it' : '' ?>">
-                            <span class="sik-help">Used to verify that an inbound call really came from the courier.</span>
+                                   placeholder="<?= $secretUsable ? 'Saved — leave blank to keep it'
+                                       : ($secretUnreadable ? 'Saved secret cannot be read (application key changed) — enter it again' : '') ?>">
+                            <?php if ($secretUnreadable): ?>
+                                <span class="sik-error">The saved secret cannot be read (the application key changed) — enter it again.</span>
+                            <?php else: ?>
+                                <span class="sik-help">
+                                    Proves an inbound call really came from the courier; without one, every call is refused.
+                                    Couriers that send a token rather than a signature must be given this exact value
+                                    (Shiprocket: the webhook's Token, sent as <code>x-api-key</code>).
+                                </span>
+                            <?php endif; ?>
                         </div>
 
                         <label class="ad-switch">
@@ -305,6 +386,15 @@ require ADMIN_PATH . '/includes/header.php';
                                 <option value="live" <?= $provider['mode'] === 'live' ? 'selected' : '' ?>>Live</option>
                             </select>
                             <span class="sik-help">Live mode books real consignments and is billed.</span>
+                            <?php if ($code === 'shiprocket'): ?>
+                                <?php // Shiprocket has no sandbox: the generic sentence would promise a test booking that cannot exist. ?>
+                                <span class="sik-help" style="display:block;margin-top:6px">
+                                    Shiprocket has no test environment. In Test mode, rates, serviceability,
+                                    tracking, labels and the connection test use your real account, but booking,
+                                    AWB, pickup, cancel, return and manifest requests are refused. Switch to Live
+                                    to book.
+                                </span>
+                            <?php endif; ?>
                         </div>
 
                         <label class="ad-switch" style="margin-bottom:10px">
@@ -362,9 +452,19 @@ require ADMIN_PATH . '/includes/header.php';
             </div>
         </div>
 
+        </fieldset>
+
         <div class="ad-card__foot" style="margin-top:16px">
-            <a class="ad-btn" href="<?= e(admin_url('shipping/')) ?>">Cancel</a>
-            <button type="submit" class="ad-btn ad-btn--primary"><?= icon('check', 'w-4 h-4') ?> Save</button>
+            <?php if ($canEdit): ?>
+                <a class="ad-btn" href="<?= e(admin_url('shipping/')) ?>">Cancel</a>
+                <button type="submit" class="ad-btn ad-btn--primary"><?= icon('check', 'w-4 h-4') ?> Save</button>
+            <?php else: ?>
+                <span class="ad-muted" style="margin-right:auto;font-size:12.5px">
+                    You have read-only access to courier configuration. Ask a Super Admin for the
+                    <code>settings.edit</code> permission to change it.
+                </span>
+                <a class="ad-btn" href="<?= e(admin_url('shipping/')) ?>">Back</a>
+            <?php endif; ?>
         </div>
     </form>
 </div>

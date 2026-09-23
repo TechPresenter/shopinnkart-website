@@ -17,19 +17,32 @@
  *
  *   - While a live shipment exists the booking form is not rendered at all. The
  *     service would refuse a second booking anyway, and a form that can only
- *     fail is worse than showing the shipment that holds the order.
+ *     fail is worse than showing the shipment that holds the order. For the
+ *     same reason an order the service would refuse (shipping_order_block_reason:
+ *     closed, or prepaid and unpaid) gets the reason instead of rates.
  *
  *   - Rates are quoted on every view, never cached. A quote is the courier's
  *     answer about now, and a stale one is how a lane that stopped being
- *     serviceable gets booked.
+ *     serviceable gets booked. The quote includes the parcel's dimensions:
+ *     couriers bill the larger of dead and volumetric weight.
  *
  *   - The chosen rate carries who (provider, courier id, courier name) and
- *     never a price. The courier prices the booking itself, so a price posted
- *     from the browser would be a number nothing checks.
+ *     never a price. Booking quotes the same parcel again and takes the price
+ *     - stored as the shipment's shipping charge - from the courier's fresh
+ *     answer for that courier, so a price posted from the browser is never
+ *     read, and a rate that is no longer offered is refused, not booked blind.
  *
  *   - Booking posts the parcel the rates were quoted FOR, from hidden fields,
  *     not whatever is typed in the parcel boxes at that moment. Editing the
- *     parcel disables Book until the rates are fetched again.
+ *     parcel disables Book until the rates are fetched again. The weight
+ *     rules are the same for a typed weight and the catalogue estimate, so a
+ *     page never offers to book a parcel the POST will refuse.
+ *
+ *   - A courier with no sandbox (Shiprocket) in Test mode still quotes - rates
+ *     are read-only and come from the real account - but its driver refuses
+ *     every billable call, booking included. Its rates are listed, unpickable,
+ *     under a note saying why, and a POST naming it is refused here: sent on to
+ *     shipping_book() it would only leave a failed_booking row behind.
  */
 
 declare(strict_types=1);
@@ -56,9 +69,20 @@ $selfUrl     = admin_url('shipping/book.php?order=' . $orderId);
 // accepts only a path inside this admin - so the path, not the absolute URL.
 $returnPath = (string) parse_url($selfUrl, PHP_URL_PATH) . '?' . (string) parse_url($selfUrl, PHP_URL_QUERY);
 
-// The same three statuses shipping_book() refuses. Kept in step with it so the
-// screen explains the refusal instead of offering a form that meets it.
-$unshippable = in_array($orderStatus, [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED, ORDER_STATUS_RETURNED], true);
+// Whatever shipping_book() would refuse the order for - asked of the service
+// itself rather than kept here as a second list, which is how an unpaid
+// prepaid order came to be quoted and offered a Book that could only fail.
+$blockReason = shipping_order_block_reason($order);
+
+/**
+ * Does this provider row quote but refuse to book? A courier with no sandbox
+ * (see the docblock) outside Live mode - and, as its driver does, a row with no
+ * mode at all counts as Test.
+ */
+$quotesOnly = static function (array $provider): bool {
+    return in_array((string) ($provider['code'] ?? ''), ['shiprocket'], true)
+        && (string) ($provider['mode'] ?? '') !== 'live';
+};
 
 /**
  * The parcel as the admin described it, falling back to the catalogue estimate.
@@ -90,6 +114,12 @@ $readParcel = static function (int $estimatedGrams): array {
         } else {
             $values['weight_grams'] = $grams;
         }
+    } elseif ($estimatedGrams < 50 || $estimatedGrams > 50000) {
+        // The same bounds as a typed weight. The estimate is only a default;
+        // quoting it unchecked offered rates and a Book button for a parcel
+        // the POST then refused.
+        $errors['weight_grams'] = 'The catalogue estimate (' . number_format($estimatedGrams / 1000, 1)
+            . ' kg) is outside the 50 g to 50 kg a booking takes. Weigh the packed parcel and enter its weight.';
     }
 
     $given = 0;
@@ -124,6 +154,11 @@ if (is_post()) {
     $retryQuery = array_filter($parcelRaw, static fn (string $v): bool => $v !== '');
     $retryUrl   = $selfUrl . ($retryQuery !== [] ? '&' . http_build_query($retryQuery) : '');
 
+    if ($blockReason !== null) {
+        flash('error', $blockReason);
+        redirect($selfUrl);
+    }
+
     if ($parcelErrors !== []) {
         flash('error', (string) reset($parcelErrors));
         redirect($retryUrl);
@@ -139,9 +174,17 @@ if (is_post()) {
     // The code must name a courier that is switched on AND has a driver right
     // now - not merely one that was when the rates were drawn.
     $providerCode = $choice['provider'];
-    $liveCodes    = array_column(ShippingProviderFactory::available(), 'code');
-    if (!in_array($providerCode, $liveCodes, true)) {
+    $liveRows     = array_column(ShippingProviderFactory::available(), null, 'code');
+    $liveNames    = array_column($liveRows, 'name', 'code');
+    if (!isset($liveNames[$providerCode])) {
         flash('error', 'That courier is no longer available. Get rates again.');
+        redirect($retryUrl);
+    }
+    // The page offers no pick for it; this catches a page drawn while it was
+    // Live, or a hand-made POST, before the service writes a row that can only fail.
+    if ($quotesOnly($liveRows[$providerCode])) {
+        flash('error', (string) $liveNames[$providerCode] . ' is in Test mode and has no sandbox, so it cannot book. '
+            . 'Choose another courier, or switch it to Live first.');
         redirect($retryUrl);
     }
 
@@ -155,18 +198,62 @@ if (is_post()) {
         flash('error', 'That rate could not be read. Get rates again.');
         redirect($retryUrl);
     }
+    $byId = $courierId !== '' && $courierId !== '0';
+    if (!$byId && $courierName === '') {
+        flash('error', 'That rate could not be read. Get rates again.');
+        redirect($retryUrl);
+    }
 
-    $opts = ['weight_grams' => $parcel['weight_grams']];
+    // The price, from the courier: the same parcel quoted again and the chosen
+    // rate found in the answer - by the aggregator's courier id where there is
+    // one, else by name. See the docblock for why the browser never sends it.
+    $quoteParcel = array_filter($parcel, static fn ($v): bool => $v !== null);
+    $fresh       = shipping_quote_order($orderId, $quoteParcel);
+    $rate        = null;
+    foreach ($fresh['rates'] as $offered) {
+        if ((string) ($offered['provider'] ?? '') !== $providerCode) {
+            continue;
+        }
+        $offeredId = trim((string) ($offered['courier_id'] ?? ''));
+        if ($byId ? $offeredId === $courierId : trim((string) ($offered['courier'] ?? '')) === $courierName) {
+            $rate = $offered;
+            break;
+        }
+    }
+    if ($rate === null) {
+        // The provider's own complaint, when it made one ("Shiprocket: login
+        // failed"), says more than "no longer quotes".
+        $providerName = (string) $liveNames[$providerCode];
+        $why          = '';
+        foreach ($fresh['errors'] as $error) {
+            if ($providerName !== '' && strncmp((string) $error, $providerName . ':', strlen($providerName) + 1) === 0) {
+                $why = ' ' . (string) $error;
+                break;
+            }
+        }
+        flash('error', 'That courier no longer quotes for this parcel.' . $why . ' Get rates again.');
+        redirect($retryUrl);
+    }
+
+    // The quote's ETA rides along, so the shipment (and the order the customer
+    // sees) gets an expected date from the same answer as the price.
+    $opts = ['weight_grams' => $parcel['weight_grams'], 'shipping_charge' => round((float) $rate['cost'], 2)];
+    if (isset($rate['eta_days']) && is_numeric($rate['eta_days']) && (int) $rate['eta_days'] > 0) {
+        $opts['eta_days'] = (int) $rate['eta_days'];
+    }
     foreach (['length_cm', 'width_cm', 'height_cm'] as $key) {
         if ($parcel[$key] !== null) {
             $opts[$key] = $parcel[$key];
         }
     }
-    if ($courierId !== '' && $courierId !== '0') {
-        $opts['courier_id'] = $courierId;
+    // Who, too, as the fresh quote names it rather than as the browser echoed it.
+    $rateId   = trim((string) ($rate['courier_id'] ?? ''));
+    $rateName = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string) ($rate['courier'] ?? '')));
+    if ($rateId !== '' && $rateId !== '0') {
+        $opts['courier_id'] = mb_substr($rateId, 0, 40);
     }
-    if ($courierName !== '') {
-        $opts['courier'] = mb_substr($courierName, 0, 100);
+    if ($rateName !== '') {
+        $opts['courier'] = mb_substr($rateName, 0, 100);
     }
 
     $result = shipping_book($orderId, $providerCode, $opts);
@@ -201,9 +288,11 @@ $available = ShippingProviderFactory::available();
 // shipment should still say who carried it.
 $providerNames = array_column(shipping_providers_all(), 'name', 'code');
 $providerModes = array_column($available, 'mode', 'code');
+// code => name, for the live providers whose rates are shown but not bookable.
+$quoteOnlyNames = array_column(array_filter($available, $quotesOnly), 'name', 'code');
 
 $quote = null;
-if ($canEdit && !$unshippable && $live === null && $available !== [] && $parcelErrors === []) {
+if ($canEdit && $blockReason === null && $live === null && $available !== [] && $parcelErrors === []) {
     $quote = shipping_quote_order($orderId, array_filter($parcel, static fn ($v): bool => $v !== null));
 }
 
@@ -219,10 +308,11 @@ $badge = static function (string $status): string {
 $pageTitle    = 'Ship order ' . $order['order_number'];
 $pageSubtitle = (string) $order['customer_name'] . ' · ' . (ORDER_STATUSES[$orderStatus] ?? ucfirst($orderStatus))
     . ' · placed ' . format_date((string) $order['created_at']);
+// 'Shipping' leads to the shipments list, not the Integrations page: that one
+// needs settings.view, and this screen is opened by orders-only roles too.
 $breadcrumbs  = [
     ['label' => 'Dashboard', 'url' => admin_url('dashboard.php')],
-    ['label' => 'Shipping',  'url' => admin_url('shipping/')],
-    ['label' => 'Shipments', 'url' => admin_url('shipping/shipments.php')],
+    ['label' => 'Shipping',  'url' => admin_url('shipping/shipments.php')],
     ['label' => (string) $order['order_number']],
 ];
 $pageActions = '<a class="ad-btn" href="' . e(admin_url('orders/view.php?id=' . $orderId)) . '">'
@@ -276,7 +366,8 @@ require ADMIN_PATH . '/includes/header.php';
                         <?= e((string) $order['shipping_address']) ?><br>
                         <?php if (!empty($order['shipping_address2'])): ?><?= e((string) $order['shipping_address2']) ?><br><?php endif; ?>
                         <?php if (!empty($order['shipping_landmark'])): ?>
-                            <span class="ad-muted">Near <?= e((string) $order['shipping_landmark']) ?></span><br>
+                            <?php // As the customer wrote it: they type their own "opposite", "behind" or "near". ?>
+                            <span class="ad-muted">Landmark: <?= e((string) $order['shipping_landmark']) ?></span><br>
                         <?php endif; ?>
                         <?= e((string) $order['shipping_city']) ?>, <?= e((string) $order['shipping_state']) ?><br>
                         PIN <strong class="ad-mono"><?= e((string) $order['shipping_pincode']) ?></strong>
@@ -286,9 +377,17 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <dt>Payment</dt>
                     <dd>
+                        <?php // is_cod is shipping_order_owes_cod(): what the courier is told to
+                              // collect, not how the order was placed. A COD order already paid
+                              // ships as prepaid, so name both facts - "Prepaid" alone told the
+                              // admin an order was card-paid when the cash is already in the till. ?>
                         <?php if ($order['is_cod']): ?>
                             <strong>Cash on delivery</strong><br>
                             Collect <?= e(money((float) $order['total_amount'])) ?>
+                        <?php elseif (strtolower((string) ($order['payment_method'] ?? '')) === 'cod'): ?>
+                            <strong>Cash on delivery - already collected</strong> &middot; <?= e(money((float) $order['total_amount'])) ?><br>
+                            <?= admin_state_badge((string) $order['payment_status']) ?><br>
+                            <span class="ad-muted">Booked as prepaid: the courier collects nothing at the door.</span>
                         <?php else: ?>
                             <strong>Prepaid</strong> &middot; <?= e(money((float) $order['total_amount'])) ?><br>
                             <?= admin_state_badge((string) $order['payment_status']) ?>
@@ -333,14 +432,18 @@ require ADMIN_PATH . '/includes/header.php';
         // Which buttons make sense. The service refuses the rest anyway; hiding
         // them means an admin is not invited to press something that must fail.
         // Cancel stops at pickup: once the courier holds the parcel, getting it
-        // back is an RTO, not a cancellation.
+        // back is an RTO, not a cancellation. A 'pending' row is a courier call
+        // still in flight, and shipping_cancel() releases it only once it has
+        // outlived any request (SHIPPING_PENDING_STALE_MINUTES) - before that it
+        // refuses with "still being made", so the button waits as long.
         $awaitingPickup = in_array($status, ['ready', 'booked', 'pickup_scheduled'], true);
+        $pendingStale   = $status === 'pending' && shipping_pending_is_stale($live);
         $show = [
             'awb'     => $status === 'ready' && !$hasAwb,
             'label'   => $hasAwb && $awaitingPickup,
             'pickup'  => $hasAwb && $awaitingPickup,
             'refresh' => $hasAwb,
-            'cancel'  => $status === 'pending' || $awaitingPickup,
+            'cancel'  => $pendingStale || $awaitingPickup,
         ];
         $anyAction = $canEdit && in_array(true, $show, true);
 
@@ -355,6 +458,12 @@ require ADMIN_PATH . '/includes/header.php';
         // javascript: URL, and this value is stored per shipment.
         $trackUrl  = (string) ($live['tracking_url'] ?? '');
         $trackUrl  = preg_match('~^https?://~i', $trackUrl) === 1 ? $trackUrl : '';
+        // The courier's own label and pickup manifest, once fetched (Print
+        // label; the shipments list's Courier manifest). https only, as above.
+        $courierDocs = array_filter([
+            'Courier label'    => (string) ($live['label_url'] ?? ''),
+            'Courier manifest' => (string) ($live['manifest_url'] ?? ''),
+        ], static fn (string $url): bool => preg_match('~^https://~i', $url) === 1);
         ?>
         <div class="ad-card">
             <div class="ad-card__head">
@@ -369,12 +478,24 @@ require ADMIN_PATH . '/includes/header.php';
 
             <div class="ad-card__body">
                 <?php if ($status === 'pending'): ?>
+                    <?php
+                    // Two sentences, one per side of the stale line, so the page
+                    // never offers a Cancel the service would refuse - nor hides
+                    // the one way a dead booking frees the order.
+                    ?>
                     <div class="sik-alert sik-alert--warning" style="margin:0 0 16px">
                         <?= icon('alert', 'w-5 h-5') ?>
                         <div>
-                            This booking never finished: the courier was being called and no answer was recorded.
-                            If it started more than a few minutes ago, cancel it to free the order - and check the
-                            courier's dashboard for a consignment it may have created before booking again.
+                            <?php if ($pendingStale): ?>
+                                This booking never finished: the courier was called more than
+                                <?= (int) SHIPPING_PENDING_STALE_MINUTES ?> minutes ago and no answer was recorded.
+                                Cancel releases it - then check the courier panel for a consignment it may have
+                                created before booking again.
+                            <?php else: ?>
+                                This booking is still being made: the courier was called and has not answered yet.
+                                <?= e('If it has not finished within ' . SHIPPING_PENDING_STALE_MINUTES
+                                    . ' minutes, Cancel releases it - then check the courier panel for a consignment it may have created.') ?>
+                            <?php endif; ?>
                         </div>
                     </div>
                 <?php endif; ?>
@@ -386,7 +507,12 @@ require ADMIN_PATH . '/includes/header.php';
                     </div>
                     <div>
                         <dt>Courier</dt>
-                        <dd><?= (string) ($live['courier_name'] ?? '') !== '' ? e((string) $live['courier_name']) : '<span class="ad-muted">Not assigned yet</span>' ?></dd>
+                        <dd>
+                            <?= (string) ($live['courier_name'] ?? '') !== '' ? e((string) $live['courier_name']) : '<span class="ad-muted">Not assigned yet</span>' ?>
+                            <?php if ((float) ($live['shipping_charge'] ?? 0) > 0): ?>
+                                <br><span class="ad-muted">Quoted <?= e(money((float) $live['shipping_charge'])) ?> at booking</span>
+                            <?php endif; ?>
+                        </dd>
                     </div>
                     <div>
                         <dt>AWB</dt>
@@ -428,6 +554,18 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php endif; ?>
                         </dd>
                     </div>
+                    <?php if ($courierDocs !== []): ?>
+                        <div>
+                            <dt>Courier documents</dt>
+                            <dd>
+                                <?php foreach ($courierDocs as $docLabel => $docUrl): ?>
+                                    <a href="<?= e($docUrl) ?>" target="_blank" rel="noopener noreferrer">
+                                        <?= e($docLabel) ?> <?= icon('external', 'w-3 h-3') ?>
+                                    </a><br>
+                                <?php endforeach; ?>
+                            </dd>
+                        </div>
+                    <?php endif; ?>
                     <?php if (!empty($live['expected_at']) || !empty($live['shipped_at']) || !empty($live['delivered_at'])): ?>
                         <div>
                             <dt>Dates</dt>
@@ -446,15 +584,30 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php if ($show['awb']): ?>
                         <form method="post" action="<?= e($actionUrl) ?>" class="bk-inline" data-once>
                             <?= $hidden('awb') ?>
+                            <?php
+                            // The sub-courier chosen at booking. A retry without it
+                            // lets an aggregator pick its own default - often a
+                            // dearer one than the rate the admin chose.
+                            ?>
+                            <?php if ((string) ($live['courier_id'] ?? '') !== ''): ?>
+                                <input type="hidden" name="courier_id" value="<?= e_attr((string) $live['courier_id']) ?>">
+                            <?php endif; ?>
                             <button type="submit" class="ad-btn ad-btn--primary"><?= icon('tag', 'w-4 h-4') ?> Request AWB</button>
                         </form>
                     <?php endif; ?>
 
                     <?php if ($show['label']): ?>
-                        <a class="ad-btn" target="_blank" rel="noopener"
-                           href="<?= e(admin_url('shipping/label.php?shipment=' . $liveId)) ?>">
-                            <?= icon('printer', 'w-4 h-4') ?> Print label
-                        </a>
+                        <?php
+                        // Through action.php, not straight to label.php: a courier
+                        // that hosts its own label (routing and sort codes the hub
+                        // cannot draw) is asked for it first. The hub's label is
+                        // what prints when the courier has none. New tab, and no
+                        // data-once - a reprint is a normal thing to want.
+                        ?>
+                        <form method="post" action="<?= e($actionUrl) ?>" class="bk-inline" target="_blank">
+                            <?= $hidden('label') ?>
+                            <button type="submit" class="ad-btn"><?= icon('printer', 'w-4 h-4') ?> Print label</button>
+                        </form>
                     <?php endif; ?>
 
                     <?php if ($show['refresh']): ?>
@@ -469,8 +622,9 @@ require ADMIN_PATH . '/includes/header.php';
                             <?= $hidden('pickup') ?>
                             <div class="ad-field" style="flex:1 1 170px;min-width:0">
                                 <label class="sik-label" for="pickupDate">Pickup date</label>
+                                <?php // The window action.php accepts: today to 30 days out. ?>
                                 <input class="sik-input" type="date" id="pickupDate" name="pickup_date"
-                                       min="<?= e_attr(date('Y-m-d')) ?>"
+                                       min="<?= e_attr(date('Y-m-d')) ?>" max="<?= e_attr(date('Y-m-d', strtotime('+30 days'))) ?>"
                                        value="<?= e_attr((string) ($live['pickup_date'] ?? '')) ?>">
                             </div>
                             <button type="submit" class="ad-btn">
@@ -488,8 +642,15 @@ require ADMIN_PATH . '/includes/header.php';
                                 <input class="sik-input" type="text" id="cancelReason" name="reason" maxlength="200"
                                        placeholder="e.g. switching courier">
                             </div>
-                            <button type="submit" class="ad-btn ad-btn--danger"
-                                    data-confirm="Cancel this shipment<?= $hasAwb ? ' and void AWB ' . e_attr((string) $live['awb']) : '' ?>? The order stays open and can be booked again.">
+                            <?php
+                            // Releasing a dead booking calls no courier, so the
+                            // confirm says where to look instead of "void".
+                            $cancelConfirm = $pendingStale
+                                ? 'Release this booking that never finished? The order can be booked again - first check the courier panel for a consignment it may have created.'
+                                : 'Cancel this shipment' . ($hasAwb ? ' and void AWB ' . (string) $live['awb'] : '')
+                                    . '? The order stays open and can be booked again.';
+                            ?>
+                            <button type="submit" class="ad-btn ad-btn--danger" data-confirm="<?= e_attr($cancelConfirm) ?>">
                                 <?= icon('close', 'w-4 h-4') ?> Cancel shipment
                             </button>
                         </form>
@@ -535,17 +696,19 @@ require ADMIN_PATH . '/includes/header.php';
             <?php endif; ?>
         </div>
 
-    <?php elseif ($unshippable): ?>
-        <!-- ================= 3a. Nothing to book: the order is closed ================= -->
+    <?php elseif ($blockReason !== null): ?>
+        <!-- ================= 3a. Nothing to book: the service would refuse ================= -->
         <div class="ad-card">
             <div class="ad-card__head"><div><h2 class="ad-card__title">This order cannot be shipped</h2></div></div>
             <div class="ad-card__body">
                 <p style="margin:0 0 8px">
-                    It is <strong><?= e(strtolower(ORDER_STATUSES[$orderStatus] ?? $orderStatus)) ?></strong>,
-                    and a closed order is never handed to a courier.
+                    <?= e($blockReason) ?>
                     <?php if ($orderStatus === ORDER_STATUS_CANCELLED && !empty($order['cancelled_at'])): ?>
                         Cancelled <?= e(format_datetime((string) $order['cancelled_at'])) ?>.
                     <?php endif; ?>
+                </p>
+                <p class="ad-muted" style="margin:0 0 8px">
+                    No courier is quoted or booked until that changes on the order.
                 </p>
                 <?php if ($orderStatus === ORDER_STATUS_CANCELLED && (string) ($order['cancel_reason'] ?? '') !== ''): ?>
                     <p class="ad-muted" style="margin:0">Reason: <?= e((string) $order['cancel_reason']) ?></p>
@@ -564,9 +727,14 @@ require ADMIN_PATH . '/includes/header.php';
                     Rates and booking need at least one courier integration that is switched on and has a
                     pickup PIN code. None is active right now.
                 </p>
-                <a class="ad-btn ad-btn--primary" href="<?= e(admin_url('shipping/')) ?>">
-                    <?= icon('settings', 'w-4 h-4') ?> Open shipping integrations
-                </a>
+                <?php // Integrations needs settings.view; an orders-only role would get a 403 from the button. ?>
+                <?php if (admin_can('settings.view')): ?>
+                    <a class="ad-btn ad-btn--primary" href="<?= e(admin_url('shipping/')) ?>">
+                        <?= icon('settings', 'w-4 h-4') ?> Open shipping integrations
+                    </a>
+                <?php else: ?>
+                    <p class="ad-muted" style="margin:0">Ask an admin with settings access to set up a courier.</p>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -580,14 +748,12 @@ require ADMIN_PATH . '/includes/header.php';
     <?php else: ?>
         <?php
         // ================= 3c. Book it =================
-        // Not refusals - the service books these - but each is something an
-        // admin would want to see before spending a booking.
+        // Not refusals - the service books these (an unpaid prepaid order is a
+        // refusal, shown above instead) - but each is something an admin would
+        // want to see before spending a booking.
         $cautions = [];
         if ($orderStatus === ORDER_STATUS_PENDING) {
             $cautions[] = 'This order is still pending: it has not been confirmed.';
-        }
-        if (!$order['is_cod'] && (string) $order['payment_status'] !== 'paid') {
-            $cautions[] = 'Payment for this prepaid order is ' . (string) $order['payment_status'] . ', not paid.';
         }
         if (shipping_order_rank($orderStatus) >= shipping_order_rank(ORDER_STATUS_SHIPPED)) {
             $cautions[] = 'This order is already marked ' . strtolower(ORDER_STATUSES[$orderStatus] ?? $orderStatus)
@@ -599,15 +765,34 @@ require ADMIN_PATH . '/includes/header.php';
                 . ', entered by hand. A booking here replaces it.';
         }
 
-        $fieldValue = static function (string $key) use ($parcelRaw, $parcel): string {
+        $fieldValue = static function (string $key) use ($parcelRaw, $parcel, $parcelErrors): string {
             if ($parcelRaw[$key] !== '') {
                 return $parcelRaw[$key];
+            }
+            // An estimate that failed the bounds is not offered as the value:
+            // the box's own max would stop the form, and the admin has to
+            // weigh the parcel anyway.
+            if (isset($parcelErrors[$key])) {
+                return '';
             }
             return $parcel[$key] === null ? '' : (string) $parcel[$key];
         };
         $rates       = $quote['rates'] ?? [];
         $quoteErrors = $quote['errors'] ?? [];
         $anyLive     = in_array('live', $providerModes, true);
+        // Split once: the note names only quote-only couriers that actually
+        // quoted, and Book is drawn only when at least one rate can be picked.
+        $quotedOnly = [];
+        $bookable   = 0;
+        foreach ($rates as $rate) {
+            $code = (string) $rate['provider'];
+            if (isset($quoteOnlyNames[$code])) {
+                $quotedOnly[$code] = (string) $quoteOnlyNames[$code];
+            } else {
+                $bookable++;
+            }
+        }
+        $canSeeSettings = admin_can('settings.view');
         ?>
         <div class="ad-card">
             <div class="ad-card__head">
@@ -686,6 +871,23 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php endif; ?>
                         </div>
                     <?php else: ?>
+                        <?php foreach ($quotedOnly as $qoCode => $qoName): ?>
+                            <div class="ad-card__body" style="border-top:1px solid var(--ad-border)">
+                                <div class="sik-alert sik-alert--info" style="margin:0">
+                                    <?= icon('info', 'w-5 h-5') ?>
+                                    <div>
+                                        <strong><?= e($qoName) ?> is in Test mode and has no sandbox.</strong>
+                                        Its rates below come from the real account, but booking with it is refused
+                                        until the integration is switched to Live - every booking there is real and billed.
+                                        <?php if ($canSeeSettings): ?>
+                                            <a href="<?= e(admin_url('shipping/configure.php?code=' . rawurlencode((string) $qoCode))) ?>">Open its settings</a>.
+                                        <?php else: ?>
+                                            Ask an admin with settings access to switch it to Live.
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
                         <div class="ad-tablewrap" style="border-top:1px solid var(--ad-border)">
                             <table class="ad-table">
                                 <thead>
@@ -708,14 +910,15 @@ require ADMIN_PATH . '/includes/header.php';
                                             'courier_id' => isset($rate['courier_id']) ? (string) $rate['courier_id'] : '',
                                             'courier'    => (string) ($rate['courier'] ?? ''),
                                         ]);
-                                        $eta    = $rate['eta_days'] ?? null;
-                                        $rating = $rate['rating'] ?? null;
+                                        $eta      = $rate['eta_days'] ?? null;
+                                        $rating   = $rate['rating'] ?? null;
+                                        $pickable = !isset($quotedOnly[$code]);
                                         ?>
-                                        <tr>
+                                        <tr<?= $pickable ? '' : ' class="ad-muted"' ?>>
                                             <td class="ad-table__check">
                                                 <input type="radio" name="rate" id="rate<?= (int) $i ?>" required
-                                                       value="<?= e_attr($value) ?>"
-                                                       aria-label="Book with <?= e_attr((string) ($rate['courier'] ?? $code)) ?>">
+                                                       value="<?= e_attr($value) ?>"<?= $pickable ? '' : ' disabled' ?>
+                                                       aria-label="<?= e_attr(($pickable ? 'Book with ' : 'Cannot book in Test mode: ') . (string) ($rate['courier'] ?? $code)) ?>">
                                             </td>
                                             <td>
                                                 <label class="bk-rate-label" for="rate<?= (int) $i ?>">
@@ -755,7 +958,14 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
                     <?php endif; ?>
 
-                    <?php if ($rates !== []): ?>
+                    <?php if ($rates !== [] && $bookable === 0): ?>
+                        <?php // No Book at all: every press would be refused, see the note above the rates. ?>
+                        <div class="ad-card__foot" style="align-items:center">
+                            <span class="sik-help" style="margin:0">
+                                None of these rates can be booked while <?= e(implode(' and ', $quotedOnly)) ?> is in Test mode.
+                            </span>
+                        </div>
+                    <?php elseif ($rates !== []): ?>
                         <div class="ad-card__foot" style="align-items:center">
                             <p class="bk-stale" data-stale-note hidden>The parcel changed. Get rates again before booking.</p>
                             <?php if ($anyLive): ?>

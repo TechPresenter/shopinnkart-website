@@ -85,13 +85,29 @@ if (is_post()) {
         redirect(admin_url('orders/returns.php'));
     }
 
-    Database::update('orders', ['return_reason' => $reason], '`id` = :id', ['id' => $orderId]);
+    // Only money that was taken can be given back. Before the courier hub every
+    // returned order had been delivered first, so COD had been collected; a
+    // parcel the courier brings back (RTO) now arrives here with nothing paid,
+    // and "refunding" it marked the invoice paid in full and emailed the
+    // customer that money was on its way.
+    if ($newStatus === ORDER_STATUS_REFUNDED && (string) $order['payment_status'] !== PAYMENT_STATUS_PAID) {
+        flash('error', 'Order ' . $order['order_number'] . ' was never paid (payment '
+            . strtolower(PAYMENT_STATUSES[$order['payment_status']] ?? (string) $order['payment_status'])
+            . '), so there is nothing to refund.'
+            . ((string) $order['status'] === ORDER_STATUS_RETURNED ? ' Returned is where it ends.' : ' Mark it Returned instead.'));
+        redirect(admin_url('orders/returns.php'));
+    }
 
     // Stock comes back on the first move into a releasing status; a return that
     // later becomes a refund must not be restocked twice.
     $restocks = !in_array((string) $order['status'], STOCK_RELEASING_STATUSES, true);
 
-    $result = update_order_status($orderId, $newStatus, $reason, 'admin');
+    // The reason travels WITH the status, in the transaction that takes the
+    // order's row lock, the way cancel_reason does. Written here first, a move
+    // refused on the locked row - another admin refunded it while this form was
+    // open, which the forward-only rule then refuses - left a "Return reason"
+    // on an order that never went back.
+    $result = update_order_status($orderId, $newStatus, $reason, 'admin', true, ['return_reason' => $reason]);
 
     if (!$result['ok']) {
         flash('error', $result['message']);
@@ -145,12 +161,13 @@ $rows = Database::fetchAll(
 );
 
 // Candidates for the form. Capped because this is a picker, not a report — the
-// order list is the right tool for finding something older.
+// order list is the right tool for finding something older. A returned order
+// is only a candidate for a refund, so only one that was paid.
 $eligible = $canEdit
     ? Database::fetchAll(
         "SELECT `id`, `order_number`, `customer_name`, `total_amount`, `status`, `delivered_at`
          FROM `orders`
-         WHERE `status` IN ('delivered','returned')
+         WHERE `status` = 'delivered' OR (`status` = 'returned' AND `payment_status` = 'paid')
          ORDER BY COALESCE(`delivered_at`, `updated_at`) DESC
          LIMIT 200"
     )

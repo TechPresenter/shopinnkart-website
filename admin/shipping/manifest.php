@@ -3,6 +3,7 @@
  * ShopInnKart Admin - Pickup manifest, A4.
  *
  *   ?shipments=12,13,14     the parcels in this handover, in the order given
+ *   ?ids[]=12&ids[]=13      the same, as the shipments list's bulk bar sends it
  *   ?awb=MK01..,MK02..      how the mock courier's generateManifest() links here
  *   &provider=mock          narrows the AWBs to one courier
  *   &return=/admin/...      where Back goes (checked by admin_safe_return)
@@ -17,11 +18,11 @@
  * sheet per courier, each starting on a new page with its own totals and
  * signature block.
  *
- * The same refusals as the label (no AWB, cancelled), for the same reason:
- * a line for a parcel on a void consignment is a signature for nothing. A
- * shipment that is already past pickup is printed but flagged on screen,
- * because reprinting an old manifest is legitimate and only the operator
- * knows which it is.
+ * The same refusals as the label (no AWB, cancelled, RTO delivered, returned),
+ * for the same reason: a line for a parcel on a void or closed consignment is a
+ * signature for nothing. A shipment that is already past pickup is printed but
+ * flagged on screen, because reprinting an old manifest is legitimate and only
+ * the operator knows which it is.
  *
  * Standalone document, black on white, for the same reasons as label.php.
  */
@@ -79,8 +80,10 @@ foreach ($printable as $shipment) {
         'id'        => (int) $shipment['id'],
         'awb'       => (string) $shipment['awb'],
         'order_no'  => (string) $order['order_number'],
-        'consignee' => str_limit((string) ($order['shipping_name'] ?: $order['customer_name']), 40),
-        'city'      => str_limit(trim((string) $order['shipping_city']), 30),
+        // Whole, and not through str_limit(), whose strip_tags() cut "Rahul <Raj>
+        // Sharma" to "Rahul  Sharma". The table cell wraps a long one.
+        'consignee' => trim((string) ($order['shipping_name'] ?: $order['customer_name'])),
+        'city'      => trim((string) $order['shipping_city']),
         'pin'       => (string) $order['shipping_pincode'],
         'is_cod'    => $isCod,
         'cod'       => (float) $shipment['cod_amount'],
@@ -117,7 +120,9 @@ if (!$selection['requested']) {
     http_response_code(422);
 }
 
-$backUrl = admin_safe_return(is_string($_GET['return'] ?? null) ? $_GET['return'] : '', admin_url('shipping/'));
+// The shipments list the manifest is ticked from - not the Integrations page,
+// which needs settings.view that an orders role printing a manifest may lack.
+$backUrl = admin_safe_return(is_string($_GET['return'] ?? null) ? $_GET['return'] : '', admin_url('shipping/shipments.php'));
 
 $parcels = count($printable);
 $today   = format_date(date('Y-m-d'));
@@ -162,14 +167,20 @@ $title   = 'Pickup manifest ' . $today;
         .mf-from { margin: 3mm 0; font-size: 9pt; overflow-wrap: anywhere; }
         .mf-from b { font-weight: 700; }
 
-        .mf-tablewrap { overflow-x: auto; }
+        /* No sideways scroll: a print view is the one page that cannot offer
+           one on paper, and on screen it was scrolling 264px at 360-390px. */
+        .mf-tablewrap { overflow-x: visible; min-width: 0; }
         .mf-table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
         .mf-table th, .mf-table td { border: .3mm solid #000; padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+        .mf-table td { overflow-wrap: anywhere; }
         .mf-table th { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em; }
         .mf-table thead { display: table-header-group; }
         .mf-table tr { break-inside: avoid; page-break-inside: avoid; }
-        .mf-num { text-align: right !important; white-space: nowrap; }
-        .mf-mono { font-family: Consolas, "DejaVu Sans Mono", "Courier New", monospace; font-weight: 700; white-space: nowrap; }
+        /* nowrap on the cell, not on its header: "WEIGHT" over "12.5 kg" was the
+           column sticking out of the 7-column table on a phone. */
+        .mf-num { text-align: right !important; }
+        td.mf-num { white-space: nowrap; }
+        .mf-mono { font-family: Consolas, "DejaVu Sans Mono", "Courier New", monospace; font-weight: 700; overflow-wrap: anywhere; }
         .mf-total td { border-top: .8mm solid #000; font-weight: 700; }
 
         .mf-sum { margin: 3mm 0 0; font-size: 9.5pt; }
@@ -184,11 +195,46 @@ $title   = 'Pickup manifest ' . $today;
         @media screen {
             body { background: #e5e7eb; }
             .mf { box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
-            .mf-table { min-width: 560px; }
         }
+        /* On a phone the sheet becomes one card per shipment.
+           Seven columns cannot be laid out in 296px however small the type is
+           set - measured at 400px of demand against 296px of room, which used
+           to be a 264px sideways scroll and then, with the scroll gone, 46px
+           of the page hanging off the right at 360px. The card view is the
+           same information in the shape a phone can hold. @media screen only:
+           printed, and on anything wider, this is an ordinary manifest table. */
         @media screen and (max-width: 640px) {
             .mf { padding: 16px; }
             .mf-sign { grid-template-columns: 1fr; gap: 6mm; }
+            .mf-table { font-size: 8.5pt; }
+
+            .mf-table thead { display: none; }
+            .mf-table, .mf-table tbody, .mf-table tr, .mf-table td { display: block; width: auto; }
+            .mf-table tr { border: .3mm solid #000; margin-bottom: 3mm; padding: 1.5mm 2.5mm; }
+            .mf-table td {
+                border: 0;
+                border-top: .2mm dashed #999;
+                padding: 1.2mm 0;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: space-between;
+                gap: 3mm;
+                text-align: right;
+            }
+            .mf-table tr td:first-child { border-top: 0; }
+            .mf-table td::before {
+                content: attr(data-label);
+                flex: none;
+                text-align: left;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: .04em;
+                font-size: 7.5pt;
+            }
+            /* The totals row spans the table, so it has no label of its own. */
+            .mf-table .mf-total td[colspan] { justify-content: flex-start; text-align: left; }
+            .mf-table .mf-total td[colspan]::before { content: none; }
+            .mf-num { text-align: right !important; }
         }
 
         @media print {
@@ -264,14 +310,19 @@ $title   = 'Pickup manifest ' . $today;
                         </thead>
                         <tbody>
                             <?php foreach ($sheet['rows'] as $n => $row): ?>
+                                <?php // data-label is written out here rather than derived, because this
+                                      // print view loads neither admin.css nor admin.js - the card view
+                                      // and initResponsiveTables() that every other admin table gets do
+                                      // not reach it. Used only by the phone block in the stylesheet
+                                      // above; on paper and on a desk these are an ordinary table. ?>
                                 <tr>
-                                    <td class="mf-num"><?= $n + 1 ?></td>
-                                    <td class="mf-mono"><?= e($row['awb']) ?></td>
-                                    <td><?= e($row['order_no']) ?></td>
-                                    <td><?= e($row['consignee']) ?></td>
-                                    <td><?= e($row['city']) ?><?= $row['city'] !== '' ? ' ' : '' ?><strong><?= e($row['pin']) ?></strong></td>
-                                    <td class="mf-num"><?= $row['is_cod'] ? e(shipping_print_rs($row['cod'])) : 'Prepaid' ?></td>
-                                    <td class="mf-num"><?= $row['weight'] !== '' ? e($row['weight']) : '&mdash;' ?></td>
+                                    <td class="mf-num" data-label="#"><?= $n + 1 ?></td>
+                                    <td class="mf-mono" data-label="AWB"><?= e($row['awb']) ?></td>
+                                    <td data-label="Order no."><?= e($row['order_no']) ?></td>
+                                    <td data-label="Consignee"><?= e($row['consignee']) ?></td>
+                                    <td data-label="City / PIN"><?= e($row['city']) ?><?= $row['city'] !== '' ? ' ' : '' ?><strong><?= e($row['pin']) ?></strong></td>
+                                    <td class="mf-num" data-label="COD amount"><?= $row['is_cod'] ? e(shipping_print_rs($row['cod'])) : 'Prepaid' ?></td>
+                                    <td class="mf-num" data-label="Weight"><?= $row['weight'] !== '' ? e($row['weight']) : '&mdash;' ?></td>
                                 </tr>
                             <?php endforeach; ?>
                             <?php // The totals row sits in tbody, not tfoot: a tfoot repeats on every printed page, and a grand total at the foot of page 1 reads as that page's subtotal. ?>
@@ -280,8 +331,8 @@ $title   = 'Pickup manifest ' . $today;
                                     Total: <?= $rowCount ?> <?= $rowCount === 1 ? 'shipment' : 'shipments' ?>
                                     (<?= (int) $sheet['cod_count'] ?> COD, <?= $rowCount - (int) $sheet['cod_count'] ?> prepaid)
                                 </td>
-                                <td class="mf-num"><?= e(shipping_print_rs($sheet['cod_total'])) ?></td>
-                                <td class="mf-num">
+                                <td class="mf-num" data-label="COD total"><?= e(shipping_print_rs($sheet['cod_total'])) ?></td>
+                                <td class="mf-num" data-label="Total weight">
                                     <?= e(shipping_print_kg($sheet['grams']) ?: '0 kg') ?>
                                     <?php if ($sheet['unweighed'] > 0): ?><br><small>+<?= (int) $sheet['unweighed'] ?> unweighed</small><?php endif; ?>
                                 </td>

@@ -29,10 +29,22 @@ if (!defined('SIK_BOOTSTRAPPED')) {
  */
 const SHIPPING_PRINT_MAX = 100;
 
-/** A query-string list split on commas or whitespace. An array value (?x[]=) is refused, not coerced. */
+/**
+ * A query-string list split on commas or whitespace. An array value (?x[]=) is
+ * refused, not coerced - except under `ids`, which is how the shipments list's
+ * bulk bar sends its selection (admin.js adds one ids[] per ticked row). Even
+ * there only a flat list of strings is read; anything nested is refused.
+ */
 function shipping_print_tokens(string $key, array &$notes): array
 {
     $raw = $_GET[$key] ?? '';
+    if ($key === 'ids' && is_array($raw)) {
+        $flat = array_filter($raw, 'is_string');
+        if (count($flat) !== count($raw)) {
+            $notes[] = 'Ignored part of "ids": each entry must be one shipment number.';
+        }
+        $raw = implode(',', $flat);
+    }
     if (!is_string($raw)) {
         $notes[] = 'Ignored "' . $key . '": give it as a comma-separated list.';
         return [];
@@ -49,8 +61,8 @@ function shipping_print_list(array $items, int $show = 8): string
 }
 
 /**
- * Resolve ?shipment= / ?shipments= / ?awb= (and optional &provider=) into
- * shipment rows, in the order they were asked for, without duplicates.
+ * Resolve ?shipment= / ?shipments= / ?ids[]= / ?awb= (and optional &provider=)
+ * into shipment rows, in the order they were asked for, without duplicates.
  *
  * Everything that could not be resolved is described in `notes`, which the
  * page shows on screen only. A junk token never stops the rest printing: an
@@ -71,7 +83,7 @@ function shipping_print_selection(): array
 
     $ids      = [];   // id => true, insertion order = request order
     $junkIds  = [];
-    foreach (['shipment', 'shipments'] as $key) {
+    foreach (['shipment', 'shipments', 'ids'] as $key) {
         foreach (shipping_print_tokens($key, $notes) as $token) {
             // shipments.id is INT UNSIGNED; anything outside it cannot exist.
             if (ctype_digit($token) && strlen($token) <= 10 && (int) $token > 0 && (int) $token <= 4294967295) {
@@ -242,6 +254,13 @@ function shipping_print_refusal(array $shipment, array $ctx): ?string
     if ($status === 'cancelled') {
         return $ref . ': cancelled, so AWB ' . $awb . ' is void. A parcel sent out on it would go nowhere.';
     }
+    // Finished the other way: the parcel came back (RTO) or was returned, and
+    // the courier has closed AWB. A fresh label - COD box and all - would put a
+    // closed consignment back on a parcel.
+    if (in_array($status, ['rto_delivered', 'returned'], true)) {
+        return $ref . ': ' . strtolower(shipping_status_label($status)) . ', so AWB ' . $awb
+            . ' is closed at the courier. Book a new shipment if the parcel goes out again.';
+    }
     if (!isset($ctx['orders'][(int) $shipment['order_id']])) {
         return $ref . ': its order #' . (int) $shipment['order_id'] . ' no longer exists.';
     }
@@ -284,33 +303,62 @@ function shipping_print_kg($grams): string
     return rtrim(rtrim(number_format((int) $grams / 1000, 2, '.', ''), '0'), '.') . ' kg';
 }
 
-/** Ship-to address lines, clipped so one long field cannot push the PIN off a fixed-size label. */
+/**
+ * Ship-to address lines, whole.
+ *
+ * Never clipped: the tail of an address is usually the locality, and a rider
+ * cannot deliver to "Gunjur Village…". A long address is the label's problem
+ * to fit (label.php sets the type smaller, then lets the label grow), not the
+ * address's problem to lose. And never passed through str_limit(), whose
+ * strip_tags() deletes text after any "<" - "House 5<6 Main Road" printed as
+ * "House 5". Output is escaped with e() where it is printed.
+ *
+ * The landmark is printed as the customer wrote it, behind a neutral
+ * "Landmark:". Customers type their own preposition, and a forced "Near "
+ * turned "Opposite Jyoti Nivas College" into directions that contradict
+ * themselves.
+ */
 function shipping_print_address_lines(array $order): array
 {
     $lines = [];
     foreach (['shipping_address', 'shipping_address2'] as $key) {
         $line = trim((string) ($order[$key] ?? ''));
         if ($line !== '') {
-            $lines[] = str_limit($line, 90);
+            $lines[] = $line;
         }
     }
     $landmark = trim((string) ($order['shipping_landmark'] ?? ''));
     if ($landmark !== '') {
-        $lines[] = 'Near ' . str_limit($landmark, 80);
+        $lines[] = 'Landmark: ' . $landmark;
     }
     return $lines;
 }
 
 /**
+ * $text cut to $width characters with an ellipsis, for text that may be
+ * summarised (item names) - never an address. Plain multibyte clipping: no
+ * strip_tags(), which deletes real text after a "<".
+ */
+function shipping_print_clip(string $text, int $width): string
+{
+    $text = trim((string) preg_replace('/\s+/u', ' ', $text));
+    return mb_strlen($text) > $width ? rtrim(mb_substr($text, 0, $width - 1)) . '…' : $text;
+}
+
+/**
  * The toolbar and skipped-shipment notes. Screen only: the print stylesheet
  * hides `.pr-screen`, so nothing here reaches the label stock.
+ *
+ * $actions is extra, already-escaped button markup placed before Print (the
+ * label's "Reprint anyway").
  */
-function shipping_print_toolbar(string $title, string $hint, array $notes, string $backUrl, bool $canPrint): string
+function shipping_print_toolbar(string $title, string $hint, array $notes, string $backUrl, bool $canPrint, string $actions = ''): string
 {
     $html = '<div class="pr-screen pr-bar">'
         . '<div class="pr-bar__row">'
         . '<a class="pr-btn" href="' . e($backUrl) . '">' . icon('arrow-left', 'pr-ico') . '<span>Back</span></a>'
         . '<div class="pr-bar__title"><strong>' . e($title) . '</strong><span>' . e($hint) . '</span></div>'
+        . $actions
         . '<button type="button" class="pr-btn pr-btn--primary" onclick="window.print()"'
         . ($canPrint ? '' : ' disabled') . '>' . icon('printer', 'pr-ico') . '<span>Print</span></button>'
         . '</div>';

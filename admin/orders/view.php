@@ -972,9 +972,17 @@ require ADMIN_PATH . '/includes/header.php';
         </div>
 
         <?php
-        // The consignment the courier integration manages for this order, if any.
-        $liveShipment    = shipment_live_for_order($orderId);
-        $couriersActive  = ShippingProviderFactory::available() !== [];
+        // The consignment the courier integration manages for this order, if
+        // any. Through the panel helper, which answers "none" on a site that
+        // has deployed the code but not run the shipping migration - instead
+        // of taking this page down for every order with a missing-table 500.
+        $shipPanel       = shipping_order_panel($orderId);
+        $liveShipment    = $shipPanel['live'];
+        $couriersActive  = $shipPanel['couriers'];
+        // The rule shipping_book() applies, so the button is not offered for
+        // an order the booking would refuse - a delivered one above all, where
+        // a second consignment had the courier collect COD twice.
+        $bookBlocked     = shipping_order_block_reason($order);
         ?>
         <div class="ad-card">
             <div class="ad-card__head"><div class="ad-card__title">Shipment</div></div>
@@ -1017,7 +1025,7 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
                     </div>
                 <?php else: ?>
-                    <?php if ($couriersActive && !in_array((string) $order['status'], [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED, ORDER_STATUS_RETURNED], true)): ?>
+                    <?php if ($couriersActive && $bookBlocked === null): ?>
                         <a class="ad-btn ad-btn--primary ad-btn--block" style="margin-bottom:14px"
                            href="<?= e(admin_url('shipping/book.php?order=' . $orderId)) ?>">
                             <?= icon('truck', 'w-4 h-4') ?> Book with a courier

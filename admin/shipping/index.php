@@ -11,20 +11,24 @@
  * Switching on an integration nobody wrote code for would mean discovering it
  * at booking time, with a customer waiting.
  *
- * Permission: orders.*, because shipping is order fulfilment. Inventing a
- * `shipping.view` key would resolve to nobody until every role was edited,
- * hiding the screen from the owner too.
+ * Permission: settings.*, the keys payment gateway and SMTP credentials
+ * already use. Booking and tracking stay on orders.* (they are fulfilment),
+ * but this screen holds courier accounts: whoever can change them can point
+ * bookings at another account or set the webhook secret to one they know and
+ * post "delivered" for COD orders. The Order Manager and Manager roles hold
+ * orders.edit and are described as having no system settings. An existing
+ * key, not a new shipping.* one, so no role needs editing to keep access.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 
-$admin = admin_require('orders.view');
+$admin = admin_require('settings.view');
 
 require_once INCLUDES_PATH . '/shipping-functions.php';
 
-$canEdit   = admin_can('orders.edit');
+$canEdit   = admin_can('settings.edit');
 $providers = shipping_providers_all();
 
 // Counts for the stat row. Read from the rows already fetched rather than

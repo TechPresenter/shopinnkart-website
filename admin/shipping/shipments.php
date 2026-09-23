@@ -28,6 +28,13 @@
  *
  * Read-only. Every action on a shipment lives on the order's shipping screen,
  * which goes through shipping-service.php; this page never writes a row.
+ *
+ * The one thing done to SEVERAL shipments is paperwork for a pickup, so it
+ * starts here: tick rows, then print their labels (label.php), print the hub's
+ * pickup manifest (manifest.php), or - with orders.edit - ask the courier for
+ * its own manifest (action.php, action=manifest). The selection uses the
+ * admin's shared bulk bar (data-check-row / data-bulk-form in admin.js), which
+ * adds one ids[] per ticked row to whichever of those forms is submitted.
  */
 
 declare(strict_types=1);
@@ -40,6 +47,13 @@ require_once INCLUDES_PATH . '/shipping-service.php';
 
 $perPage = 25;
 $listUrl = admin_url('shipping/shipments.php');
+$canEdit = admin_can('orders.edit');
+
+// Where the printed documents' Back button (and action.php) returns to: this
+// list as it is filtered now. admin_safe_return() vets it at the other end.
+$listPath  = (string) parse_url($listUrl, PHP_URL_PATH);
+$queryNow  = is_string($_SERVER['QUERY_STRING'] ?? null) ? (string) $_SERVER['QUERY_STRING'] : '';
+$returnNow = $listPath . ($queryNow !== '' ? '?' . $queryNow : '');
 
 $groups = [
     'awaiting_pickup'  => ['label' => 'Awaiting pickup',    'icon' => 'box',          'tone' => 'amber',
@@ -92,9 +106,16 @@ $codCount     = 0;
 $codValue     = 0.0;
 $prepaidCount = 0;
 $chargeTotal  = 0.0;
+$liveCount    = 0;   // consignments the money figures cover
+$pricedCount  = 0;   // ...of which carry the freight quoted at booking
 
+// `priced` counts the rows with a charge on record. Booking stores the price
+// the courier quoted for the chosen rate; a shipment booked before that was
+// stored, or by hand, has none, and the tile says how many it is missing
+// rather than present a partial sum as the whole bill.
 $rows = Database::fetchAll(
-    'SELECT `status`, `is_cod`, COUNT(*) AS n, SUM(`cod_amount`) AS cod_value, SUM(`shipping_charge`) AS charge
+    'SELECT `status`, `is_cod`, COUNT(*) AS n, SUM(`cod_amount`) AS cod_value, SUM(`shipping_charge`) AS charge,
+            SUM(CASE WHEN `shipping_charge` > 0 THEN 1 ELSE 0 END) AS priced
        FROM `shipments`
       GROUP BY `status`, `is_cod`'
 );
@@ -119,8 +140,14 @@ foreach ($rows as $row) {
             $codValue += (float) $row['cod_value'];
         }
         $chargeTotal += (float) $row['charge'];
+        $liveCount   += $n;
+        $pricedCount += (int) $row['priced'];
     }
 }
+$chargeNote = $pricedCount === $liveCount
+    ? 'Quoted by the courier at booking; cancelled and failed bookings excluded'
+    : 'Quoted at booking, for ' . number_format($pricedCount) . ' of ' . number_format($liveCount)
+        . ' consignments; the rest have no charge on record';
 
 $groupCount = static function (array $counts, array $statuses): int {
     return array_sum(array_map(static fn (string $s): int => (int) ($counts[$s] ?? 0), $statuses));
@@ -232,13 +259,18 @@ if ($statusKey !== '' && !isset($groups[$statusKey]) && !in_array($statusKey, $e
 $pageTitle    = 'Shipments';
 $pageSubtitle = number_format($total) . ' shipment' . ($total === 1 ? '' : 's')
     . ($isFiltered ? ' in the current view.' : ' across every courier.');
+// Integrations (shipping/) needs settings.view, while this list is for every
+// orders role: the 'Shipping' crumb lands here, and the Integrations button is
+// drawn only for a role that could open it rather than one that gets a 403.
+$canSeeSettings = admin_can('settings.view');
 $breadcrumbs  = [
     ['label' => 'Dashboard', 'url' => admin_url('dashboard.php')],
-    ['label' => 'Shipping',  'url' => admin_url('shipping/')],
+    ['label' => 'Shipping',  'url' => $listUrl],
     ['label' => 'Shipments'],
 ];
-$pageActions = '<a class="ad-btn" href="' . e(admin_url('shipping/')) . '">'
-    . icon('settings', 'w-4 h-4') . ' Integrations</a>'
+$pageActions = ($canSeeSettings
+        ? '<a class="ad-btn" href="' . e(admin_url('shipping/')) . '">' . icon('settings', 'w-4 h-4') . ' Integrations</a>'
+        : '')
     . '<a class="ad-btn" href="' . e(admin_url('shipping/track.php')) . '">'
     . icon('location', 'w-4 h-4') . ' Tracking</a>';
 
@@ -286,8 +318,7 @@ require ADMIN_PATH . '/includes/header.php';
             money($codValue) . ' COD value; cancelled and failed bookings excluded', $listUrl . '?pay=cod') ?>
         <?= admin_stat_card('Prepaid shipments', number_format($prepaidCount), 'credit-card', 'green',
             'Paid before dispatch', $listUrl . '?pay=prepaid') ?>
-        <?= admin_stat_card('Shipping cost', money($chargeTotal), 'tag', 'navy',
-            'What couriers charged us; cancelled and failed bookings excluded') ?>
+        <?= admin_stat_card('Shipping cost', money($chargeTotal), 'tag', 'navy', $chargeNote) ?>
     </div>
 
     <div class="ad-card">
@@ -339,17 +370,54 @@ require ADMIN_PATH . '/includes/header.php';
             <?php endif; ?>
         </form>
 
+        <!-- --------------------------- Bulk actions ------------------------- -->
+        <?php
+        // Opens once a row is ticked (admin.js). The two print forms are GETs
+        // in a new tab - printing is looking, and needs only orders.view. The
+        // courier manifest tells the courier something, so it is a POST.
+        ?>
+        <div class="ad-bulk" data-bulk-bar>
+            <span><strong data-bulk-count>0</strong> selected</span>
+            <form method="get" action="<?= e(admin_url('shipping/label.php')) ?>" target="_blank" class="ad-inline-form" data-bulk-form>
+                <input type="hidden" name="return" value="<?= e_attr($returnNow) ?>">
+                <button type="submit" class="ad-btn ad-btn--sm"><?= icon('printer', 'w-4 h-4') ?> Print labels</button>
+            </form>
+            <form method="get" action="<?= e(admin_url('shipping/manifest.php')) ?>" target="_blank" class="ad-inline-form" data-bulk-form>
+                <input type="hidden" name="return" value="<?= e_attr($returnNow) ?>">
+                <button type="submit" class="ad-btn ad-btn--sm"><?= icon('file-text', 'w-4 h-4') ?> Print manifest</button>
+            </form>
+            <?php if ($canEdit): ?>
+                <form method="post" action="<?= e(admin_url('shipping/action.php')) ?>" target="_blank" class="ad-inline-form" data-bulk-form>
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="manifest">
+                    <input type="hidden" name="return" value="<?= e_attr($returnNow) ?>">
+                    <button type="submit" class="ad-btn ad-btn--sm"
+                            title="Register these parcels with the courier as one pickup and open its manifest">
+                        <?= icon('truck', 'w-4 h-4') ?> Courier manifest
+                    </button>
+                </form>
+            <?php endif; ?>
+            <span class="ad-muted" style="font-size:12.5px">Only consignments with an AWB can be ticked.</span>
+        </div>
+
         <!-- ------------------------------ Table ----------------------------- -->
         <div class="ad-card__body ad-card__body--flush">
             <?php if ($shipments === [] && $grandTotal === 0): ?>
-                <?php $hasCourier = ShippingProviderFactory::available() !== []; ?>
+                <?php
+                $hasCourier = ShippingProviderFactory::available() !== [];
+                // Setting one up is a settings.view page: a role without it is
+                // told who can, not handed a button that answers 403.
+                $setUp = !$hasCourier && $canSeeSettings;
+                ?>
                 <?= admin_empty(
                     'No shipments yet',
                     $hasCourier
                         ? 'A consignment appears here as soon as an order is booked with a courier.'
-                        : 'No courier is active yet. Set one up - the Mock Courier works without an account - then book an order.',
-                    $hasCourier ? null : 'Set up a courier',
-                    $hasCourier ? null : admin_url('shipping/'),
+                        : ($canSeeSettings
+                            ? 'No courier is active yet. Set one up - the Mock Courier works without an account - then book an order.'
+                            : 'No courier is active yet. Ask an admin with settings access to set up a courier, then book an order.'),
+                    $setUp ? 'Set up a courier' : null,
+                    $setUp ? admin_url('shipping/') : null,
                     'truck'
                 ) ?>
             <?php elseif ($shipments === []): ?>
@@ -367,6 +435,10 @@ require ADMIN_PATH . '/includes/header.php';
                     <table class="ad-table">
                         <thead>
                             <tr>
+                                <th class="ad-table__check">
+                                    <label class="sik-sr" for="checkAllShipments">Select all shipments with an AWB</label>
+                                    <input type="checkbox" id="checkAllShipments" data-check-all>
+                                </th>
                                 <th>Order</th>
                                 <th>AWB</th>
                                 <th>Courier</th>
@@ -385,8 +457,18 @@ require ADMIN_PATH . '/includes/header.php';
                                 $tone    = shipping_status_tone($status);
                                 $detail  = trim((string) ($row['status_detail'] ?? ''));
                                 $grams   = (int) ($row['weight_grams'] ?? 0);
+                                // Paperwork needs a consignment: an AWB, and not a
+                                // booking that died. The print pages refuse the rest
+                                // anyway; not offering the box saves the round trip.
+                                $selectable = $awb !== '' && !shipping_is_dead($status);
                                 ?>
                                 <tr>
+                                    <td class="ad-table__check">
+                                        <?php if ($selectable): ?>
+                                            <label class="sik-sr" for="ship<?= (int) $row['id'] ?>">Select shipment <?= e($awb) ?></label>
+                                            <input type="checkbox" id="ship<?= (int) $row['id'] ?>" data-check-row value="<?= (int) $row['id'] ?>">
+                                        <?php endif; ?>
+                                    </td>
                                     <td>
                                         <?php if ($row['order_number'] !== null): ?>
                                             <a class="ad-mono" style="font-weight:700"

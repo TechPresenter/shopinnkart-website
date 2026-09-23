@@ -25,10 +25,10 @@
  *     and its replacement) and the operator needs to see both statuses to know
  *     which one the customer means.
  *
- * Read-only. The one action here, "Refresh from courier", POSTs to action.php,
- * which calls shipping_refresh_tracking() - the timeline is only ever written by
- * the service layer, whose forward-only and idempotency rules a screen writing
- * rows itself would bypass.
+ * Read-only. The actions here, "Refresh from courier" and (while the parcel is
+ * still with us) "Print label", POST to action.php, which calls the service -
+ * the timeline is only ever written by the service layer, whose forward-only
+ * and idempotency rules a screen writing rows itself would bypass.
  *
  * Permission: orders.view to look, orders.edit to refresh - the same keys every
  * other shipping screen uses (see index.php for why there is no shipping.* key).
@@ -175,9 +175,11 @@ $trackUrl = static fn (int $id): string => admin_url('shipping/track.php?' . $tr
 
 $pageTitle    = 'Shipment Tracking';
 $pageSubtitle = 'Find a consignment by AWB, order number, customer, phone or courier.';
+// 'Shipping' lands on the shipments list: the Integrations page it used to
+// open needs settings.view, which an orders-only role tracking a parcel lacks.
 $breadcrumbs  = [
     ['label' => 'Dashboard', 'url' => admin_url('dashboard.php')],
-    ['label' => 'Shipping',  'url' => admin_url('shipping/')],
+    ['label' => 'Shipping',  'url' => admin_url('shipping/shipments.php')],
     ['label' => 'Tracking'],
 ];
 
@@ -293,6 +295,11 @@ require ADMIN_PATH . '/includes/header.php';
         // courier driver, and escaping stops markup but not a javascript: URL.
         $publicTrack = (string) ($shipment['tracking_url'] ?? '');
         $publicTrack = preg_match('~^https?://~i', $publicTrack) === 1 ? $publicTrack : '';
+        // The courier's own label and manifest, once fetched; https only.
+        $courierDocs = array_filter([
+            'Label'    => (string) ($shipment['label_url'] ?? ''),
+            'Manifest' => (string) ($shipment['manifest_url'] ?? ''),
+        ], static fn (string $url): bool => preg_match('~^https://~i', $url) === 1);
 
         // action.php hands `return` to admin_safe_return(), which accepts only
         // a root-relative path inside the admin and rejects any target
@@ -410,6 +417,18 @@ require ADMIN_PATH . '/includes/header.php';
                             <dd><?= e(format_date((string) $shipment['expected_at'])) ?></dd>
                         </div>
                     <?php endif; ?>
+                    <?php if ($courierDocs !== []): ?>
+                        <div>
+                            <dt>Courier documents</dt>
+                            <dd>
+                                <?php foreach ($courierDocs as $docLabel => $docUrl): ?>
+                                    <a href="<?= e($docUrl) ?>" target="_blank" rel="noopener noreferrer">
+                                        <?= e($docLabel) ?> <?= icon('external', 'w-3 h-3') ?>
+                                    </a><br>
+                                <?php endforeach; ?>
+                            </dd>
+                        </div>
+                    <?php endif; ?>
                     <?php if ($publicTrack !== ''): ?>
                         <div>
                             <dt>Public tracking</dt>
@@ -449,6 +468,24 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
                 <?php if ($canEdit): ?>
                     <?php if ($awb !== ''): ?>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap">
+                        <?php if (in_array($status, ['ready', 'booked', 'pickup_scheduled'], true)): ?>
+                            <?php
+                            // The same Print label as the booking screen: through
+                            // action.php, so a courier that hosts its own label is
+                            // asked for it first. Only while the parcel is still
+                            // with us, as there.
+                            ?>
+                            <form method="post" action="<?= e(admin_url('shipping/action.php')) ?>" class="ad-inline-form" target="_blank">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="action" value="label">
+                                <input type="hidden" name="shipment_id" value="<?= $sid ?>">
+                                <input type="hidden" name="return" value="<?= e($returnTo) ?>">
+                                <button type="submit" class="ad-btn ad-btn--sm">
+                                    <?= icon('printer', 'w-4 h-4') ?> Print label
+                                </button>
+                            </form>
+                        <?php endif; ?>
                         <form method="post" action="<?= e(admin_url('shipping/action.php')) ?>" class="ad-inline-form">
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="refresh">
@@ -458,6 +495,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 <?= icon('refresh', 'w-4 h-4') ?> Refresh from courier
                             </button>
                         </form>
+                        </div>
                     <?php else: ?>
                         <?php // The service refuses to track without an AWB; say why here rather than after a click. ?>
                         <span class="ad-muted" style="font-size:12.5px">No AWB yet, so nothing to ask the courier.</span>

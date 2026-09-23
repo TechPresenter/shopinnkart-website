@@ -8,13 +8,16 @@
  *
  * The outcome is written to the provider row so the list can show health
  * without re-testing on every page view.
+ *
+ * Permission: settings.edit, like the rest of courier configuration - the test
+ * logs in with the stored credentials and rewrites the row's health.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/auth.php';
 
-$admin = admin_require_action('orders.edit');
+$admin = admin_require_action('settings.edit');
 
 require_once INCLUDES_PATH . '/shipping-functions.php';
 

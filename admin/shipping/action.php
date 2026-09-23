@@ -11,14 +11,15 @@
  * turns a form into one service call and the call's answer into a flash
  * message. Re-checking those rules here would be a second copy to drift.
  *
- * What it does check is what only a form can get wrong: a malformed pickup
- * date, an oversized reason, and where the browser goes next. That last one
- * comes from the request (`return`), so it passes through admin_safe_return()
- * and anything outside this admin falls back to the order's booking screen
- * instead of becoming an open redirect.
+ * What it does check is what only a form can get wrong: a malformed or
+ * far-off pickup date, an oversized reason, and where the browser goes next.
+ * That last one comes from the request (`return`), so it passes through
+ * admin_safe_return() and anything outside this admin falls back to the
+ * order's booking screen instead of becoming an open redirect.
  *
  * POST: csrf_token, action (awb|label|pickup|cancel|refresh), shipment_id,
  *       optional reason, pickup_date (Y-m-d), courier_id, return.
+ *   or: csrf_token, action=manifest, ids[] (the shipments list's selection), return.
  */
 
 declare(strict_types=1);
@@ -35,29 +36,15 @@ $text = static function (string $key): string {
     return is_string($value) ? trim($value) : '';
 };
 
-$action     = $text('action');
-$shipmentId = input_int('shipment_id');
-$shipment   = shipment_get($shipmentId);
-
-if ($shipment === null) {
-    flash('error', 'That shipment no longer exists.');
-    redirect(admin_safe_return($text('return'), admin_url('shipping/shipments.php')));
-}
-
-$back = admin_safe_return(
-    $text('return'),
-    admin_url('shipping/book.php?order=' . (int) $shipment['order_id'])
-);
-
 /**
- * Where a label may send the admin's browser, or null.
+ * Where a label or manifest may send the admin's browser, or null.
  *
- * Two kinds qualify: a page of this admin (the hub renders labels itself for
- * couriers that do not host them) and an https URL (a courier's PDF). Plain
- * http, javascript: and anything else a confused driver hands back are not
- * followed - the admin is told instead.
+ * Two kinds qualify: a page of this admin (the hub renders its own documents)
+ * and an https URL (a courier's PDF). Plain http, javascript: and anything
+ * else a confused driver hands back are not followed - the admin is told
+ * instead.
  */
-$labelTarget = static function (string $url): ?string {
+$documentTarget = static function (string $url): ?string {
     // Whitespace, control bytes and backslashes have no place in a URL we
     // put in a Location header; parse_url() and browsers disagree about them.
     if ($url === '' || preg_match('/[\x00-\x20\x7F\\\\]/', $url) === 1) {
@@ -82,6 +69,75 @@ $labelTarget = static function (string $url): ?string {
         : null;
 };
 
+$action = $text('action');
+
+// ---------------------------------------------------------------------------
+// The one batch action: the courier's own pickup manifest for the shipments
+// ticked on the shipments list. Every other action is on one shipment.
+// ---------------------------------------------------------------------------
+if ($action === 'manifest') {
+    $back = admin_safe_return($text('return'), admin_url('shipping/shipments.php'));
+
+    // ids[] from the bulk bar. Only whole positive numbers are read; anything
+    // else is dropped rather than guessed at.
+    $posted = input('ids', []);
+    $ids    = [];
+    foreach (is_array($posted) ? $posted : [] as $value) {
+        if (is_string($value) && ctype_digit($value) && strlen($value) <= 10 && (int) $value > 0) {
+            $ids[(int) $value] = (int) $value;
+        }
+    }
+    if ($ids === []) {
+        flash('error', 'Tick the shipments for the courier manifest first.');
+        redirect($back);
+    }
+    if (count($ids) > 100) {
+        // The same ceiling as the printed manifest (SHIPPING_PRINT_MAX).
+        flash('error', 'One manifest takes at most 100 shipments. Tick fewer and generate it in batches.');
+        redirect($back);
+    }
+    $ids = array_values($ids);
+
+    $result = shipping_generate_manifest($ids);
+    if (empty($result['ok'])) {
+        $message = trim((string) ($result['message'] ?? ''));
+        flash('error', $message !== '' ? $message : 'The courier refused the manifest without saying why.');
+        redirect($back);
+    }
+
+    // The service logs the manifest; the shipments now carry its link.
+    admin_after_write();
+
+    // No flash on the way to a document, for the reason given at 'label' below.
+    $url = (string) ($result['url'] ?? '');
+    if ($url === '') {
+        // The courier keeps no manifest document: the hub's sheet is the one
+        // the rider signs.
+        $returnPath = admin_safe_return($text('return'), '');
+        redirect(admin_url('shipping/manifest.php?shipments=' . implode(',', $ids)
+            . ($returnPath !== '' ? '&return=' . rawurlencode($returnPath) : '')));
+    }
+    $target = $documentTarget($url);
+    if ($target !== null) {
+        redirect($target);
+    }
+    flash('warning', 'The courier returned a manifest link that is neither an admin page nor https, so it was not opened.');
+    redirect($back);
+}
+
+$shipmentId = input_int('shipment_id');
+$shipment   = shipment_get($shipmentId);
+
+if ($shipment === null) {
+    flash('error', 'That shipment no longer exists.');
+    redirect(admin_safe_return($text('return'), admin_url('shipping/shipments.php')));
+}
+
+$back = admin_safe_return(
+    $text('return'),
+    admin_url('shipping/book.php?order=' . (int) $shipment['order_id'])
+);
+
 switch ($action) {
     case 'awb':
         // Optional: the aggregator sub-courier to ask for. Without one the
@@ -99,19 +155,25 @@ switch ($action) {
         break;
 
     case 'label':
+        // The courier's own label when it hosts one (it carries the routing
+        // and sort codes the hub cannot draw); the hub's label otherwise.
         $result = shipping_generate_label($shipmentId);
         if (!empty($result['ok'])) {
-            $target = $labelTarget((string) ($result['url'] ?? ''));
+            // No flash either way: the label itself is the confirmation, and
+            // a courier PDF would leave "Label ready" waiting on whatever
+            // admin page is opened next.
+            $url = (string) ($result['url'] ?? '');
+            if ($url === '') {
+                $returnPath = admin_safe_return($text('return'), '');
+                redirect(admin_url('shipping/label.php?shipment=' . $shipmentId
+                    . ($returnPath !== '' ? '&return=' . rawurlencode($returnPath) : '')));
+            }
+            $target = $documentTarget($url);
             if ($target !== null) {
-                // No flash: the label itself is the confirmation, and a courier
-                // PDF would leave "Label ready" waiting on whatever admin page
-                // is opened next.
                 redirect($target);
             }
-            if ((string) ($result['url'] ?? '') !== '') {
-                flash('warning', 'The courier returned a label link that is neither an admin page nor https, so it was not opened.');
-                redirect($back);
-            }
+            flash('warning', 'The courier returned a label link that is neither an admin page nor https, so it was not opened.');
+            redirect($back);
         }
         break;
 
@@ -125,6 +187,13 @@ switch ($action) {
             }
             if ($date < date('Y-m-d')) {
                 flash('error', 'A pickup cannot be scheduled in the past.');
+                redirect($back);
+            }
+            // Couriers book pickups a few days out, not years: 2062 typed for
+            // 2026 would otherwise be sent, stored and reported as scheduled.
+            // book.php's date box carries the same bound as its max.
+            if ($date > date('Y-m-d', strtotime('+30 days'))) {
+                flash('error', 'A pickup can be scheduled at most 30 days ahead.');
                 redirect($back);
             }
         }

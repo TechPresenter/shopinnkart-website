@@ -231,11 +231,16 @@ function create_order(array $input): array
             $input, $userId, $cartId, $shippingMethod, $paymentMethod, $gateway, $pincodeRow, $fail
         ) {
             // ---- 3. Re-read the cart INSIDE the transaction, locking stock --
+            // By product, not by the order the lines were added in: the loop
+            // below locks each product row, and two checkouts holding the same
+            // two products in opposite cart order deadlocked on
+            // products.PRIMARY. restore_order_stock() walks them the same way,
+            // so a checkout and a cancellation cannot deadlock either.
             $lines = Database::fetchAll(
                 'SELECT ci.`id` AS item_id, ci.`quantity`, ci.`product_id`, ci.`variant_id`
                  FROM `cart_items` ci
                  WHERE ci.`cart_id` = :cid
-                 ORDER BY ci.`id`',
+                 ORDER BY ci.`product_id`, ci.`variant_id`, ci.`id`',
                 ['cid' => $cartId]
             );
 
@@ -677,8 +682,11 @@ function adjust_stock(
         return true;
     }
 
+    // FOR UPDATE: the latest committed stock, held until the caller commits.
+    // A plain read inside a transaction can return an older snapshot, and the
+    // absolute write below then undid another order's movement.
     if ($variantId !== null) {
-        $before = (int) Database::fetchColumn('SELECT `stock` FROM `product_variants` WHERE `id` = :id', ['id' => $variantId]);
+        $before = (int) Database::fetchColumn('SELECT `stock` FROM `product_variants` WHERE `id` = :id FOR UPDATE', ['id' => $variantId]);
         $after = max(0, $before + $delta);
         Database::update('product_variants', ['stock' => $after], '`id` = :id', ['id' => $variantId]);
 
@@ -689,7 +697,7 @@ function adjust_stock(
         );
         Database::update('products', ['stock' => $variantTotal], '`id` = :id', ['id' => $productId]);
     } else {
-        $before = (int) Database::fetchColumn('SELECT `stock` FROM `products` WHERE `id` = :id', ['id' => $productId]);
+        $before = (int) Database::fetchColumn('SELECT `stock` FROM `products` WHERE `id` = :id FOR UPDATE', ['id' => $productId]);
         $after = max(0, $before + $delta);
         Database::update('products', ['stock' => $after], '`id` = :id', ['id' => $productId]);
     }
@@ -771,7 +779,15 @@ function notify_low_stock_crossed(int $productId, int $before, int $after): void
 /** Put every unit from an order back on the shelf. */
 function restore_order_stock(int $orderId, string $reason = 'cancel'): void
 {
-    $items = Database::fetchAll('SELECT * FROM `order_items` WHERE `order_id` = :id', ['id' => $orderId]);
+    // Ordered by product, not by line: adjust_stock() takes a row lock on each
+    // product, so two cancellations (or a cancel and a return) touching the
+    // same two products in opposite line order took those locks in opposite
+    // order and deadlocked on products.PRIMARY - and the loser's whole status
+    // change was rolled back. Every transaction now takes them in one sequence.
+    $items = Database::fetchAll(
+        'SELECT * FROM `order_items` WHERE `order_id` = :id ORDER BY `product_id`, `variant_id`, `id`',
+        ['id' => $orderId]
+    );
     $order = Database::fetch('SELECT `order_number` FROM `orders` WHERE `id` = :id', ['id' => $orderId]);
 
     foreach ($items as $item) {
@@ -789,7 +805,9 @@ function restore_order_stock(int $orderId, string $reason = 'cancel'): void
         );
 
         Database::query(
-            'UPDATE `products` SET `sold_count` = GREATEST(0, `sold_count` - :q) WHERE `id` = :id',
+            // sold_count is UNSIGNED: subtract at most what is there, or a
+            // count already below the quantity overflows in strict mode.
+            'UPDATE `products` SET `sold_count` = `sold_count` - LEAST(`sold_count`, :q) WHERE `id` = :id',
             ['q' => (int) $item['quantity'], 'id' => (int) $item['product_id']]
         );
     }
@@ -883,23 +901,124 @@ function order_timeline(array $order): array
 // ===========================================================================
 
 /**
+ * How far along the lifecycle a status is. Higher never yields to lower.
+ *
+ * The one table: update_order_status() refuses a move that does not raise it,
+ * and the shipping hub reads it through shipping_order_rank(). The three
+ * terminal states rank above delivered so a courier update, a return and a
+ * cancellation cannot walk each other backwards.
+ *
+ * -1 for anything unknown, which therefore never counts as forward.
+ */
+function order_status_rank(string $status): int
+{
+    return [
+        ORDER_STATUS_PENDING          => 0,
+        ORDER_STATUS_CONFIRMED        => 10,
+        ORDER_STATUS_PROCESSING       => 20,
+        ORDER_STATUS_PACKED           => 30,
+        ORDER_STATUS_SHIPPED          => 40,
+        ORDER_STATUS_OUT_FOR_DELIVERY => 50,
+        ORDER_STATUS_DELIVERED        => 60,
+        ORDER_STATUS_RETURNED         => 70,
+        ORDER_STATUS_REFUNDED         => 80,
+        ORDER_STATUS_CANCELLED        => 90,
+    ][$status] ?? -1;
+}
+
+/**
+ * Run a transaction that may lose a deadlock, and try it again.
+ *
+ * InnoDB picks a victim when two transactions want the same rows in a
+ * different order and rolls it back whole - so the work never half-happened
+ * and re-running it is safe. Without this the loser surfaced as "Could not
+ * update the order status." to an admin, or as a 500 to a courier's webhook
+ * (which Shiprocket does not promise to retry).
+ *
+ * Only for a transaction of its own: inside an outer one the deadlock has
+ * already killed that transaction, so re-running the inner block would work
+ * without its locks. The wait is short and jittered so two victims do not
+ * line up and collide again.
+ *
+ * A deadlock only - not a lock-wait timeout (1205). That one means someone
+ * else is holding the row for a long time, so trying again straight away just
+ * waits again; it is reported instead, which is how a courier webhook answers
+ * 500 and gets its retry later, and how an admin is told to try again.
+ *
+ * @template T
+ * @param callable():T $work
+ * @return T
+ */
+function db_retry_deadlock(callable $work, int $attempts = 3)
+{
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            return $work();
+        } catch (PDOException $e) {
+            $driverCode = (int) ($e->errorInfo[1] ?? 0);
+            $isDeadlock = (string) $e->getCode() === '40001' || $driverCode === 1213;
+            if (!$isDeadlock || $attempt >= $attempts || Database::inTransaction()) {
+                throw $e;
+            }
+            ErrorHandler::log('warning', 'Deadlock on attempt ' . $attempt . ', retrying: ' . $e->getMessage());
+            usleep(random_int(20000, 120000) * $attempt);
+        }
+    }
+}
+
+/**
  * Move an order to a new status, journalling the change and handling the
  * stock/payment side effects that go with it.
- */
-/**
+ *
+ * The order row is locked and re-read inside the transaction, and every
+ * decision is made on that locked row. Two callers at once - two courier
+ * updates for one parcel, two admins on one order - used to both read the old
+ * status, both pass "first move into a releasing state", and restock the order
+ * twice, give the coupon back twice and mark COD paid twice. Now the second one
+ * waits, sees the first one's result, and changes nothing.
+ *
+ * That includes the CALLER's own reason for the move. Every caller decides
+ * whether its move is legal on a read taken before the lock, and a courier
+ * webhook can deliver the order in between: the forward-only rule below is
+ * applied to the locked row for everyone, and a caller with a rule of its own
+ * (the customer's cancellation window, the returns screen's "delivered only")
+ * re-states it in `precondition`.
+ *
  * @param bool $sendCustomerEmail Set false when the caller sends its own
  *        customer-facing message for this transition. Checkout uses it for the
  *        COD auto-confirmation, which happens in the same breath as the order
  *        confirmation email — without it the customer receives "order placed"
  *        and "order confirmed" seconds apart, both carrying the same invoice.
  *        The in-app notification and the invoice are unaffected.
+ * @param array $options
+ *        precondition    callable(array $lockedOrder): bool|string - the
+ *                        caller's reason for the move, re-checked on the
+ *                        locked row. true proceeds; false means someone got
+ *                        there first and nothing changes (ok, changed=false);
+ *                        a string refuses the move with that message.
+ *        allow_backwards a deliberate correction to an earlier status, which
+ *                        the forward-only rule otherwise refuses. The stock,
+ *                        coupon and payment side effects still run only on the
+ *                        FIRST move into a releasing state, so a correction
+ *                        never restocks an order twice.
+ *        shipped_at      when it left, as a courier reported it ('Y-m-d H:i:s');
+ *        delivered_at    when it arrived. Both default to now.
+ *        cod_uncollected RETURNED only: the parcel came back to us undelivered,
+ *                        so a COD 'paid' (set by a delivery that was wrong) was
+ *                        never collected and is reset to failed.
+ *        cancel_reason   CANCELLED only: stored with the status, so a refused
+ *                        cancellation leaves no reason on a live order.
+ *        return_reason   RETURNED / REFUNDED only: the same, for the returns
+ *                        screen - a refused return must leave no reason behind.
+ * @return array{ok:bool, message:string, changed?:bool}
  */
 function update_order_status(
     int $orderId,
     string $newStatus,
     ?string $note = null,
     string $changedBy = 'admin',
-    bool $sendCustomerEmail = true
+    bool $sendCustomerEmail = true,
+    array $options = []
 ): array {
     if (!array_key_exists($newStatus, ORDER_STATUSES)) {
         return ['ok' => false, 'message' => 'Unknown order status.'];
@@ -910,53 +1029,139 @@ function update_order_status(
         return ['ok' => false, 'message' => 'Order not found.'];
     }
 
-    $oldStatus = (string) $order['status'];
-    if ($oldStatus === $newStatus) {
-        return ['ok' => true, 'message' => 'Order is already ' . ORDER_STATUSES[$newStatus] . '.'];
+    // A fast answer only; the locked re-read below is the one that counts.
+    if ((string) $order['status'] === $newStatus) {
+        return ['ok' => true, 'changed' => false, 'message' => 'Order is already ' . ORDER_STATUSES[$newStatus] . '.'];
     }
 
     // An order with a live courier consignment is cancelled at the courier
     // FIRST. Otherwise the stock comes back below while the parcel keeps
     // moving, and the courier collects COD for an order the books say is dead.
+    // Outside the transaction on purpose: it calls the courier, and no row
+    // lock is held across a network call.
     if ($newStatus === ORDER_STATUS_CANCELLED && ($refusal = order_shipment_cancel_refusal($orderId)) !== null) {
         return ['ok' => false, 'message' => $refusal];
     }
 
     try {
-        Database::transaction(static function () use ($order, $orderId, $oldStatus, $newStatus, $note, $changedBy) {
+        // Retried on a deadlock: the whole status change is one transaction,
+        // so the victim's work is rolled back cleanly and running it again is
+        // free. Before this, a cancel that lost a stock-lock race answered
+        // "Could not update the order status." and the order stayed live.
+        $outcome = db_retry_deadlock(static fn (): array => Database::transaction(
+            static function () use ($orderId, $newStatus, $note, $changedBy, $sendCustomerEmail, $options): array {
+            $order = Database::fetch('SELECT * FROM `orders` WHERE `id` = :id FOR UPDATE', ['id' => $orderId]);
+            if ($order === null) {
+                return ['refused' => 'Order not found.'];
+            }
+            $oldStatus = (string) $order['status'];
+            if ($oldStatus === $newStatus) {
+                return ['changed' => false, 'status' => $oldStatus];
+            }
+
+            // The caller's own rule, re-stated on the locked row. A string is
+            // a refusal to report; false is "someone got there first".
+            if (isset($options['precondition'])) {
+                $verdict = ($options['precondition'])($order);
+                if ($verdict !== true) {
+                    return is_string($verdict)
+                        ? ['refused' => $verdict]
+                        : ['changed' => false, 'status' => $oldStatus];
+                }
+            }
+
+            // Forward only, for every caller. Each of them tests this on its
+            // own pre-lock read - update-status.php by timeline index,
+            // returns.php by "delivered only" - and a courier webhook moving
+            // the order while they waited for the lock turned that test into a
+            // rewind: a delivered order back to shipped with delivered_at and
+            // a collected COD still on it, or a refunded one to returned.
+            if (empty($options['allow_backwards'])
+                && order_status_rank($newStatus) <= order_status_rank($oldStatus)) {
+                return ['refused' => 'Order is now ' . (ORDER_STATUSES[$oldStatus] ?? $oldStatus)
+                    . ' and cannot be moved back to ' . (ORDER_STATUSES[$newStatus] ?? $newStatus) . '.'];
+            }
+
+            // Re-checked under the lock, which booking takes too: a courier
+            // booking made between the check above and this lock would
+            // otherwise leave a cancelled order with a live consignment.
+            if ($newStatus === ORDER_STATUS_CANCELLED && order_has_live_shipment($orderId, true)) {
+                return ['refused' => 'A courier booking for this order was made a moment ago. Cancel that shipment first, then the order.'];
+            }
+
+            $now    = date('Y-m-d H:i:s');
             $update = ['status' => $newStatus];
+            $email  = $sendCustomerEmail;
 
             switch ($newStatus) {
                 case ORDER_STATUS_CONFIRMED:
-                    $update['confirmed_at'] = date('Y-m-d H:i:s');
+                    $update['confirmed_at'] = $now;
                     break;
                 case ORDER_STATUS_SHIPPED:
-                    $update['shipped_at'] = date('Y-m-d H:i:s');
+                    $update['shipped_at'] = order_event_time($options['shipped_at'] ?? null);
                     break;
                 case ORDER_STATUS_DELIVERED:
-                    $update['delivered_at'] = date('Y-m-d H:i:s');
-                    // COD is collected on delivery.
+                    $update['delivered_at'] = order_event_time($options['delivered_at'] ?? null);
+                    // COD is collected on delivery - at the delivery, not when
+                    // we happened to hear about it.
                     if ($order['payment_method'] === PAYMENT_METHOD_COD && $order['payment_status'] !== PAYMENT_STATUS_PAID) {
                         $update['payment_status'] = PAYMENT_STATUS_PAID;
                         Database::update('payments', [
                             'status'  => PAYMENT_STATUS_PAID,
-                            'paid_at' => date('Y-m-d H:i:s'),
+                            'paid_at' => $update['delivered_at'],
                         ], '`order_id` = :id', ['id' => $orderId]);
                     }
                     break;
                 case ORDER_STATUS_CANCELLED:
-                    $update['cancelled_at'] = date('Y-m-d H:i:s');
+                    $update['cancelled_at'] = $now;
+                    if (isset($options['cancel_reason'])) {
+                        $update['cancel_reason'] = mb_substr((string) $options['cancel_reason'], 0, 255);
+                    }
+                    break;
+                case ORDER_STATUS_RETURNED:
+                    if (!empty($options['cod_uncollected'])
+                        && $order['payment_method'] === PAYMENT_METHOD_COD
+                        && $order['payment_status'] === PAYMENT_STATUS_PAID) {
+                        $update['payment_status'] = PAYMENT_STATUS_FAILED;
+                        Database::update('payments', ['status' => PAYMENT_STATUS_FAILED, 'paid_at' => null],
+                            '`order_id` = :id', ['id' => $orderId]);
+                        $note = trim(($note ?? '') . ' COD not collected: the parcel came back (RTO). Payment reset from paid to failed.');
+                    }
                     break;
             }
 
-            // Release stock only on the first move into a releasing state.
+            // Written with the status, in the same transaction, the way
+            // cancel_reason is: a return refused under the lock must leave no
+            // "Return reason" on an order that is still out with the courier.
+            if (isset($options['return_reason'])
+                && in_array($newStatus, [ORDER_STATUS_RETURNED, ORDER_STATUS_REFUNDED], true)) {
+                $update['return_reason'] = mb_substr((string) $options['return_reason'], 0, 255);
+            }
+
+            // A jump past 'shipped' - one courier update carrying pickup and
+            // delivery together, or a manual "delivered" - still records when
+            // the parcel left, which the storefront and the emails show.
+            if (empty($order['shipped_at']) && !isset($update['shipped_at'])
+                && in_array($newStatus, [ORDER_STATUS_OUT_FOR_DELIVERY, ORDER_STATUS_DELIVERED, ORDER_STATUS_RETURNED], true)) {
+                if (!empty($options['shipped_at'])) {
+                    $update['shipped_at'] = order_event_time($options['shipped_at']);
+                } elseif ($newStatus !== ORDER_STATUS_RETURNED) {
+                    $update['shipped_at'] = $update['delivered_at'] ?? $now;
+                }
+            }
+
+            // Release stock only on the first move into a releasing state -
+            // judged on the locked row, so only one caller ever does it.
             if (in_array($newStatus, STOCK_RELEASING_STATUSES, true)
                 && !in_array($oldStatus, STOCK_RELEASING_STATUSES, true)) {
                 restore_order_stock($orderId, $newStatus === ORDER_STATUS_CANCELLED ? 'cancel' : 'return');
 
                 if ($order['coupon_id'] !== null) {
+                    // used_count is UNSIGNED: "GREATEST(0, used_count - 1)"
+                    // overflows at 0 in strict mode before GREATEST can clamp
+                    // it, and the whole return failed with it.
                     Database::query(
-                        'UPDATE `coupons` SET `used_count` = GREATEST(0, `used_count` - 1) WHERE `id` = :id',
+                        'UPDATE `coupons` SET `used_count` = `used_count` - LEAST(`used_count`, 1) WHERE `id` = :id',
                         ['id' => (int) $order['coupon_id']]
                     );
                     Database::delete('coupon_usage', '`order_id` = :oid', ['oid' => $orderId]);
@@ -964,8 +1169,15 @@ function update_order_status(
             }
 
             if ($newStatus === ORDER_STATUS_REFUNDED) {
-                $update['payment_status'] = PAYMENT_STATUS_REFUNDED;
-                Database::update('payments', ['status' => PAYMENT_STATUS_REFUNDED], '`order_id` = :id', ['id' => $orderId]);
+                // Only money that was taken can be given back. An RTO'd COD
+                // order was never paid: marking it refunded showed the invoice
+                // paid in full and told the customer their money was on its way.
+                if ($order['payment_status'] === PAYMENT_STATUS_PAID) {
+                    $update['payment_status'] = PAYMENT_STATUS_REFUNDED;
+                    Database::update('payments', ['status' => PAYMENT_STATUS_REFUNDED], '`order_id` = :id', ['id' => $orderId]);
+                } else {
+                    $email = false;
+                }
             }
 
             Database::update('orders', $update, '`id` = :id', ['id' => $orderId]);
@@ -977,11 +1189,24 @@ function update_order_status(
                 'changed_by' => $changedBy,
                 'admin_id'   => $changedBy === 'admin' ? admin_id() : null,
             ]);
-        });
+
+            return ['changed' => true, 'order' => $order, 'old' => $oldStatus, 'email' => $email];
+        }));
     } catch (Throwable $e) {
         ErrorHandler::log('error', 'Order status update failed: ' . $e->getMessage());
         return ['ok' => false, 'message' => 'Could not update the order status.'];
     }
+
+    if (isset($outcome['refused'])) {
+        return ['ok' => false, 'message' => (string) $outcome['refused']];
+    }
+    if (empty($outcome['changed'])) {
+        $is = (string) ($outcome['status'] ?? $newStatus);
+        return ['ok' => true, 'changed' => false, 'message' => 'Order is already ' . (ORDER_STATUSES[$is] ?? $is) . '.'];
+    }
+    $order             = $outcome['order'];
+    $oldStatus         = (string) $outcome['old'];
+    $sendCustomerEmail = (bool) $outcome['email'];
 
     try {
         $updated = get_order($orderId);
@@ -995,8 +1220,10 @@ function update_order_status(
         }
 
         // A cancellation or refund does not void the invoice — the document
-        // stands — but its payment figures follow the order.
-        if ($updated !== null && in_array($newStatus, [ORDER_STATUS_CANCELLED, ORDER_STATUS_RETURNED, ORDER_STATUS_REFUNDED], true)) {
+        // stands — but its payment figures follow the order. Delivery too:
+        // that is when COD is collected, and the invoice kept showing the
+        // whole amount due on a paid order.
+        if ($updated !== null && in_array($newStatus, [ORDER_STATUS_DELIVERED, ORDER_STATUS_CANCELLED, ORDER_STATUS_RETURNED, ORDER_STATUS_REFUNDED], true)) {
             invoice_sync_payment($orderId);
         }
 
@@ -1014,7 +1241,25 @@ function update_order_status(
             'Order ' . $order['order_number'] . ': ' . $oldStatus . ' -> ' . $newStatus);
     }
 
-    return ['ok' => true, 'message' => 'Order marked as ' . ORDER_STATUSES[$newStatus] . '.'];
+    return ['ok' => true, 'changed' => true, 'message' => 'Order marked as ' . ORDER_STATUSES[$newStatus] . '.'];
+}
+
+/**
+ * A reported event time ('Y-m-d H:i:s'), or now when there is none or it will
+ * not parse. Never in the future: a courier clock running ahead would push a
+ * delivery date - and the return window hanging off it - forward.
+ */
+function order_event_time($value): string
+{
+    $now = date('Y-m-d H:i:s');
+    if (!is_string($value) || preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value) !== 1) {
+        return $now;
+    }
+    $parsed = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s', $value);
+    if ($parsed === false || $parsed->format('Y-m-d H:i:s') !== $value) {
+        return $now;
+    }
+    return $value > $now ? $now : $value;
 }
 
 /** Can the customer still cancel this order themselves? */
@@ -1051,9 +1296,35 @@ function cancel_order(int $orderId, string $reason, string $changedBy = 'custome
         return ['ok' => false, 'message' => 'This order can no longer be cancelled. Please contact support.'];
     }
 
-    Database::update('orders', ['cancel_reason' => mb_substr($reason, 0, 255)], '`id` = :id', ['id' => $orderId]);
-
-    return update_order_status($orderId, ORDER_STATUS_CANCELLED, $reason, $changedBy);
+    // Written with the status, in the same transaction. Written first, a
+    // refusal (the parcel already with the courier) left a "Cancellation
+    // reason" on an order that went on to be delivered.
+    return update_order_status($orderId, ORDER_STATUS_CANCELLED, $reason, $changedBy, true, [
+        'cancel_reason' => $reason,
+        // Cancelled ranks above every other status, so the forward-only rule
+        // lets it through from anywhere: the rules that decide whether THIS
+        // cancellation is legal are re-stated here, on the locked row. A COD
+        // delivery landing between the read above and the lock used to book
+        // the goods back onto the shelf and leave the order cancelled with its
+        // payment showing paid.
+        'precondition' => static function (array $locked) use ($changedBy) {
+            $status = (string) $locked['status'];
+            if ($changedBy === 'customer') {
+                return in_array($status, CANCELLABLE_STATUSES, true)
+                    ? true
+                    : 'This order can no longer be cancelled. Please contact support.';
+            }
+            // Support may cancel what the customer no longer can - but not a
+            // parcel the customer already has, and not an order whose stock
+            // has already come back.
+            if ($status === ORDER_STATUS_DELIVERED) {
+                return 'This order has already been delivered. Process it as a return instead.';
+            }
+            return in_array($status, STOCK_RELEASING_STATUSES, true)
+                ? 'This order is already ' . (ORDER_STATUSES[$status] ?? $status) . '.'
+                : true;
+        },
+    ]);
 }
 
 /** Orders belonging to a customer, paginated. */
@@ -1095,13 +1366,26 @@ function customer_orders(int $userId, int $page = 1, int $perPage = 10, string $
 //  has not run the migration) as "no shipment".
 // ===========================================================================
 
-function order_has_live_shipment(int $orderId): bool
+/**
+ * @param bool $locking Read the latest committed rows with a locking read, for
+ *        a caller inside a transaction that holds the order lock. A lock wait
+ *        or any other error then propagates: "could not tell" must not read as
+ *        "no shipment" when the answer decides whether stock comes back.
+ */
+function order_has_live_shipment(int $orderId, bool $locking = false): bool
 {
     if ($orderId <= 0 || !is_file(INCLUDES_PATH . '/shipping-service.php')) {
         return false;
     }
+    require_once INCLUDES_PATH . '/shipping-service.php';
+    if ($locking) {
+        return shipping_hub_installed() && Database::fetchColumn(
+            "SELECT `id` FROM `shipments` WHERE `order_id` = :o AND `status` NOT IN ('cancelled','failed_booking')
+              LIMIT 1 LOCK IN SHARE MODE",
+            ['o' => $orderId]
+        ) !== null;
+    }
     try {
-        require_once INCLUDES_PATH . '/shipping-service.php';
         return shipment_live_for_order($orderId) !== null;
     } catch (Throwable $e) {
         return false;

@@ -12,6 +12,8 @@ storage/logs/*
 storage/cache/*
 storage/backups/*
 storage/installed.lock
+# Runtime locks (the courier poller, and any later cron job)
+storage/*.lock
 !storage/logs/.gitkeep
 !storage/cache/.gitkeep
 
@@ -46,12 +48,13 @@ config/db.production.php
 # Working files from audits and QA runs, not part of the application.
 .admin-audit-journal.jsonl
 FRONTEND-AUDIT.md
-inj.html
-# A stray file created by a malformed shell redirect during testing.
-c -l)|X|
 
-# Local-only helper scripts
-/bin/
+# bin/ holds the CLI workers the LIVE site runs from cron - the email queue,
+# the courier tracking poller, the hidden-admin-URL recovery and the security
+# self-test. It was ignored as "local-only helper scripts" while it held
+# throwaway scripts; with those jobs in it, a Git deploy left the server with
+# no worker to schedule while docs/HOSTING.md told the owner to schedule them.
+# Anything genuinely throwaway belongs in the scratch directory, not here.
 
 # Generated database export for a live host. Contains admin password hashes
 # and customer rows - regenerate it with database/export-for-hosting.php
