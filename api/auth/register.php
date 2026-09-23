@@ -18,11 +18,15 @@ api_rate_limit('register', 5, 3600);
 
 $input = request_all();
 
-// Honeypot: a field no human sees and every form-filling bot completes.
-if (trim((string) request_input('website', '')) !== '') {
-    security_event('api.honeypot', 'low', ['endpoint' => 'register']);
-    json_success('Thanks! Please check your inbox to finish setting up your account.');
-}
+// Honeypot, minimum time on the form, per-address ceiling and - once this
+// address has been refused a few times - a CAPTCHA. A caught submission is
+// answered like a successful one on purpose: telling a spam script it was
+// spotted only helps it tune itself out of the trap.
+bot_guard_api('register', [
+    'key'           => mb_strtolower(trim((string) ($input['email'] ?? ''))),
+    'input'         => $input,
+    'quiet_success' => 'Thanks! Please check your inbox to finish setting up your account.',
+]);
 
 $validator = new Validator($input, [
     'first_name'            => 'First name',

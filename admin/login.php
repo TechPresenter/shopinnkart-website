@@ -28,6 +28,12 @@ if (!admin_gate_passed()) {
     admin_gate_deny();
 }
 
+// A password was already accepted and the second factor is outstanding. Sending
+// them back to the password form would look like the password was wrong.
+if (mfa_pending('admin') !== null) {
+    redirect(admin_url('login-2fa.php'));
+}
+
 $errors = [];
 $identifier = '';
 
@@ -51,12 +57,25 @@ if (is_post()) {
         $attempt = attempt_admin_login($identifier, $password);
 
         if ($attempt['ok']) {
-            login_admin($attempt['admin']);
-            log_activity('admin.login', 'admin', (int) $attempt['admin']['id'], $attempt['admin']['name'] . ' signed in');
+            // The password is only the first half. mfa_sign_in() decides
+            // whether there is a second one, and if so parks the browser in a
+            // half-authenticated state - no admin session is written until
+            // admin/login-2fa.php is satisfied. A row WITH its role
+            // permissions is needed, because the requirement can come from the
+            // role; attempt_admin_login() returns the bare admins row.
+            $row  = mfa_admin_row((int) $attempt['admin']['id']) ?? $attempt['admin'];
+            $gate = mfa_sign_in('admin', $row);
+
+            if ($gate['stage'] !== 'complete') {
+                redirect($gate['url']);
+            }
+
+            login_admin($row, $gate['method']);
+            log_activity('admin.login', 'admin', (int) $row['id'], $row['name'] . ' signed in');
             // An admin signing in is worth a line in the security log too:
             // activity_logs record what admins did, this records who got in.
-            security_event('auth.admin_login', 'info', [], (int) $attempt['admin']['id'], 'admin');
-            flash('success', 'Welcome back, ' . $attempt['admin']['name'] . '.');
+            security_event('auth.admin_login', 'info', ['mfa' => $gate['method']], (int) $row['id'], 'admin');
+            flash('success', 'Welcome back, ' . $row['name'] . '.');
             redirect(admin_intended_url());
         }
 

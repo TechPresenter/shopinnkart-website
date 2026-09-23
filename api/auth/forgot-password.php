@@ -27,6 +27,14 @@ if ($validator->fails()) {
 
 $email = mb_strtolower((string) $validator->value('email'));
 
+// This endpoint sends mail to an address a stranger typed, so it is exactly
+// the kind of form a script is pointed at. Answered like a success when the
+// honeypot or the timing catches it - the reply must look the same either way.
+bot_guard_api('forgot_password', [
+    'key'           => $email,
+    'quiet_success' => 'If that email is registered with us, a password reset link is on its way. The link is valid for 1 hour.',
+]);
+
 // The same ceiling on the receiving end, so a sender coming from many
 // addresses still cannot fill one inbox. Silent: telling the sender they hit
 // the limit would say the address is registered here.

@@ -38,10 +38,10 @@ if (is_post()) {
 // cares to try, and an unlimited source of welcome mail from our domain.
 if (is_post() && !form_rate_limit('register', 5, 3600)) {
     $formError = 'Too many sign-up attempts from this device. Please try again in a little while.';
-} elseif (is_post() && trim((string) input('website', '')) !== '') {
-    // Honeypot: a field no human sees and every form-filling bot completes.
-    security_event('api.honeypot', 'low', ['endpoint' => 'register']);
-    $formError = 'We could not complete this sign-up. Please try again.';
+} elseif (is_post() && ($botError = bot_guard_form('register', ['key' => (string) input('email', '')])) !== null) {
+    // The honeypot, the time-on-form check and, once this address has been
+    // refused a few times, the CAPTCHA. See includes/bot-protection.php.
+    $formError = $botError;
 } elseif (is_post()) {
     $form['first_name']    = (string) input('first_name', '');
     $form['last_name']     = (string) input('last_name', '');
@@ -170,10 +170,9 @@ auth_layout_start([
 <form method="post" action="<?= e(url('register.php')) ?>" data-ajax-form="auth/register.php" novalidate>
     <?= csrf_field() ?>
 
-    <?php // Honeypot. Hidden from people and from screen readers; bots fill it in. ?>
-    <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">
-        <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
-    </div>
+    <?php // Honeypot, the signed time-on-form stamp, and the CAPTCHA if this
+          // visitor has earned one. Nothing visible in the ordinary case. ?>
+    <?= bot_form_html('register', (string) $form['email']) ?>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4">
         <div class="sik-field">

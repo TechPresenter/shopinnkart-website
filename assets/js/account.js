@@ -593,10 +593,20 @@
             }
             if (button && !SIK.showLoader(button)) return;
 
-            const result = await SIK.post('newsletter/subscribe.php', {
+            // The bot guard's evidence travels with the address: this form posts
+            // by fetch with hand-picked fields, so the honeypot and the signed
+            // stamp have to be picked up too or the guard sees a submission that
+            // never loaded a form - which is what a script looks like.
+            const payload = {
                 email: input.value.trim(),
                 source: form.dataset.newsletterForm || 'footer'
+            };
+            ['website', 'form_ts'].forEach(function (name) {
+                const field = form.querySelector('[name="' + name + '"]');
+                if (field) payload[name] = field.value;
             });
+
+            const result = await SIK.post('newsletter/subscribe.php', payload);
 
             if (button) SIK.hideLoader(button);
 

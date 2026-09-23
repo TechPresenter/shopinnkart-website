@@ -878,6 +878,7 @@ foreach ($popups as $popup):
                         <?php if ($popup['popup_type'] === 'newsletter'): ?>
                             <form class="sik-news__form" style="margin-top:var(--sp-5);border:1px solid var(--sik-border)"
                                   data-newsletter-form="popup">
+                                <?= bot_form_html('newsletter') ?>
                                 <label class="sik-sr" for="popupEmail<?= (int) $popup['id'] ?>">Email address</label>
                                 <input id="popupEmail<?= (int) $popup['id'] ?>" class="sik-news__input" type="email"
                                        name="email" placeholder="Enter your email address" required>

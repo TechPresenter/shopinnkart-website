@@ -8,6 +8,14 @@
 
 declare(strict_types=1);
 
+// Both only declare functions, so requiring them here costs nothing and means
+// every page and endpoint has the guards available. This file is the right
+// home for them: api_require_login() / api_require_admin() below are where a
+// bearer token becomes "who is calling", and bot_guard_api() answers in the
+// same JSON envelope as everything else here.
+require_once __DIR__ . '/api-tokens.php';
+require_once __DIR__ . '/bot-protection.php';
+
 /** Emit a JSON response and stop. */
 function json_response(array $payload, int $status = 200): void
 {
@@ -70,6 +78,12 @@ function json_validation_error(array $errors, string $message = 'Please correct 
 /** Restrict an endpoint to specific HTTP verbs. */
 function api_require_method($methods): void
 {
+    // The first line of almost every endpoint, so it is where a bearer token
+    // is turned into "who is calling" - before anything reads current_user()
+    // and memoises "nobody". api_token_boot() is idempotent and does nothing
+    // at all unless the request carries an Authorization: Bearer header.
+    api_token_boot();
+
     $methods = array_map('strtoupper', (array) $methods);
     $current = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 
@@ -98,6 +112,14 @@ function api_require_method($methods): void
  */
 function api_require_csrf(): void
 {
+    // A bearer token is not ambient the way a cookie is: a browser never
+    // attaches it to a cross-site request on its own, so there is nothing for
+    // a CSRF token to protect against. Demanding one would only mean a mobile
+    // app had to scrape a session token out of a web page first.
+    if (api_token_boot() !== null) {
+        return;
+    }
+
     if (!csrf_verify()) {
         json_error('Your session expired. Please refresh the page and try again.', [], 403, 'csrf');
     }
@@ -106,6 +128,8 @@ function api_require_csrf(): void
 /** Require a signed-in customer; returns the user row. */
 function api_require_login(): array
 {
+    api_token_boot();
+
     $user = current_user();
     if ($user === null) {
         json_error('Please sign in to continue.', [], 401, 'auth');
@@ -116,6 +140,18 @@ function api_require_login(): array
 /** Require a signed-in admin with a permission; returns the admin row. */
 function api_require_admin(string $permission = ''): array
 {
+    $token = api_token_boot();
+
+    // A customer's token must never open an admin endpoint, however valid it
+    // is. Nothing is short-circuited here: it falls through to the same answer
+    // a request with no credential at all would get, so a token holder cannot
+    // use the reply to find out that an admin area exists behind the gate.
+    if ($token !== null && $token['user_type'] !== 'admin') {
+        security_event('api.token_admin_refused', 'medium', [
+            'path' => mb_substr((string) ($_SERVER['SCRIPT_NAME'] ?? ''), 0, 120),
+        ], (int) $token['account']['id'], 'customer');
+    }
+
     $admin = admin_user();
     if ($admin === null) {
         // With the hidden login address on, a stranger must not be able to
@@ -149,6 +185,8 @@ function api_require_admin(string $permission = ''): array
  */
 function api_rate_limit(string $bucket, int $maxAttempts = 20, int $windowSeconds = 60, string $key = ''): void
 {
+    api_token_boot();
+
     $limited = !rate_limit_attempt('api.' . $bucket, client_ip() . ($key === '' ? '' : '|' . mb_strtolower($key)), $maxAttempts, $windowSeconds);
 
     // Per-session smoother: a signed-in customer hammering one endpoint is

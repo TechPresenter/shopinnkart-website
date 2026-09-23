@@ -16,6 +16,11 @@ if (is_logged_in()) {
     redirect(url('account.php'));
 }
 
+// A password was already accepted and the second factor is outstanding.
+if (mfa_pending('customer') !== null) {
+    redirect(url('login-2fa.php'));
+}
+
 $errors    = [];
 $formError = '';
 $email     = '';
@@ -37,15 +42,33 @@ if (is_post()) {
 
     if ($validator->fails()) {
         $errors = $validator->errors();
+    } elseif (($botError = bot_guard_form('login', ['key' => $email, 'min_seconds' => 0])) !== null) {
+        // Only after this address has run up several refusals; an ordinary
+        // customer signing in never meets this branch.
+        $formError = $botError;
     } else {
         $attempt = attempt_login($email, $password);
 
         if ($attempt['ok']) {
-            login_user($attempt['user'], $remember);
+            bot_note_success('login', $email);
+
+            // The password is only the first half. mfa_sign_in() parks the
+            // browser in a half-authenticated state when this account has a
+            // second factor - no customer session is written until
+            // login-2fa.php is satisfied. "Keep me signed in" is carried
+            // across the challenge rather than honoured before it.
+            $gate = mfa_sign_in('customer', $attempt['user'], ['remember' => $remember]);
+            if ($gate['stage'] !== 'complete') {
+                redirect($gate['url']);
+            }
+
+            login_user($attempt['user'], $remember, $gate['method']);
             flash('success', 'Welcome back, ' . trim((string) $attempt['user']['first_name']) . '.');
             // Sends them on to whatever page asked them to sign in.
             redirect(intended_url());
         }
+
+        bot_note_failure('login', $email);
 
         // Kept off the individual fields on purpose: highlighting "email" or
         // "password" would say which half was wrong, and whether the address
@@ -70,6 +93,8 @@ auth_layout_start([
 
 <form method="post" action="<?= e(url('login.php')) ?>" data-ajax-form="auth/login.php" novalidate>
     <?= csrf_field() ?>
+    <?php // Invisible unless this address has been refused several times. ?>
+    <?= bot_form_html('login', $email) ?>
 
     <div class="sik-field">
         <label class="sik-label" for="sikLoginEmail">Email address</label>

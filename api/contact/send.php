@@ -16,11 +16,15 @@ api_require_csrf();
 // whenever the sender dropped the cookie, which made this form a bulk sender.
 api_rate_limit('contact_send', 5, 3600);
 
-// Honeypot: a field no human sees and every form-filling bot completes.
-if (trim((string) request_input('website', '')) !== '') {
-    security_event('api.honeypot', 'low', ['endpoint' => 'contact']);
-    json_success('Thanks for writing in. Our support team replies within one business day.', [], 201);
-}
+// Honeypot, minimum time on the form, per-address ceiling and - once this
+// sender has been caught before - a CAPTCHA. Caught submissions are thanked
+// rather than refused: a spam script that is told it was spotted only tunes
+// itself out of the trap.
+bot_guard_api('contact', [
+    'key'           => mb_strtolower(trim((string) request_input('email', ''))),
+    'quiet_success' => 'Thanks for writing in. Our support team replies within one business day.',
+    'quiet_status'  => 201,
+]);
 
 $v = new Validator(request_all(), [
     'name'    => 'Name',

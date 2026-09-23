@@ -186,6 +186,23 @@ function security_csp_policy(bool $isHttps, string $context): string
         $directives['frame-src'] = ["'self'"];
     }
 
+    // The configured CAPTCHA provider, if there is one. Its widget is a script
+    // and an iframe from the vendor's own domain: leave them out and the
+    // browser blocks the very check the visitor has to pass to get in. Nothing
+    // is added while no provider is configured.
+    if (function_exists('bot_protection_csp_sources')) {
+        foreach (bot_protection_csp_sources() as $directive => $sources) {
+            if (!isset($directives[$directive])) {
+                continue;
+            }
+            foreach ((array) $sources as $source) {
+                if (!in_array($source, $directives[$directive], true)) {
+                    $directives[$directive][] = $source;
+                }
+            }
+        }
+    }
+
     $parts = [];
     foreach ($directives as $name => $values) {
         $parts[] = $name . ' ' . implode(' ', $values);

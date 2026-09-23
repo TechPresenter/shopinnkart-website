@@ -669,19 +669,50 @@ function product_rail(array $products, array $widget, string $cardStyle = 'stand
 // ===========================================================================
 
 /**
- * Is this banner image the artwork that shipped with the store, rather than
- * one an admin uploaded?
+ * Banner artwork that still draws the catalogue it was made for, and so is
+ * treated as no image at all.
  *
- * The shipped hero and promo art still draws the old electronics catalogue —
- * the files are literally labelled "Laptop, headphones and smartwatch" and
- * "Device cluster" — so it is treated as no image at all, and the widget shows
- * the store's own product photography instead. Anything uploaded through
- * Marketing > Banners lands under uploads/ and is always used as it is.
+ * Both remaining files are the starter theme's promo bands, in the navy and
+ * orange it shipped with rather than this store's wine and gold. Redraw one
+ * and delete its line — nothing else has to change.
+ */
+const BANNER_STOCK_IMAGES = [
+    'assets/images/banners/promo-1.svg',   // "Gift boxes promo band"
+    'assets/images/banners/promo-3.svg',   // "Gift and spark promo band"
+];
+
+/**
+ * Should this banner image be skipped, so the widget falls back to the store's
+ * own product photography?
+ *
+ * Banners are NOT upload-only. The rule used to be "anything under
+ * assets/images/ is placeholder art", which was true when every hero was
+ * labelled "Laptop, headphones and smartwatch" and every promo "Device
+ * cluster" — but it also meant no shipped artwork could EVER reach the
+ * storefront, whatever it drew. The heroes and promo 2 were redrawn for the
+ * lighting catalogue (curtain lights, diyas, a galaxy projector) and every
+ * banners row points at them, so under that rule the homepage showed three
+ * product tiles instead — and because the products it picked had no photo of
+ * their own, what a visitor actually got was three grey "no image" cameras
+ * above the fold. Shipped art is used now; only the list above is skipped.
+ *
+ * A path that is not on disk is skipped too. A row outlives its file easily —
+ * a deleted upload, a half-copied deploy — and img_url() would answer with
+ * that same "no image" camera, which is worse than the product photography.
  */
 function banner_image_is_stock(?string $path): bool
 {
     $path = ltrim(trim((string) $path), '/');
-    return $path === '' || str_starts_with($path, 'assets/images/');
+
+    if ($path === '' || in_array($path, BANNER_STOCK_IMAGES, true)) {
+        return true;
+    }
+    // An absolute URL is somebody else's to serve; it cannot be checked here.
+    if (preg_match('#^(https?:)?//#i', $path) === 1) {
+        return false;
+    }
+
+    return !is_file(ROOT_PATH . '/' . $path);
 }
 
 /**
@@ -2042,6 +2073,11 @@ function widget_newsletter(array $widget): void
                              api_require_csrf() to check. A native action here would only
                              give the form a second, unguarded way to submit. */ ?>
                     <form class="sik-news__form" data-newsletter-form="homepage">
+                        <?php /* The honeypot and the signed time stamp. account.js reads
+                                 both out of the form and sends them with the address, so
+                                 the guard on api/newsletter/subscribe.php sees the same
+                                 evidence a native form post would carry. */ ?>
+                        <?= bot_form_html('newsletter') ?>
                         <label class="sik-sr" for="sikNewsEmail">Email address</label>
                         <input class="sik-news__input" id="sikNewsEmail" type="email" name="email"
                                placeholder="<?= e($placeholder) ?>" required autocomplete="email">

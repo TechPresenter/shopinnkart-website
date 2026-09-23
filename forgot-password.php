@@ -30,6 +30,11 @@ if (is_post()) {
 
     if ($validator->fails()) {
         $errors = $validator->errors();
+    } elseif (($botError = bot_guard_form('forgot_password', ['key' => $email])) !== null) {
+        // The honeypot and the time-on-form check. Shown as the same "please
+        // try again" as any other refusal, so it says nothing about the
+        // address that was typed.
+        $errors['email'] = $botError;
     } else {
         // This form sends mail to an address a stranger typed, so the no-JS
         // path needs the same ceiling the API endpoint applies - and the same
@@ -99,6 +104,7 @@ auth_layout_start([
     <form method="post" action="<?= e(url('forgot-password.php')) ?>"
           data-ajax-form="auth/forgot-password.php" data-reset-on-success="true" novalidate>
         <?= csrf_field() ?>
+        <?= bot_form_html('forgot_password', $email) ?>
 
         <div class="sik-field">
             <label class="sik-label" for="sikForgotEmail">Email address</label>

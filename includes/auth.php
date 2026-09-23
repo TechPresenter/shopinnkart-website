@@ -8,6 +8,12 @@
 
 declare(strict_types=1);
 
+// The second factor. Both files only declare functions, so pulling them in
+// here - rather than adding two more lines to init.php - costs nothing and
+// means every entry point that has authentication also has 2FA.
+require_once __DIR__ . '/totp.php';
+require_once __DIR__ . '/mfa.php';
+
 /**
  * Timing-equalising hash, used when the account does not exist so that the
  * response takes as long as a real verification. Argon2id where it is
@@ -88,10 +94,19 @@ function current_user_name(): string
 /**
  * Establish a customer session. Regenerates the session id and merges any
  * guest cart / compare list into the account.
+ *
+ * @param string $mfaMethod How the second factor was proved on this sign-in:
+ *                          totp, backup, email, device - or 'none' when the
+ *                          account has none. Recorded in the session so a
+ *                          screen can tell "fully authenticated" from "did not
+ *                          need to be"; see auth_mfa_satisfied().
  */
-function login_user(array $user, bool $remember = false): void
+function login_user(array $user, bool $remember = false, string $mfaMethod = 'none'): void
 {
     $guestSession = session_key();
+
+    // Whoever used this browser before is not this customer.
+    auth_forget_order_claims();
 
     session_regenerate_id(true);
     $_SESSION[USER_SESSION_KEY] = [
@@ -103,8 +118,12 @@ function login_user(array $user, bool $remember = false): void
         // Stamped into the session so a password change anywhere ends every
         // OTHER session of this account - see auth_session_still_valid().
         'auth_version' => auth_row_version($user),
+        'mfa'          => ['method' => $mfaMethod, 'at' => time()],
     ];
     $_SESSION['_regenerated_at'] = time();
+
+    // The half-finished sign-in is over, whichever way it ended.
+    mfa_pending_clear();
 
     Database::update('users', [
         'last_login_at' => date('Y-m-d H:i:s'),
@@ -148,7 +167,27 @@ function logout_user(bool $everywhere = false): void
 
     auth_remember_forget_cookie();
     unset($_SESSION[USER_SESSION_KEY]);
+    auth_forget_order_claims();
+    mfa_pending_clear();
     session_regenerate_id(true);
+}
+
+/**
+ * Drop the customer-scoped claims that are not the account itself.
+ *
+ * session_regenerate_id() carries the session DATA across, so unsetting the
+ * user key on sign-out left `_recent_orders` - the "this browser placed that
+ * order" claim guest checkout runs on - sitting in the session. The next
+ * person to use the machine, signed in as someone else or not signed in at
+ * all, could then open the previous customer's confirmation page, invoice and
+ * invoice PDF: their name, address, phone, email and everything they bought.
+ *
+ * Called from BOTH ends - sign-out and sign-in - because either one means the
+ * browser has changed hands as far as we can tell.
+ */
+function auth_forget_order_claims(): void
+{
+    unset($_SESSION['_recent_orders'], $_SESSION['_last_order']);
 }
 
 /**
@@ -440,8 +479,13 @@ function admin_is_super(): bool
     return in_array('*', admin_permissions(), true);
 }
 
-/** Establish an admin session. */
-function login_admin(array $admin): void
+/**
+ * Establish an admin session.
+ *
+ * @param string $mfaMethod totp, backup, device - or 'none' when the account
+ *                          has no second factor. See login_user().
+ */
+function login_admin(array $admin, string $mfaMethod = 'none'): void
 {
     session_regenerate_id(true);
     $_SESSION[ADMIN_SESSION_KEY] = [
@@ -453,8 +497,11 @@ function login_admin(array $admin): void
         // Admins never get "remember me": the session ends with the browser,
         // idles out in half an hour and cannot outlive the working day.
         'auth_version' => auth_row_version($admin),
+        'mfa'          => ['method' => $mfaMethod, 'at' => time()],
     ];
     $_SESSION['_regenerated_at'] = time();
+
+    mfa_pending_clear();
 
     Database::update('admins', [
         'last_login_at' => date('Y-m-d H:i:s'),
@@ -477,6 +524,7 @@ function logout_admin(bool $everywhere = false): void
         }
     }
     unset($_SESSION[ADMIN_SESSION_KEY]);
+    mfa_pending_clear();
     session_regenerate_id(true);
 }
 
@@ -950,6 +998,12 @@ function auth_bump_version(string $userType, int $id): int
         auth_remember_forget_user($id);
     }
 
+    // So are browsers that were trusted to skip the second factor. The trust
+    // is already stamped with the old generation, so it would stop working
+    // anyway; revoking it keeps the "your devices" list honest rather than
+    // showing browsers that are silently dead.
+    mfa_devices_revoke_all($userType, $id);
+
     return max(1, $version);
 }
 
@@ -1186,10 +1240,28 @@ function auth_remember_restore(): void
             return;
         }
 
+        // "Keep me signed in" is ONE factor - a cookie. On an account with a
+        // second factor it may only complete a sign-in on a browser that has
+        // already proved that factor and is still inside its trust window.
+        //
+        // Nothing is consumed on the way out: the token is left intact so the
+        // customer can finish signing in normally, at which point the full
+        // challenge runs. Burning it here would punish the account holder for
+        // having 2FA switched on, and setting a pending challenge from a
+        // background request would ambush them on an unrelated page.
+        $method = 'none';
+        if (mfa_active('customer', $user)) {
+            if (!mfa_device_trusted('customer', (int) $user['id'])) {
+                security_event('mfa.remember_needs_factor', 'info', [], (int) $user['id'], 'customer');
+                return;
+            }
+            $method = 'device';
+        }
+
         // One use, one token: the old row goes before the new one is issued.
         Database::delete('remember_tokens', '`id` = :id', ['id' => (int) $row['id']]);
-        login_user($user, true);
-        security_event('auth.remember_login', 'info', [], (int) $user['id'], 'customer');
+        login_user($user, true, $method);
+        security_event('auth.remember_login', 'info', ['mfa' => $method], (int) $user['id'], 'customer');
     } catch (Throwable $e) {
         ErrorHandler::log('warning', 'Remember-me restore failed: ' . $e->getMessage());
     }

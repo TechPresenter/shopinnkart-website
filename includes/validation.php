@@ -276,6 +276,37 @@ final class Validator
         return $this;
     }
 
+    /**
+     * Does this submission look like it came from a person?
+     *
+     * Folds includes/bot-protection.php into a validation chain, for forms
+     * that would rather show the refusal beside a field than redirect: the
+     * honeypot, the signed time-on-form stamp, the per-address ceiling and -
+     * once that client has been caught before - the CAPTCHA.
+     *
+     * The data the Validator was built with is what gets checked, so a form
+     * that passes request_all() in is already carrying the hidden fields.
+     *
+     *   $v->human('email');            // report against the email field
+     *   $v->human('email', 'register'); // ...using the register form's rules
+     */
+    public function human(string $field, string $form = '', string $key = ''): self
+    {
+        if (!function_exists('bot_check')) {
+            return $this;   // bot protection not deployed; nothing to say
+        }
+
+        $result = bot_check($form === '' ? $field : $form, [
+            'input' => $this->data,
+            'key'   => $key !== '' ? $key : (string) ($this->value($field) ?? ''),
+        ]);
+
+        if (!$result['ok']) {
+            $this->addError($field, $result['message']);
+        }
+        return $this;
+    }
+
     // -----------------------------------------------------------------------
     // Results
     // -----------------------------------------------------------------------

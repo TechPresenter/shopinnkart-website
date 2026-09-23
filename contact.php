@@ -30,10 +30,17 @@ if (is_post()) {
         redirect(url('contact.php') . '#sikContactForm');
     }
 
-    // Honeypot: a field no human sees and every form-filling bot completes.
-    if (trim((string) input('website', '')) !== '') {
-        security_event('api.honeypot', 'low', ['endpoint' => 'contact']);
-        flash('success', 'Thanks for writing in. Our support team replies within one business day.');
+    // Honeypot, minimum time on the form and the per-address ceiling. A caught
+    // submission is thanked rather than refused: telling a spam script it was
+    // spotted only teaches it how to get past the trap next time.
+    $botCheck = bot_check('contact', ['key' => (string) input('email', '')]);
+    if (!$botCheck['ok']) {
+        flash(
+            in_array($botCheck['reason'], ['honeypot', 'too_fast'], true) ? 'success' : 'error',
+            in_array($botCheck['reason'], ['honeypot', 'too_fast'], true)
+                ? 'Thanks for writing in. Our support team replies within one business day.'
+                : $botCheck['message']
+        );
         redirect(url('contact.php') . '#sikContactForm');
     }
 
@@ -248,10 +255,9 @@ echo cms_page_banner($page ?? [
                       data-ajax-form="contact/send.php" data-reset-on-success="true" novalidate>
                     <?= csrf_field() ?>
 
-                    <?php // Honeypot. Hidden from people and from screen readers; bots fill it in. ?>
-                    <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">
-                        <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
-                    </div>
+                    <?php // Honeypot, the signed time-on-form stamp, and a CAPTCHA
+                          // only once this address has been caught out before. ?>
+                    <?= bot_form_html('contact', (string) old('email')) ?>
 
                     <div class="sik-field">
                         <label class="sik-label" for="contactName">Your name <span class="req">*</span></label>

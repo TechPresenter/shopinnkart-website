@@ -44,6 +44,12 @@ $source = $source === '' ? 'website' : mb_substr($source, 0, 60);
  */
 $confirmation = 'Thanks! If that address is not on the list already, offers and early access are on their way to it.';
 
+// The honeypot and the per-address ceiling. A script stuffing the list with
+// addresses it does not own is what turns a newsletter into a spam complaint
+// against our sending domain. Caught submissions get $confirmation like
+// everybody else - this form's whole design is that every state reads alike.
+bot_guard_api('newsletter', ['key' => $email, 'quiet_success' => $confirmation]);
+
 $existing = Database::fetch(
     'SELECT `id`, `name`, `status` FROM `newsletter_subscribers` WHERE `email` = :email LIMIT 1',
     ['email' => $email]

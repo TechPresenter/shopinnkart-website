@@ -71,6 +71,11 @@ $pageTitle = $pageTitle ?? 'Dashboard';
                     <?= icon('user', 'w-4 h-4') ?> My Profile
                 </a>
             <?php endif; ?>
+            <?php // No permission check: every admin owns their own password and
+                  // second factor, including one whose role grants nothing else. ?>
+            <a class="ad-dropdown__item" href="<?= e(admin_url('account/index.php')) ?>">
+                <?= icon('lock', 'w-4 h-4') ?> My Security
+            </a>
             <?php if (admin_can('settings.view')): ?>
                 <a class="ad-dropdown__item" href="<?= e(admin_url('settings/general.php')) ?>">
                     <?= icon('settings', 'w-4 h-4') ?> Settings
