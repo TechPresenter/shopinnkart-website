@@ -359,10 +359,53 @@
     /* ======================================================================
        5. Mini cart drawer
        ====================================================================== */
+    // Has the drawer ever held real lines? Until it has, every call paints the
+    // skeleton first.
+    let miniRendered = false;
+
+    /**
+     * Fill the drawer from the server. The drawer arrives from footer.php
+     * empty, and the bones go in here rather than there: rendered in the page
+     * they were two shimmer animations running inside a closed drawer on every
+     * page view, for something most visits never open. Once it has held real
+     * lines those stay on screen while this refreshes them, so a re-open never
+     * flashes back to bones.
+     *
+     * If the very first fetch fails there is nothing real to fall back on, so
+     * the skeleton gives way to a Retry rather than shimmering over a request
+     * that is over.
+     */
+    Cart.loadMini = async function () {
+        const body = $('#sikCartDrawerBody');
+        if (!body) return null;
+
+        if (!miniRendered) {
+            body.innerHTML = '';
+            body.appendChild(SIK.skeleton.make('cartline', 2));
+            body.setAttribute('aria-busy', 'true');
+        }
+
+        const result = await Cart.sync();
+        if (result.success || miniRendered) return result;
+
+        body.removeAttribute('aria-busy');
+        SIK.skeleton.error(body, {
+            title: 'Unable to load your cart',
+            text: result.message || 'The connection dropped or the server did not answer.',
+            // loadMini() puts the bones back itself, because nothing real has
+            // been in the drawer yet.
+            retry: function () { Cart.loadMini(); }
+        });
+        return result;
+    };
+
     Cart.renderMini = function (data) {
         const body = $('#sikCartDrawerBody');
         const foot = $('#sikCartDrawerFoot');
         if (!body) return;
+
+        miniRendered = true;
+        body.removeAttribute('aria-busy');
 
         const items = (data && data.items) || [];
         const totals = (data && data.totals) || {};
@@ -431,6 +474,7 @@
         });
 
         body.innerHTML = html;
+        SIK.images.watch(body);
 
         const totalNode = $('#sikCartDrawerTotal');
         if (totalNode && totals.display) totalNode.textContent = totals.display.total;
@@ -575,7 +619,15 @@
         SIK.on('click', '[data-open-cart]', function (e) {
             e.preventDefault();
             SIK.openDrawer('sikCartDrawer');
-            Cart.sync();
+            Cart.loadMini();
+        });
+        // The phone's bottom-bar Cart opens the same drawer through the
+        // generic [data-open-drawer] handler in app.js, which knows nothing
+        // about carts - so it used to open onto the skeleton lines and leave
+        // them shimmering for good. It only needs the fetch; app.js has
+        // already opened the drawer.
+        SIK.on('click', '[data-open-drawer="sikCartDrawer"]', function () {
+            Cart.loadMini();
         });
     }
 

@@ -325,16 +325,34 @@ function product_listing_render(array $listing): void
                     <?php endif; ?>
                 </div>
 
-                <div data-pagination>
+                <?php // Scripted, so rendered hidden: products.js shows it when there
+                      // is a next page. It appends that page under the grid; the
+                      // numbered pager below stays the no-JS and deep-link path. ?>
+                <div class="sik-loadmore" data-load-more hidden>
+                    <button type="button" class="sik-btn sik-btn--outline" data-load-more-btn>
+                        <span class="sik-btn__label">Show more products</span>
+                    </button>
+                </div>
+
+                <?php // The paging facts travel with the pager, so the script can
+                      // size a skeleton to the page it is about to fetch. ?>
+                <div data-pagination
+                     data-current="<?= (int) $pagination['current'] ?>"
+                     data-last="<?= (int) $pagination['last'] ?>"
+                     data-total="<?= (int) $pagination['total'] ?>"
+                     data-per-page="<?= (int) $pagination['per_page'] ?>"
+                     data-from="<?= (int) $pagination['from'] ?>"
+                     data-to="<?= (int) $pagination['to'] ?>">
                     <?= product_listing_pager_html($pagination) ?>
                 </div>
 
-                <?php if ($pagination['total'] > 0 && (int) $pagination['last'] > 1): ?>
-                    <p class="sik-listing__count">
+                <?php $showRange = $pagination['total'] > 0 && (int) $pagination['last'] > 1; ?>
+                <p class="sik-listing__count" data-listing-range aria-live="polite" <?= $showRange ? '' : 'hidden' ?>>
+                    <?php if ($showRange): ?>
                         Showing <?= (int) $pagination['from'] ?>&ndash;<?= (int) $pagination['to'] ?>
                         of <?= (int) $pagination['total'] ?>
-                    </p>
-                <?php endif; ?>
+                    <?php endif; ?>
+                </p>
             </div>
         </div>
     </div>

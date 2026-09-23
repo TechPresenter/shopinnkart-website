@@ -1,1 +1,0 @@
-  echo "grep -o .sik-float__btn.|grep -o 'sik-float__btn'|wc -l) floatwrap=$(echo "$idx"|grep -o 'class="sik-float sik-float--[a-z-]*"'|sort|uniq -c|tr '\n' ' ')"

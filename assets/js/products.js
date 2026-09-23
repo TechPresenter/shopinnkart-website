@@ -46,6 +46,105 @@
         return search.toString();
     }
 
+    // The skeleton handle of the refetch in flight (SIK.skeleton.start), and
+    // the request behind "Show more products".
+    let gridLoad = null;
+    let moreController = null;
+    let moreError = null;
+
+    /** The listing's paging facts, kept on [data-pagination] by the server and by us. */
+    function pagerState() {
+        const node = $('[data-pagination]');
+        if (!node || !node.dataset.total) return null;
+        return {
+            current: parseInt(node.dataset.current, 10) || 1,
+            last:    parseInt(node.dataset.last, 10) || 1,
+            total:   parseInt(node.dataset.total, 10) || 0,
+            perPage: parseInt(node.dataset.perPage, 10) || 12,
+            from:    parseInt(node.dataset.from, 10) || 0,
+            to:      parseInt(node.dataset.to, 10) || 0
+        };
+    }
+
+    /**
+     * How many cards the answer will hold, so the skeleton is the size of the
+     * result rather than a guess. A sort or a page change keeps the same total,
+     * so the count is exact. A filter change can return anything; the current
+     * count, held to the 6-12 the grid is designed around, is the best guess.
+     */
+    function expectedCards(grid, extra) {
+        const state = pagerState();
+        const onScreen = $$('[data-product-card]', grid).length;
+        if (state && state.total > 0 && extra && (extra.page || extra.sort)) {
+            const page = extra.page ? parseInt(extra.page, 10) || 1 : 1;
+            return Math.max(1, Math.min(state.perPage, state.total - (page - 1) * state.perPage));
+        }
+        return Math.min(12, Math.max(6, onScreen || 12));
+    }
+
+    /**
+     * Skeleton cards shaped like the ones on screen: the brand line and the
+     * rating row are optional in product_card(), and a skeleton that draws a
+     * row none of the real cards have is a row taller than the result.
+     */
+    Products.skeletonCards = function (grid, count) {
+        const list = grid.classList.contains('sik-list');
+        const frag = SIK.skeleton.make(list ? 'card-row' : 'card', count);
+        const hasCards = !!grid.querySelector('[data-product-card]');
+        if (hasCards) {
+            if (!grid.querySelector('.sik-card__rating')) $$('[data-skel-part="rating"]', frag).forEach(n => n.remove());
+            if (!grid.querySelector('.sik-card__brand')) $$('[data-skel-part="brand"]', frag).forEach(n => n.remove());
+            if (!grid.querySelector('.sik-price--off')) $$('[data-skel-part="sale"]', frag).forEach(n => n.remove());
+        }
+        return frag;
+    };
+
+    /** Everything around the grid that describes it: count, pager, chips, range, Show more. */
+    function applyListingMeta(data, range) {
+        const pagination = data.pagination || {};
+
+        const countNode = $('[data-result-count]');
+        if (countNode) countNode.textContent = pagination.total;
+
+        const pager = $('[data-pagination]');
+        if (pager) {
+            pager.innerHTML = data.pagination_html || '';
+            pager.dataset.current = pagination.current || 1;
+            pager.dataset.last = pagination.last || 1;
+            pager.dataset.total = pagination.total || 0;
+            pager.dataset.perPage = pagination.per_page || 12;
+            // After an append the grid starts where it started before.
+            pager.dataset.from = range && range.from ? range.from : (pagination.from || 0);
+            pager.dataset.to = pagination.to || 0;
+        }
+
+        const chips = $('[data-active-filters]');
+        if (chips && data.chips_html !== undefined) chips.innerHTML = data.chips_html || '';
+
+        syncListingRange();
+    }
+
+    /** "Showing 1–24 of 30" and the Show more button, from the paging facts. */
+    function syncListingRange() {
+        const state = pagerState();
+        const rangeNode = $('[data-listing-range]');
+        const more = $('[data-load-more]');
+
+        if (rangeNode) {
+            if (state && state.total > 0 && state.last > 1) {
+                rangeNode.hidden = false;
+                rangeNode.textContent = 'Showing ' + state.from + '–' + state.to + ' of ' + state.total;
+            } else {
+                rangeNode.hidden = true;
+            }
+        }
+        if (more) more.hidden = !(state && state.current < state.last);
+    }
+
+    function clearMoreError() {
+        if (moreError) { moreError.remove(); moreError = null; }
+    }
+
     Products.applyFilters = async function (extra, pushState) {
         const form = $('[data-filter-form]');
         const grid = $('[data-product-grid]');
@@ -57,11 +156,24 @@
 
         const query = toQuery(params);
 
-        grid.classList.add('sik-loading');
-        Products.showSkeletons(grid);
-
+        // Whatever was in flight - an earlier filter, a Show more - is
+        // superseded: its answer would describe a grid that no longer exists.
         if (filterController) filterController.abort();
+        if (moreController) moreController.abort();
+        if (gridLoad) gridLoad.cancel();
         filterController = new AbortController();
+        clearMoreError();
+
+        // The toolbar, the filters and the chips stay exactly where they are;
+        // only the results turn into skeletons, and only if the answer is slow.
+        const count = expectedCards(grid, extra);
+        const load = gridLoad = SIK.skeleton.start(grid, function () {
+            const skeletons = Products.skeletonCards(grid, count);
+            grid.innerHTML = '';
+            grid.appendChild(skeletons);
+        });
+        const more = $('[data-load-more]');
+        if (more) more.hidden = true;
 
         const result = await SIK.apiRequest('products/list.php', {
             method: 'GET',
@@ -69,30 +181,24 @@
             signal: filterController.signal
         });
 
+        // A newer request owns the grid now, and already cancelled this one.
         if (result.aborted) return;
-
-        grid.classList.remove('sik-loading');
+        load.settle();
 
         if (!result.success) {
-            // The grid is full of skeletons at this point. Returning here used
-            // to leave them shimmering forever, so a dropped connection or a
-            // 500 turned the results column into a permanent loading state with
-            // no way back. Replace them with a recoverable error instead.
+            // Never a skeleton left shimmering over a request that has already
+            // failed: a dropped connection or a 500 gets the Retry block, with
+            // the filters still selected.
             SIK.toast(result.message || 'Could not load products.', 'error');
             Products.showLoadError(grid, extra, pushState);
+            // Show more stays hidden: the next page of WHICH result is exactly
+            // what the failed request did not tell us.
             return;
         }
 
         grid.innerHTML = result.data.html || '';
-
-        const countNode = $('[data-result-count]');
-        if (countNode) countNode.textContent = result.data.pagination.total;
-
-        const pager = $('[data-pagination]');
-        if (pager) pager.innerHTML = result.data.pagination_html || '';
-
-        const chips = $('[data-active-filters]');
-        if (chips) chips.innerHTML = result.data.chips_html || '';
+        SIK.skeleton.reveal(grid);
+        applyListingMeta(result.data);
 
         if (pushState !== false && history.pushState) {
             const url = window.location.pathname + (query ? '?' + query : '');
@@ -108,59 +214,111 @@
         }
     };
 
-    Products.showSkeletons = function (grid) {
-        const count = Math.min(8, Math.max(4, grid.children.length || 8));
-        let html = '';
-        for (let i = 0; i < count; i++) {
-            html += '<div><div class="sik-skeleton sik-skeleton--card"></div>'
-                + '<div class="sik-skeleton sik-skeleton--text" style="width:45%;margin-top:12px"></div>'
-                + '<div class="sik-skeleton sik-skeleton--text" style="width:85%"></div>'
-                + '<div class="sik-skeleton sik-skeleton--text" style="width:35%"></div></div>';
-        }
-        grid.innerHTML = html;
+    /** Fill the grid with `count` skeleton cards now (kept for other callers). */
+    Products.showSkeletons = function (grid, count) {
+        const skeletons = Products.skeletonCards(grid, count || expectedCards(grid));
+        grid.innerHTML = '';
+        grid.appendChild(skeletons);
     };
 
     /**
-     * Recoverable error state for the results grid.
-     *
-     * Matches the .sik-empty structure product-listing.php renders for "no
-     * products match", so a failed request looks like part of the page rather
-     * than a broken one, and offers the retry the toast alone could not.
+     * Recoverable error state for the results grid: the shared Retry block,
+     * spanning every column, so a failed request reads as part of the page and
+     * offers the way back the toast alone could not.
      */
     Products.showLoadError = function (grid, extra, pushState) {
-        grid.innerHTML =
-            '<div class="sik-empty" style="grid-column:1/-1">'
-            + '<p class="sik-empty__title">We could not load these products</p>'
-            + '<p class="sik-empty__text">The connection dropped or the server did not answer. '
-            + 'Your filters are still selected &mdash; try again.</p>'
-            + '<button type="button" class="sik-btn sik-btn--primary" data-filter-retry>Try again</button>'
-            + '</div>';
+        SIK.skeleton.error(grid, {
+            title: 'Unable to load products',
+            text: 'The connection dropped or the server did not answer. Your filters are still selected.',
+            retry: function () { Products.applyFilters(extra, pushState); }
+        });
+    };
 
-        const retry = grid.querySelector('[data-filter-retry]');
-        if (!retry) return;
+    /**
+     * "Show more products": the next page, appended under what is already
+     * there. The loaded products stay; skeletons for exactly the number of
+     * cards the next page holds go on the end at once, so when the cards
+     * replace them nothing below the grid moves.
+     */
+    Products.loadMore = async function (button) {
+        const grid = $('[data-product-grid]');
+        const state = pagerState();
+        if (!grid || !state || state.current >= state.last) return;
+        if (grid.getAttribute('aria-busy') === 'true') return;
+        if (button && !SIK.showLoader(button)) return;
 
-        retry.addEventListener('click', function () {
-            retry.disabled = true;
-            retry.textContent = 'Retrying…';
-            Products.applyFilters(extra, pushState);
-        }, { once: true });
+        clearMoreError();
+        const next = state.current + 1;
+        const expected = Math.max(1, Math.min(state.perPage, state.total - state.current * state.perPage));
+        const skeletons = Array.prototype.slice.call(Products.skeletonCards(grid, expected).children);
+        const firstSkeleton = skeletons[0];
+        skeletons.forEach(node => grid.appendChild(node));
+        grid.setAttribute('aria-busy', 'true');
+
+        moreController = new AbortController();
+        const params = Object.assign(Products.collectFilters($('[data-filter-form]')), { page: next });
+        const result = await SIK.apiRequest('products/list.php', {
+            method: 'GET',
+            params: params,
+            signal: moreController.signal
+        });
+
+        if (button) SIK.hideLoader(button);
+        if (result.aborted) return;
+
+        grid.removeAttribute('aria-busy');
+
+        if (!result.success) {
+            skeletons.forEach(node => node.remove());
+            // One way forward at a time: the Retry below the products, not a
+            // Retry and a Show more button asking for the same page.
+            const more = $('[data-load-more]');
+            if (more) more.hidden = true;
+            moreError = SIK.skeleton.error(grid, {
+                after: grid,
+                title: 'Unable to load more products',
+                text: 'The products above are still here. Try again to load the next page.',
+                retry: function () { Products.loadMore(button); }
+            });
+            // Hiding the button the user just pressed hands focus back to
+            // <body>: a keyboard or screen-reader user would be dropped at the
+            // top of the document and never told a Retry had appeared. Focus
+            // follows the way forward instead, exactly as it follows the first
+            // new product when the page does arrive.
+            const retry = moreError.querySelector('[data-skel-retry]');
+            if (retry) retry.focus({ preventScroll: true });
+            return;
+        }
+
+        const holder = document.createElement('div');
+        holder.innerHTML = result.data.html || '';
+        const cards = $$('[data-product-card]', holder);
+
+        // Swap in the same task, so the skeletons never paint without their
+        // replacements and the grid's height is never in between.
+        const anchor = firstSkeleton && firstSkeleton.parentNode === grid ? firstSkeleton : null;
+        cards.forEach(card => grid.insertBefore(card, anchor));
+        skeletons.forEach(node => node.remove());
+        SIK.skeleton.reveal(cards);
+
+        applyListingMeta(result.data, { from: state.from || 1 });
+        SIK.refresh(grid);
+
+        // Keyboard and screen-reader users land on the first new product
+        // rather than being left on a button that may now be gone.
+        const firstLink = cards[0] ? cards[0].querySelector('.sik-card__name a') : null;
+        if (firstLink) firstLink.focus({ preventScroll: true });
     };
 
     /* ======================================================================
        2. Quick view
        ====================================================================== */
-    Products.quickView = async function (productId, button) {
-        if (button && !SIK.showLoader(button)) return;
+    // Which Quick View request is current. A shopper who opens one product,
+    // closes it and opens another before the first answer lands must see the
+    // second product, not whichever response happens to arrive last.
+    let quickSeq = 0;
 
-        const result = await SIK.get('products/details.php', { id: productId, view: 'quick' });
-
-        if (button) SIK.hideLoader(button);
-
-        if (!result.success) {
-            SIK.toast(result.message || 'Could not load the product.', 'error');
-            return;
-        }
-
+    function quickViewModal() {
         let modal = $('#sikQuickView');
         if (!modal) {
             modal = document.createElement('div');
@@ -169,16 +327,54 @@
             modal.setAttribute('aria-hidden', 'true');
             modal.setAttribute('role', 'dialog');
             modal.setAttribute('aria-modal', 'true');
+            modal.setAttribute('aria-label', 'Quick view');
             modal.innerHTML = '<div class="sik-modal__backdrop"></div><div class="sik-modal__panel">'
                 + '<button type="button" class="sik-modal__close" data-close-modal aria-label="Close">'
                 + '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
                 + '</button><div id="sikQuickViewBody"></div></div>';
             document.body.appendChild(modal);
         }
+        return modal;
+    }
 
-        $('#sikQuickViewBody').innerHTML = result.data.html || '';
-        SIK.openModal('sikQuickView');
-        trapQuickView(modal, button);
+    /**
+     * Quick View opens on the click, with the product-detail skeleton, and the
+     * product replaces it when it arrives. It used to wait with a spinner in
+     * the card's button and then pop the finished dialog, which on a slow line
+     * read as a click that did nothing. The panel is top-anchored (app.css
+     * 30b), so the swap grows it downward and moves nothing already on screen.
+     */
+    Products.quickView = async function (productId, button) {
+        const modal = quickViewModal();
+        const body = $('#sikQuickViewBody');
+        const seq = ++quickSeq;
+
+        body.innerHTML = '';
+        body.appendChild(SIK.skeleton.make('detail', 1));
+        body.setAttribute('aria-busy', 'true');
+
+        if (!modal.classList.contains('is-open')) {
+            SIK.openModal('sikQuickView');
+            trapQuickView(modal, button);
+        }
+
+        const result = await SIK.get('products/details.php', { id: productId, view: 'quick' });
+
+        // Superseded, or closed while it loaded: either way nothing to draw.
+        if (seq !== quickSeq || !modal.classList.contains('is-open')) return;
+        body.removeAttribute('aria-busy');
+
+        if (!result.success) {
+            SIK.skeleton.error(body, {
+                title: 'Unable to load this product',
+                text: result.message || 'The connection dropped or the server did not answer.',
+                retry: function () { Products.quickView(productId, button); }
+            });
+            return;
+        }
+
+        body.innerHTML = result.data.html || '';
+        SIK.skeleton.reveal(body);
         SIK.refresh(modal);
         Products.initVariants(modal);
         Products.initGallery(modal);
@@ -604,6 +800,14 @@
             e.preventDefault();
             Products.applyFilters({ page: this.dataset.page });
         });
+
+        SIK.on('click', '[data-load-more-btn]', function (e) {
+            e.preventDefault();
+            Products.loadMore(this);
+        });
+        // The server renders Show more hidden; it is a scripted control, so
+        // it appears only once the script that drives it is running.
+        syncListingRange();
 
         // Grid / list toggle.
         SIK.on('click', '[data-view-mode]', function (e) {

@@ -263,24 +263,21 @@
 
         panel.innerHTML = html;
         panel.removeAttribute('aria-busy');
+        panel.dataset.view = 'idle';
+        SIK.images.watch(panel);
         open(panel);
     }
 
     /* Skeleton rows, not a spinner: the shape of the answer is already known,
-       so the list does not jump when the real rows land. They carry no text,
-       which keeps the live region quiet until there is something to say. */
+       so the list does not jump when the real rows land. The rows are the
+       shared <template id="sikSkel-suggest"> (includes/skeletons.php): real
+       .sik-suggest__item boxes with bones inside, so they are exactly a
+       result row tall. They carry no text, which keeps the live region quiet
+       until there is something to say. */
     function renderSkeleton(panel) {
-        let rows = '';
-        for (let i = 0; i < 3; i++) {
-            rows += '<div class="sik-suggest__skel">'
-                + '<span class="sik-skeleton sik-suggest__skel-thumb"></span>'
-                + '<span class="sik-suggest__skel-lines">'
-                +   '<span class="sik-skeleton sik-skeleton--text" style="width:68%;display:block"></span>'
-                +   '<span class="sik-skeleton sik-skeleton--text" style="width:38%;display:block"></span>'
-                + '</span></div>';
-        }
-        panel.innerHTML = '<div class="sik-suggest__section">' + rows + '</div>';
-        panel.setAttribute('aria-busy', 'true');
+        panel.innerHTML = '';
+        panel.appendChild(SIK.skeleton.make('suggest', 1));
+        panel.dataset.view = 'loading';
         open(panel);
     }
 
@@ -304,6 +301,8 @@
         }
 
         panel.innerHTML = html;
+        panel.dataset.view = 'results';
+        SIK.images.watch(panel);
         open(panel);
     }
 
@@ -349,6 +348,8 @@
         }
 
         panel.innerHTML = html;
+        panel.dataset.view = 'results';
+        SIK.images.watch(panel);
 
         // Announce what is actually on screen, not the product count.
         const shown = products.length + categories.length + brands.length;
@@ -364,6 +365,7 @@
             + '<button type="button" class="sik-btn sik-btn--outline sik-btn--sm" data-search-retry>'
             + '<span class="sik-btn__label">Try again</span></button></div>';
         panel.removeAttribute('aria-busy');
+        panel.dataset.view = 'error';
         announce(panel, message || 'Suggestions could not be loaded.');
         open(panel);
     }
@@ -382,13 +384,15 @@
         let controller = null;
         let seed = null;
         let seedRequest = null;
+        let skelTimer = null;
 
         function clearActive() {
             $$('.is-active', panel).forEach(el => el.classList.remove('is-active'));
         }
 
         function close() {
-            panel.classList.remove('is-open');
+            clearTimeout(skelTimer);
+            panel.classList.remove('is-open', 'sik-stale');
             panel.removeAttribute('aria-busy');
             clearActive();
         }
@@ -427,6 +431,11 @@
 
             if (term.length < MIN_TERM) {
                 if (controller) { controller.abort(); controller = null; }
+                // The aborted request's skeleton timer must not fire over the
+                // idle panel after it has been drawn.
+                clearTimeout(skelTimer);
+                panel.classList.remove('sik-stale');
+                panel.removeAttribute('aria-busy');
                 await showIdle();
                 return;
             }
@@ -435,7 +444,17 @@
             controller = new AbortController();
             const signal = controller.signal;
 
-            renderSkeleton(panel);
+            // Typing "diy" into "diya" must not flash grey between two lists:
+            // results already on screen stay, dimmed, until the next ones
+            // land. Skeletons only ever replace an idle or closed panel, and
+            // only when the answer takes longer than a blink.
+            clearTimeout(skelTimer);
+            panel.setAttribute('aria-busy', 'true');
+            if (panel.dataset.view === 'results' && panel.classList.contains('is-open')) {
+                panel.classList.add('sik-stale');
+            } else {
+                skelTimer = setTimeout(function () { renderSkeleton(panel); }, 120);
+            }
 
             const result = await SIK.apiRequest('products/search.php', {
                 method: 'GET',
@@ -443,9 +462,11 @@
                 signal: signal
             });
 
-            // A newer keystroke already replaced this request.
+            // A newer keystroke already replaced this request (and its timer).
             if (signal.aborted || result.aborted) return;
 
+            clearTimeout(skelTimer);
+            panel.classList.remove('sik-stale');
             panel.removeAttribute('aria-busy');
             if (result.success) renderResults(panel, result.data || {}, term);
             else renderError(panel, result.message);

@@ -14,6 +14,7 @@ if (!defined('SIK_BOOTSTRAPPED')) {
 require_once INCLUDES_PATH . '/menu-functions.php';
 require_once INCLUDES_PATH . '/header-actions.php';
 require_once INCLUDES_PATH . '/header-settings.php';
+require_once INCLUDES_PATH . '/skeletons.php';
 
 // The mobile search dialog lives down here but reads the header's settings.
 // $hd is a local that includes/header.php leaves in the including page's
@@ -674,12 +675,15 @@ $footerColIndex = 0;   // gives every disclosure panel a stable, unique id
         <span class="sik-drawer__title">Your Cart</span>
         <button type="button" class="sik-iconbtn" data-close-drawer aria-label="Close cart"><?= icon('close', 'w-4 h-4') ?></button>
     </div>
-    <div class="sik-drawer__body" id="sikCartDrawerBody">
-        <div style="padding:var(--sp-6)">
-            <div class="sik-skeleton" style="height:74px;margin-bottom:var(--sp-3)"></div>
-            <div class="sik-skeleton" style="height:74px"></div>
-        </div>
-    </div>
+    <?php // The drawer's lines are fetched when it first opens (cart.js), and
+          // that is also when it paints its skeleton. It used to be rendered
+          // here, which meant two .sik-skel elements with a running infinite
+          // shimmer sat inside a closed, visibility:hidden drawer on every page
+          // view - an animation ticking from first paint for something most
+          // visits never open. cart.js clones sikSkel-cartline on the first
+          // load instead, and replaces it with the lines, the empty state or a
+          // Retry - never leaves it. ?>
+    <div class="sik-drawer__body" id="sikCartDrawerBody"></div>
     <div class="sik-drawer__foot" id="sikCartDrawerFoot" hidden>
         <div class="sik-drawer__total">
             <span>Total</span><span id="sikCartDrawerTotal">—</span>
@@ -907,6 +911,11 @@ foreach ($popups as $popup):
 
 <div class="sik-toasts" id="sikToasts" role="status" aria-live="polite"></div>
 
+<?php // Inert skeleton markup the scripts clone (SIK.skeleton in app.js), and
+      // only the ones this page's scripts can reach - the same way the
+      // checkout script below is loaded only where there is a checkout. ?>
+<?php skeleton_templates(skeleton_page_templates($currentScript)); ?>
+
 <script>
     window.SIK_CONFIG = <?= e_json([
         'baseUrl'        => SITE_URL,
@@ -942,7 +951,15 @@ foreach ($popups as $popup):
 <script src="<?= e(asset('js/checkout.js')) ?>" defer></script>
 <?php endif; ?>
 
-<?php if ($customJs = setting('custom_js', '')): ?>
+<?php
+// A page can opt out of everything third-party by setting
+// $GLOBALS['SIK_NO_THIRD_PARTY'] before the footer. reset-password.php does:
+// it carries a live reset token in its URL, and a tag container reports
+// document.location - token and all - to somebody else's server.
+$sikNoThirdParty = !empty($GLOBALS['SIK_NO_THIRD_PARTY']);
+?>
+
+<?php if (!$sikNoThirdParty && ($customJs = setting('custom_js', ''))): ?>
 <script><?= strip_tags((string) $customJs) ?></script>
 <?php endif; ?>
 
@@ -961,6 +978,10 @@ $pixel = trim((string) setting('meta_pixel_id', ''));
 $gaId  = preg_match('/^(G-[A-Z0-9]{4,15}|UA-\d{4,10}-\d{1,4}|AW-\d{6,15})$/i', $gaId) === 1 ? $gaId : '';
 $gtmId = preg_match('/^GTM-[A-Z0-9]{4,10}$/i', $gtmId) === 1 ? $gtmId : '';
 $pixel = preg_match('/^\d{10,20}$/', $pixel) === 1 ? $pixel : '';
+
+if ($sikNoThirdParty) {
+    $gaId = $gtmId = $pixel = '';
+}
 ?>
 
 <?php if ($gtmId !== ''): ?>

@@ -180,22 +180,50 @@
     Account.trackOrder = async function (form, button) {
         if (button && !SIK.showLoader(button)) return;
 
+        const panel = $('[data-track-result]');
+
+        // The panel used to stay hidden for the whole round trip and then pop
+        // the finished timeline above the form, which on a phone is off-screen
+        // by then - the button's spinner is the only sign anything happened.
+        // It opens on the click instead, with two row-shaped bones standing
+        // where the tracking stages will be, so the answer replaces something
+        // the same shape in a place already scrolled to.
+        if (panel) {
+            panel.hidden = false;
+            panel.innerHTML = '';
+            panel.appendChild(SIK.skeleton.make('row', 2));
+            panel.setAttribute('aria-busy', 'true');
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         const data = Object.fromEntries(new FormData(form).entries());
         const result = await SIK.post('orders/track.php', data);
 
         if (button) SIK.hideLoader(button);
-
-        const panel = $('[data-track-result]');
         if (!panel) return;
+        panel.removeAttribute('aria-busy');
 
-        panel.hidden = false;
         if (result.success) {
             panel.innerHTML = result.data.html || '';
-            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } else {
+            SIK.skeleton.reveal(panel);
+            return;
+        }
+
+        // A dropped connection or a 5xx is a failure of the request, and the
+        // shared Retry block is the way forward. "No order with that number" is
+        // an answer, not a failure: a Retry that resends the same wrong number
+        // is no way forward at all, so that stays the inline alert it was.
+        if (typeof result.status === 'number' && result.status < 500) {
             panel.innerHTML = '<div class="sik-alert sik-alert--error">'
                 + SIK.escapeHtml(result.message || 'We could not find that order.') + '</div>';
+            return;
         }
+
+        SIK.skeleton.error(panel, {
+            title: 'Unable to track that order',
+            text: result.message || 'The connection dropped or the server did not answer.',
+            retry: function () { Account.trackOrder(form, button); }
+        });
     };
 
     /** Put every item from a past order back in the cart. */
@@ -297,9 +325,32 @@
         }
 
         if (more) {
-            more.addEventListener('click', async function () {
-                if (loading || !SIK.showLoader(more)) return;
+            // The Retry block from a previous failure, if one is on screen.
+            let moreError = null;
+
+            function clearMoreError() {
+                if (moreError && moreError.parentNode) moreError.remove();
+                moreError = null;
+            }
+
+            /**
+             * "Load older notifications": the next page, appended under the
+             * rows already read. The loaded rows stay put; three row-shaped
+             * skeletons go on the end at once, so the page below the feed
+             * settles now rather than when the answer lands.
+             */
+            async function loadMore() {
+                if (loading) return;
                 loading = true;
+                clearMoreError();
+
+                // Three, not twenty: enough to say "more is coming" without a
+                // screenful of bones claiming rows the last page may not have.
+                const skeletons = Array.prototype.slice.call(
+                    SIK.skeleton.make('feedrow', 3).children
+                );
+                skeletons.forEach(node => list.appendChild(node));
+                list.setAttribute('aria-busy', 'true');
 
                 const result = await SIK.get('notifications/list.php', {
                     filter: feed.dataset.filter || '',
@@ -308,18 +359,50 @@
                 });
 
                 loading = false;
+                list.removeAttribute('aria-busy');
                 SIK.hideLoader(more);
 
+                if (result.aborted) {
+                    skeletons.forEach(node => node.remove());
+                    return;
+                }
+
                 if (!result.success) {
-                    SIK.toastResult(result);
+                    // Never leave the bones shimmering over a request that has
+                    // already failed: they come out, and one Retry goes in.
+                    skeletons.forEach(node => node.remove());
+                    more.hidden = true;
+                    moreError = SIK.skeleton.error(feed, {
+                        after: list,
+                        title: 'Unable to load more notifications',
+                        text: 'The notifications above are still here. Try again to load the older ones.',
+                        retry: function () {
+                            clearMoreError();
+                            more.hidden = false;
+                            SIK.showLoader(more);
+                            loadMore();
+                        }
+                    });
+                    // `more` is the button that was just pressed, and hiding it
+                    // hands focus back to <body>. Focus moves to the Retry, so
+                    // a keyboard user is left on the way forward rather than at
+                    // the top of the document with no idea one exists.
+                    const retry = moreError.querySelector('[data-skel-retry]');
+                    if (retry) retry.focus({ preventScroll: true });
                     return;
                 }
 
                 const holder = document.createElement('div');
                 holder.innerHTML = result.data.html || '';
                 const rows = $$('.sik-notif', holder);
+                const items = rows.map(wrapRow);
 
-                rows.forEach(row => list.appendChild(wrapRow(row)));
+                // Swapped in one task: the skeletons never paint without their
+                // replacements, so the feed's height is never in between.
+                const anchor = skeletons[0] && skeletons[0].parentNode === list ? skeletons[0] : null;
+                items.forEach(item => list.insertBefore(item, anchor));
+                skeletons.forEach(node => node.remove());
+                SIK.skeleton.reveal(items);
 
                 offset += rows.length;
                 feed.dataset.offset = String(offset);
@@ -328,12 +411,17 @@
                 if (!result.data.has_more || rows.length === 0) {
                     more.hidden = true;
                 }
-                if (rows.length > 0) {
+                if (items.length > 0) {
                     // Send focus to the first row that just arrived, otherwise a
                     // keyboard user is left at a button that has vanished.
-                    const first = $('.sik-notif', list.children[list.children.length - rows.length]);
+                    const first = $('.sik-notif', items[0]);
                     if (first && first.tagName === 'A') first.focus({ preventScroll: true });
                 }
+            }
+
+            more.addEventListener('click', function () {
+                if (loading || !SIK.showLoader(more)) return;
+                loadMore();
             });
         }
 

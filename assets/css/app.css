@@ -29,8 +29,21 @@
    back to the system font for its first glyph — "₹399" set in two typefaces.
 
    font-display: swap - text paints immediately in the fallback and reflows once
-   the file lands, rather than holding the page blank. size-adjust and the
-   metric overrides keep that swap from shifting layout.
+   the file lands, rather than holding the page blank.
+
+   That swap DOES still shift layout, and this comment used to claim it did not:
+   there is no size-adjust and there are no ascent/descent/line-gap overrides on
+   any face below, so Plus Jakarta Sans replaces the system fallback at its own
+   metrics and re-wraps whatever the difference re-wraps. Measured in headless
+   Edge with a PerformanceObserver on layout-shift, cold and warm cache alike:
+   shop.php 0.019 at 1366px (the listing body lifts 24px) and search.php 0.037
+   at 390px (the pill row re-wraps); blocking the .woff2 files takes both to
+   0.000, which is what pins the cause on the swap and nothing else. Home,
+   category and product pages are all under 0.002 and do not need anything.
+
+   Fixing it means measuring the real metrics of each face against the local
+   fallback and declaring size-adjust / ascent-override / descent-override per
+   face - a design-system change with its own before/after, not a guess.
    -------------------------------------------------------------------------- */
 @font-face {
     font-family: "Plus Jakarta Sans";
@@ -425,6 +438,13 @@
    so any later component rule that sets `display` beats it at equal specificity.
    Components that can legitimately be hidden re-state it. */
 .sik-atc[hidden] { display: none; }
+/* .sik-btn sets display:inline-flex further down, so `hidden` did nothing to a
+   button. Three places set it and all three meant it: the notification
+   centre's "Load older notifications" (rendered hidden so the no-JS pager
+   shows instead, then hidden again once the feed runs out) and both
+   "Mark all read" buttons with nothing left unread - each stayed on screen,
+   and in the tab order, saying the opposite of what the page meant. */
+.sik-btn[hidden] { display: none; }
 
 /* --------------------------------------------------------------------------
    1c. Brand expression — gradient, glass, depth, motion
@@ -3258,20 +3278,8 @@ body.sik-searchpop-open { overflow: hidden; }
 }
 
 /* --- loading, empty, error ------------------------------------------------ */
-.sik-suggest__skel {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-3);
-    padding: var(--sp-2) var(--sp-3);
-}
-.sik-suggest__skel-thumb {
-    width: var(--tap);
-    height: var(--tap);
-    flex: none;
-    border-radius: var(--sik-radius-sm);
-}
-.sik-suggest__skel-lines { flex: 1; min-width: 0; }
-
+/* Loading rows are the shared skeleton (section 30b, sikSkel-suggest): real
+   .sik-suggest__item boxes with bones inside, so they need no rules here. */
 .sik-suggest__empty { padding: var(--sp-6) var(--sp-4) var(--sp-2); text-align: center; }
 .sik-suggest__empty svg,
 .sik-suggest__error svg {
@@ -11790,27 +11798,10 @@ body:has(.sik-header--sticky) .sik-cmp__head { top: var(--sik-header-h); }
 }
 .sik-successmark svg { width: var(--icon-2xl); height: var(--icon-2xl); }
 
-.sik-skeleton {
-    background: linear-gradient(90deg, var(--sik-surface-2) 25%, var(--sik-line) 37%, var(--sik-surface-2) 63%);
-    background-size: 400% 100%;
-    animation: sik-shimmer 1.3s ease infinite;
-    border-radius: 6px;
-}
-@keyframes sik-shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
-/* The shimmer hardcodes its duration rather than reading a --dur-* token, so
-   the global switch at the top of this file could not reach it: a visitor who
-   asked for reduced motion still got eight card-sized blocks pulsing across the
-   results column on every filter tick, sort change and page click — the largest
-   repeating motion on the site. The placeholder stays, the movement stops. */
-@media (prefers-reduced-motion: reduce) {
-    .sik-skeleton {
-        animation: none;
-        background: var(--sik-surface-2);
-    }
-}
-.sik-skeleton--card { height: 300px; border-radius: var(--sik-radius); }
-.sik-skeleton--text { height: 12px; margin-bottom: var(--sp-2); }
-.sik-skeleton--title { height: 18px; width: 60%; margin-bottom: var(--sp-3); }
+/* Skeletons used to live here as .sik-skeleton: a 300px grey block per card
+   (the real card is ~450px, so every filter change moved the footer twice)
+   and a second `@keyframes sik-shimmer` that silently rebound the shared one
+   in section 1d. Both are gone; the system that replaced them is section 30b. */
 
 .sik-loading { position: relative; pointer-events: none; }
 .sik-loading::after {
@@ -11843,6 +11834,336 @@ body:has(.sik-header--sticky) .sik-cmp__head { top: var(--sik-header-h); }
     opacity: 0;
 }
 .sik-progressbar.is-active { opacity: 1; }
+
+/* --------------------------------------------------------------------------
+   30b. Skeleton loading
+
+   A shimmering stand-in shaped exactly like the content that is on its way.
+
+   WHERE, AND ONLY WHERE. Nearly every storefront page is rendered on the
+   server and arrives complete, so there is no gap for a skeleton to fill, and
+   none is manufactured: nothing that is already in the HTML is ever deferred
+   to show one. Skeletons appear only where content genuinely arrives later -
+   the listing grid on a filter / sort / page change and on "Show more", Quick
+   View, the mini-cart before its first sync, search suggestions, widgets the
+   homepage builder marks "lazy load" - and on images, which load after the
+   page everywhere. includes/skeletons.php has the full map.
+
+   HOW A SKELETON IS THE RIGHT SIZE. A skeleton reuses the real component's
+   classes for every box (.sik-card, .sik-card__media, .sik-card__body,
+   .sik-pdp, .sik-minicart__item ...) and swaps only the content for bones, so
+   padding, aspect ratio, the reserved two-line name and the button height all
+   come from the component's own rules. Text is a .sik-skel__line inside a
+   .sik-skel__text span inside an element with the real text class: the line
+   box takes its height from that class's font and line-height, so one bone
+   line is exactly one line of real text tall. The span matters inside flex
+   rows - a bare bone there would be blockified and collapse to its own 0.7em.
+
+   MOTION. One soft light band per skeleton, left to right, then a rest: it
+   travels for 65% of the cycle and waits for the remainder, so a screen of
+   skeletons breathes rather than strobes. The band is a transform on
+   ::after, so it composites. It is white-ish on purpose - over the card's own
+   white surface it is invisible, and it shows only where it crosses a bone.
+   Reduced motion, and Settings > Theme > animations off, remove the band and
+   leave the static tint.
+
+   TIMING, in the scripts: a region that refetches keeps its old content,
+   dimmed, for the first 120ms, and only then shows skeletons - a fast answer
+   never flashes grey. Nothing waits on purpose after the answer lands. A
+   failed request always ends in .sik-loaderr with a Retry, never in a
+   skeleton that shimmers forever.
+   -------------------------------------------------------------------------- */
+:root {
+    /* The bone. A whisper of ink over the surface, so it re-derives for a
+       re-themed store and needs no hex. The well is lighter: large areas
+       (a photo, a thumbnail) read heavy at the text-bone tone. */
+    --sik-skel-base:   color-mix(in srgb, var(--sik-ink) 7%, var(--sik-surface));
+    --sik-skel-well:   color-mix(in srgb, var(--sik-ink) 4.5%, var(--sik-surface));
+    --sik-skel-shine:  rgba(255, 255, 255, .62);
+    --sik-skel-dur:    1.8s;
+    --sik-skel-radius: var(--sik-radius-xs);
+}
+:root[data-theme="dark"] {
+    /* On a near-black page the tint has to be carried further to read at
+       all, and the band drops to a glint - white at .62 would flash. */
+    --sik-skel-base:   color-mix(in srgb, var(--sik-ink) 10%, var(--sik-surface));
+    --sik-skel-well:   color-mix(in srgb, var(--sik-ink) 7%, var(--sik-surface));
+    --sik-skel-shine:  rgba(255, 255, 255, .06);
+}
+
+/* --- the component root: inert, clipped, carrying the band ---------------- */
+.sik-skel {
+    position: relative;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+.sik-skel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* Above the card's badge (3) and tools (4) so the band crosses them too. */
+    z-index: 5;
+    background: linear-gradient(100deg, transparent 18%, var(--sik-skel-shine) 50%, transparent 82%);
+    transform: translateX(-100%);
+    animation: sik-skel-sweep var(--sik-skel-dur) var(--ease-in-out) infinite;
+    pointer-events: none;
+}
+@keyframes sik-skel-sweep {
+    0%        { transform: translateX(-100%); }
+    65%, 100% { transform: translateX(100%); }
+}
+
+/* --- bones ------------------------------------------------------------------ */
+.sik-skel__bone {
+    display: block;
+    background: var(--sik-skel-base);
+    border-radius: var(--sik-skel-radius);
+}
+/* The wrapper that gives a bone a real line box (see the header note). */
+.sik-skel__text { display: inline; }
+.sik-skel__line {
+    display: inline-block;
+    vertical-align: middle;
+    width: var(--w, 100%);
+    max-width: 100%;
+    height: .72em;
+    border-radius: var(--sik-radius-pill);
+    background: var(--sik-skel-base);
+}
+/* A media area. Applied to the real well class (.sik-card__media,
+   .sik-gallery__main, .sik-minicart__img ...), so its aspect ratio, radius
+   and border are the component's; only the fill changes. Later in the file
+   than all of those, so it wins at equal specificity. */
+.sik-skel__well {
+    background-color: var(--sik-skel-well);
+    background-image: none;
+}
+.sik-skel__disc { width: 34px; height: 34px; border-radius: 50%; }
+.sik-skel__pill { height: 20px; border-radius: var(--sik-radius-pill); }
+.sik-skel__btn  { height: var(--tap); border-radius: var(--sik-radius-btn); }
+/* The card's Add to cart bone is the real .sik-atc (for its min-height), so
+   it keeps the button's own corner rather than the bone's. */
+.sik-atc.sik-skel__bone { display: flex; border-radius: var(--sik-radius-btn); }
+.sik-skel__qty { width: 104px; height: 34px; border-radius: var(--sik-radius-sm); }
+@media (pointer: coarse) { .sik-skel__qty { width: 122px; height: 40px; } }
+
+/* --- <ProductCardSkeleton /> ------------------------------------------------ */
+/* Everything else - box, radius, border, padding, gap, the 1:1 well, the
+   two-line name, the button height - is .sik-card's own. */
+.sik-skel-card .sik-card__tools .sik-skel__disc { box-shadow: var(--sik-shadow-xs); }
+/* rating_stars(): five 14px stars with 1px gaps. */
+.sik-skel__stars { width: 74px; height: 14px; border-radius: var(--sik-radius-pill); }
+/* The horizontal card's name has no reserved second line (section 11), and
+   on a wide row it is nearly always one line; its caption runs to three
+   lines only once the row stacks at 560px. */
+@media (min-width: 561px) {
+    .sik-card--row.sik-skel-card .sik-card__name .sik-skel__text:last-child,
+    .sik-card--row.sik-skel-card .sik-caption .sik-skel__text:last-child { display: none; }
+}
+/* The wishlist disc and badge pill sit ON the photo, so they are drawn a step
+   darker than the well they lie on. */
+.sik-skel-card .sik-card__badges .sik-skel__bone,
+.sik-skel-card .sik-card__tools .sik-skel__bone { background: var(--sik-skel-base); }
+.sik-skel-track { overflow: hidden; }
+
+/* --- <ProductDetailSkeleton /> (Quick View) ---------------------------------- */
+/* The spacings below are api/products/details.php's inline ones, so the
+   skeleton rows land where the real rows will. */
+.sik-skel-detail .sik-pdp__price { align-items: center; }
+.sik-skel-detail__chips { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: var(--sp-4); }
+.sik-skel-detail__text { margin-bottom: 18px; font-size: 13.5px; line-height: 1.6; }
+.sik-skel-detail__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; margin-bottom: var(--sp-4); }
+.sik-skel-detail__row .sik-skel__btn { height: 40px; }
+.sik-skel-detail__row--qty .sik-skel__btn { height: var(--tap); }
+.sik-skel-detail__note { font-size: 12px; }
+.sik-skel-detail__features { margin-top: 18px; font-size: 13px; line-height: 2; }
+.sik-skel-hero__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.sik-skel-hero__actions .sik-skel__btn { height: 52px; }
+
+/* Quick View holds still while its body arrives. The panel used to be
+   centred, so when the product replaced the skeleton and the panel changed
+   height, the whole dialog - close button included - jumped by half the
+   difference. Anchored to the top it only ever grows downward, and on a phone
+   the sheet is simply its full 92vh from the start, so nothing that is
+   already on screen moves when the content lands. */
+@media (min-width: 641px) {
+    #sikQuickView.sik-modal { align-items: flex-start; }
+    #sikQuickView .sik-modal__panel {
+        margin-top: max(var(--sp-4), 4vh);
+        max-height: min(88vh, 780px);
+    }
+}
+@media (max-width: 640px) {
+    #sikQuickView .sik-modal__panel { height: 92vh; }
+}
+
+/* Search rows start where the text will: the search page's hero block is
+   centred, and the panel would otherwise inherit that for its bones. */
+.sik-skel-suggest .sik-suggest__head,
+.sik-skel-suggest .sik-suggest__body { text-align: left; }
+
+/* --- <CartSkeleton /> -------------------------------------------------------- */
+.sik-skel-cartline__body { flex: 1; min-width: 0; }
+.sik-skel-cartline .sik-minicart__name { padding-right: var(--sp-6); }
+
+/* --- <CategorySkeleton />, <HeroSkeleton />, blog cards ---------------------- */
+.sik-catrow.sik-skel .sik-catrow__ring { box-shadow: none; }
+.sik-skel-hero {
+    display: grid;
+    align-items: center;
+    gap: var(--sp-7);
+    min-height: clamp(360px, 40vw, 520px);
+    padding: clamp(var(--sp-6), 4vw, var(--sp-10));
+    border-radius: var(--sik-radius-lg);
+    background: var(--sik-skel-well);
+}
+@media (min-width: 900px) { .sik-skel-hero { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } }
+.sik-skel-hero__title { margin: var(--sp-4) 0; font-size: var(--fs-hero); line-height: var(--lh-tight); }
+.sik-skel-hero__text { margin-bottom: var(--sp-6); font-size: var(--fs-md); line-height: var(--lh-relaxed); }
+.sik-skel-hero__art { aspect-ratio: 1; max-height: 440px; border-radius: var(--sik-radius-lg); background: var(--sik-skel-base); }
+@media (max-width: 899px) { .sik-skel-hero__art { display: none; } }
+.sik-skel-blog__text { font-size: 13px; }
+.sik-skel-blog__date { margin-top: auto; padding-top: var(--sp-2); font-size: 11.5px; }
+
+/* --- <TableSkeleton /> and list rows ------------------------------------------ */
+.sik-skel-table { width: 100%; border-collapse: collapse; }
+.sik-skel-table td {
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--sik-line);
+    font-size: var(--fs-base);
+    line-height: var(--lh-normal);
+}
+.sik-skel-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+    border-bottom: 1px solid var(--sik-line);
+}
+.sik-skel-row .sik-skel__disc { flex: none; width: 36px; height: 36px; }
+.sik-skel-row__body { flex: 1; min-width: 0; }
+.sik-skel-row__title { font-size: var(--fs-sm); font-weight: var(--fw-semibold); line-height: var(--lh-snug); }
+.sik-skel-row__text { margin-top: 2px; font-size: var(--fs-xs); line-height: var(--lh-normal); }
+
+/* The notification-centre row (account.js "Load older notifications"). Every
+   box is the real row's - .sik-feeditem, .sik-notif, .sik-notif__icon and the
+   .sik-feeditem__tools cluster - so only the fill is different and the height
+   tracks the component. The tools are reserved rather than skipped because
+   under 480px they wrap below the row and carry 44px of its height with them.
+
+   The bone inside a tool is the glyph's size, not the 44px target's: a filled
+   44px square would read as a button that is about to be tappable, which it
+   is not. */
+.sik-skel-feedrow__tool { display: grid; place-items: center; }
+.sik-skel-feedrow__tool::before {
+    content: "";
+    width: var(--icon-md);
+    height: var(--icon-md);
+    border-radius: var(--sik-skel-radius);
+    background: var(--sik-skel-base);
+}
+
+/* --- region states ------------------------------------------------------------ */
+/* The first 120ms of a refetch: the old results stay where they are, quieter,
+   so a fast answer swaps straight in without a grey flash in between. */
+.sik-stale { opacity: .55; transition: opacity var(--dur-base) var(--ease-out); pointer-events: none; }
+
+/* Content arriving in place of a skeleton fades up from nothing. No `to`
+   keyframe and no fill, so it ends on whatever opacity the element already
+   has - an out-of-stock card's .55 photo stays .55. */
+@keyframes sik-skel-reveal { from { opacity: 0; } }
+.sik-skel-reveal { animation: sik-skel-reveal var(--dur-slow) var(--ease-out); }
+
+/* A figure being recalculated (checkout totals): same width, same line, the
+   digits hidden under a shimmer, so the column does not twitch. The fill-color
+   rather than `color`, because some of these spans carry an inline colour. */
+.sik-recalc { pointer-events: none; }
+[data-total].is-recalc {
+    -webkit-text-fill-color: transparent;
+    border-radius: var(--sik-radius-xs);
+    background: var(--sik-skel-base) linear-gradient(100deg, transparent 18%, var(--sik-skel-shine) 50%, transparent 82%) no-repeat;
+    background-size: 60% 100%;
+    animation: sik-skel-well-sweep var(--sik-skel-dur) var(--ease-in-out) infinite;
+}
+
+/* The failure state that replaces a skeleton. It is .sik-empty --sm, so it
+   reads as part of the page; inside a grid it spans every column. */
+.sik-loaderr { grid-column: 1 / -1; }
+.sik-loaderr > svg { color: var(--sik-warning-ink); opacity: .85; }
+.sik-loaderr .sik-empty__text { margin-bottom: var(--sp-4); }
+/* A lazy homepage section that failed keeps its skeleton's height (app.js
+   writes it as min-height), with the message centred in that space. */
+.sik-lazy-widget.is-failed { display: grid; place-items: center; padding-inline: var(--gutter); }
+/* Without JavaScript nothing ever fetches that section's body, so its reserved
+   skeleton would shimmer for as long as the page is open - a promise of content
+   that cannot arrive. header.php marks the document with .js on the first line
+   of the page, so this takes the whole shell away for the visitors who will
+   never get the fetch (cart.php's recommendations were the visible case). */
+html:not(.js) .sik-lazy-widget { display: none; }
+
+/* "Show more products" - appends the next page under the grid. */
+.sik-loadmore {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: var(--sp-8);
+}
+.sik-loadmore[hidden] { display: none; }
+.sik-loadmore__meta { font-size: var(--fs-xs); color: var(--sik-muted); font-variant-numeric: tabular-nums; }
+/* With a Show more button under it the pager is the secondary control. */
+.sik-loadmore:not([hidden]) + [data-pagination] .sik-pager { margin-top: var(--sp-5); }
+
+/* --- images ------------------------------------------------------------------- */
+/* Every storefront <img> already carries width/height and sits in a well with
+   a fixed aspect ratio, so an image never moves the page when it arrives;
+   what was missing was the in-between. SIK.images (app.js) marks a lazy image
+   .is-pending only if it comes on screen before it has loaded - an image
+   that is ready by the time it is seen gets no effect at all - and the
+   shimmer is the <img> element's own background, which is exactly what shows
+   through before its pixels arrive. On load it fades in; on error it swaps to
+   a neutral glyph instead of the browser's broken-image icon and alt text. */
+.js img.is-pending {
+    background-color: var(--sik-skel-well);
+    background-image: linear-gradient(100deg, transparent 18%, var(--sik-skel-shine) 50%, transparent 82%);
+    background-repeat: no-repeat;
+    background-size: 60% 100%;
+    animation: sik-skel-well-sweep var(--sik-skel-dur) var(--ease-in-out) infinite;
+}
+@keyframes sik-skel-well-sweep {
+    0%        { background-position: -150% 0; }
+    65%, 100% { background-position: 250% 0; }
+}
+img.is-shown { animation: sik-skel-reveal var(--dur-slow) var(--ease-out); }
+/* !important for the two geometry properties only: blog cards write
+   object-fit/padding inline on their <img>, and a broken image there would
+   otherwise stretch the glyph across the whole card.
+
+   The inset that keeps the glyph small inside a large card used to be
+   `padding: 34%` here. A percentage padding resolves against the containing
+   block's WIDTH, so on an <img> sized by height alone - the header and footer
+   wordmarks - it came to more than twice the element's own height and the box
+   grew rather than kept its shape. The inset now lives in the artwork itself
+   (BROKEN_IMG in app.js draws a 24-unit glyph on a 72-unit canvas), which
+   cannot distort any box it lands in. */
+img.is-broken {
+    object-fit: contain !important;
+    padding: 0 !important;
+    background-color: var(--sik-skel-well);
+}
+
+/* --- reduced motion and the admin's animation switch ---------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    .sik-skel::after { display: none; }
+    .js img.is-pending,
+    [data-total].is-recalc { animation: none; background-image: none; }
+}
+.sik-noanim .sik-skel::after { display: none; }
+.sik-noanim img.is-pending,
+.sik-noanim [data-total].is-recalc { animation: none; background-image: none; }
+.sik-noanim .sik-skel-reveal,
+.sik-noanim img.is-shown { animation: none; }
 
 /* --------------------------------------------------------------------------
    31. Floating widgets

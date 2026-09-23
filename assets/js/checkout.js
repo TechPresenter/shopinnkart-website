@@ -15,6 +15,22 @@
     /* ----------------------------------------------------------------------
        Live totals - the server is always the authority
        ---------------------------------------------------------------------- */
+    let totalsSeq = 0;
+    // The pending "paint the shimmer" timer, whoever armed it. The shimmer is
+    // page state, not per-request state, so exactly one timer may ever be in
+    // flight: a newer request replaces the older one's before it can fire.
+    // Without that, a request superseded while its own timer was still pending
+    // painted `is-recalc` AFTER the winner had cleaned up, and -
+    // `-webkit-text-fill-color: transparent` being what that class does - all
+    // nine figures stayed blank and shimmering for good, next to a Place order
+    // button that was enabled again.
+    let totalsTimer = null;
+
+    /** Every figure on the page, not the list captured when a request started. */
+    function showRecalc(on) {
+        $$('[data-total]').forEach(el => el.classList.toggle('is-recalc', on));
+    }
+
     Checkout.refreshTotals = async function () {
         const form = $('#sikCheckoutForm');
         if (!form) return;
@@ -22,15 +38,40 @@
         const shipping = form.querySelector('input[name="shipping_method"]:checked');
         const payment = form.querySelector('input[name="payment_method"]:checked');
 
+        // Only the figures are being recalculated, so only the figures turn
+        // into skeletons - same width, same line, nothing in the summary moves
+        // (app.css 30b). The summary still refuses clicks meanwhile, so an
+        // order can never be placed against a total that is about to change.
+        const seq = ++totalsSeq;
         const summary = $('[data-order-summary]');
-        if (summary) summary.classList.add('sik-loading');
+        if (summary) {
+            summary.classList.add('sik-recalc');
+            summary.setAttribute('aria-busy', 'true');
+        }
+        clearTimeout(totalsTimer);
+        totalsTimer = setTimeout(function () {
+            totalsTimer = null;
+            showRecalc(true);
+        }, 120);
 
         const result = await SIK.get('checkout/totals.php', {
             shipping_method: shipping ? shipping.value : 'standard',
             payment_method: payment ? payment.value : 'cod'
         });
 
-        if (summary) summary.classList.remove('sik-loading');
+        // A later change already asked again; its answer is the one to show,
+        // and it owns every bit of the shared state - including the timer this
+        // one armed, which that later request already replaced. So there is
+        // nothing here to undo, and nothing this one can leave behind.
+        if (seq !== totalsSeq) return;
+
+        clearTimeout(totalsTimer);
+        totalsTimer = null;
+        showRecalc(false);
+        if (summary) {
+            summary.classList.remove('sik-recalc');
+            summary.removeAttribute('aria-busy');
+        }
 
         if (result.success && SIK.cart) {
             SIK.cart.renderTotals(result.data.totals);

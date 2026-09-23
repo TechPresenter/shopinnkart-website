@@ -10,6 +10,10 @@
  * Idempotent: re-running updates the existing rows by SKU instead of inserting
  * a second copy, and skips images that are already on disk.
  *
+ * There is no --dry here, unlike the other festive seeds: this one always
+ * writes. It also re-stamps `published_at` on every product it touches, so a
+ * refresh re-dates the whole catalogue and reshuffles "New arrivals".
+ *
  *     php database/seeds/festive-lighting-products.php            import / refresh
  *     php database/seeds/festive-lighting-products.php --images   also re-download images
  */
@@ -642,6 +646,21 @@ function festive_seed_run(bool $refreshImages = false): array
 //  CLI
 // ---------------------------------------------------------------------------
 if (PHP_SAPI === 'cli' && isset($argv[0]) && realpath($argv[0]) === realpath(__FILE__)) {
+    // Every other festive seed takes --dry and reports without writing. This
+    // one is a full importer with no preview mode, and it used to accept --dry
+    // silently and then write anyway - so a "dry run" of the whole seed folder
+    // quietly re-imported eleven products and 54 images. Refuse the flags this
+    // script does not implement rather than ignoring them.
+    $unknown = array_values(array_filter(
+        array_slice($argv, 1),
+        static fn (string $a): bool => $a !== '--images'
+    ));
+    if ($unknown !== []) {
+        fwrite(STDERR, 'This seed has no ' . implode(' / ', $unknown) . ' mode; the only flag is --images.' . PHP_EOL);
+        fwrite(STDERR, 'Running it always writes. Nothing was done.' . PHP_EOL);
+        exit(2);
+    }
+
     $result = festive_seed_run(in_array('--images', $argv, true));
 
     printf(

@@ -341,6 +341,258 @@
     };
 
     /* ----------------------------------------------------------------------
+       Skeleton loading
+
+       The markup lives in includes/skeletons.php and is printed once per page
+       as <template id="sikSkel-{name}">; the look is app.css section 30b.
+       Only regions whose content genuinely arrives after the page use this -
+       see the map at the top of skeletons.php.
+
+       A refetch goes: busy + old content dimmed at once, skeletons after
+       SKEL_DELAY if the answer is not back yet, then the answer (faded in) or
+       the Retry block. Nothing is ever held back once it has arrived, and no
+       path ends with a skeleton still on screen.
+       ---------------------------------------------------------------------- */
+    const SKEL_DELAY = 120;
+
+    SIK.skeleton = {
+        /** `count` copies of a skeleton template, as one fragment. */
+        make: function (name, count) {
+            const tpl = document.getElementById('sikSkel-' + name);
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < (count || 1); i++) {
+                if (tpl && tpl.content) {
+                    frag.appendChild(tpl.content.cloneNode(true));
+                } else {
+                    // A page rendered without the storefront footer: a plain
+                    // bone still beats an empty region.
+                    const bone = document.createElement('div');
+                    bone.className = 'sik-skel sik-skel__bone';
+                    bone.style.minHeight = '96px';
+                    bone.setAttribute('aria-hidden', 'true');
+                    frag.appendChild(bone);
+                }
+            }
+            return frag;
+        },
+
+        /**
+         * Begin loading a region. `fill(region)` draws the skeleton and runs at
+         * most once, only if the answer takes longer than SKEL_DELAY.
+         *
+         * The returned handle must end in exactly one of:
+         *   settle()  the answer is here (or it failed) - clears busy/stale;
+         *   cancel()  a newer request owns the region now - only stops the
+         *             timer, so a stale fill can never land on fresh content.
+         */
+        start: function (region, fill) {
+            region.setAttribute('aria-busy', 'true');
+            region.classList.add('sik-stale');
+            let shown = false;
+            const timer = setTimeout(function () {
+                region.classList.remove('sik-stale');
+                shown = true;
+                fill(region);
+            }, SKEL_DELAY);
+
+            return {
+                get shown() { return shown; },
+                cancel: function () { clearTimeout(timer); },
+                settle: function () {
+                    clearTimeout(timer);
+                    region.classList.remove('sik-stale');
+                    region.removeAttribute('aria-busy');
+                }
+            };
+        },
+
+        /** Fade in freshly inserted content (every element child, or a list). */
+        reveal: function (target) {
+            const nodes = Array.isArray(target) ? target : Array.prototype.slice.call(target.children);
+            nodes.forEach(function (node) {
+                if (!node || node.nodeType !== 1) return;
+                node.classList.add('sik-skel-reveal');
+                node.addEventListener('animationend', function () {
+                    node.classList.remove('sik-skel-reveal');
+                }, { once: true });
+            });
+        },
+
+        /**
+         * Replace a skeleton with the failure block: a title, a line of text
+         * and a Retry button that calls opts.retry().
+         *
+         * opts.title / opts.text  the copy (defaults to "Unable to load products")
+         * opts.into               replace this element's content (default: region)
+         * opts.after              or insert the block after this node instead
+         * Returns the block, so a caller can remove it on the next attempt.
+         */
+        error: function (region, opts) {
+            opts = opts || {};
+            const holder = document.createElement('div');
+            holder.appendChild(SIK.skeleton.make('error', 1));
+            let block = holder.firstElementChild;
+
+            if (!block || !block.hasAttribute('data-skel-error')) {
+                block = document.createElement('div');
+                block.className = 'sik-empty sik-empty--sm sik-loaderr';
+                block.innerHTML = '<p class="sik-empty__title" role="alert" data-skel-error-title></p>'
+                    + '<p class="sik-empty__text" data-skel-error-text></p>'
+                    + '<button type="button" class="sik-btn sik-btn--primary" data-skel-retry>'
+                    + '<span class="sik-btn__label">Retry</span></button>';
+            }
+
+            const title = block.querySelector('[data-skel-error-title]');
+            const text = block.querySelector('[data-skel-error-text]');
+            if (title) title.textContent = opts.title || 'Unable to load products';
+            if (text && opts.text) text.textContent = opts.text;
+
+            const retry = block.querySelector('[data-skel-retry]');
+            if (retry) {
+                if (typeof opts.retry === 'function') {
+                    retry.addEventListener('click', function () {
+                        if (!SIK.showLoader(retry)) return;
+                        opts.retry(block);
+                    }, { once: true });
+                } else {
+                    retry.remove();
+                }
+            }
+
+            if (opts.after && opts.after.parentNode) {
+                opts.after.parentNode.insertBefore(block, opts.after.nextSibling);
+            } else {
+                const target = opts.into || region;
+                target.innerHTML = '';
+                target.appendChild(block);
+            }
+            return block;
+        }
+    };
+
+    /* ----------------------------------------------------------------------
+       Images: placeholder, fade-in, graceful failure
+
+       Every storefront <img> already has width/height and sits in a fixed-ratio
+       well, so arriving images never move the page. This adds the in-between:
+       a lazy image that comes on screen before it has loaded shimmers in its
+       own box (img.is-pending, app.css 30b) and fades in when it lands. One
+       that is ready by the time it is seen gets no effect at all, and nothing
+       is ever hidden that has already painted. A broken image gets a neutral
+       glyph instead of the browser's torn-page icon and alt text.
+       ---------------------------------------------------------------------- */
+    // The 24-unit drawing sits inside a 72-unit canvas, so the glyph is a third
+    // of whatever box it lands in without any CSS padding. That inset used to
+    // be `padding: 34%` on .is-broken, and a percentage padding resolves
+    // against the containing block's WIDTH: on an element sized by height
+    // alone - the wordmarks - it was several times the element's own height and
+    // the box grew instead of keeping its shape. Baked into the artwork it
+    // cannot distort anything.
+    const BROKEN_IMG = 'data:image/svg+xml,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-24 -24 72 72" fill="none" stroke="#9CA3AF"'
+        + ' stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">'
+        + '<rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.6"/>'
+        + '<path d="M21 16l-5-5-7.5 7.5"/><path d="M3 3l18 18" stroke-opacity=".7"/></svg>'
+    );
+
+    function breakImage(img) {
+        if (!img || img.dataset.imgBroken === '1') return;
+        // Never for the hover twin: it is invisible until hovered anyway.
+        if (img.classList.contains('sik-card__img--hover')) return;
+        img.dataset.imgBroken = '1';
+
+        // Pin the box before the glyph goes in. BROKEN_IMG is a 1:1 24x24 SVG,
+        // and an element sized on one axis with the other left to the image's
+        // own proportions collapses to a square: the header and footer
+        // wordmarks are height-only, so 188x52 became 52x52 and the header
+        // lost 136px of width. The width/height attributes are the declared
+        // proportions; the rendered box is the fallback for an <img> that
+        // carries none.
+        let w = parseFloat(img.getAttribute('width'));
+        let h = parseFloat(img.getAttribute('height'));
+        if (!(w > 0 && h > 0)) {
+            // One attribute without the other would mix a declared width with a
+            // rendered height, so it is both or neither.
+            const box = img.getBoundingClientRect();
+            w = box.width;
+            h = box.height;
+        }
+        if (w > 0 && h > 0) img.style.aspectRatio = w + ' / ' + h;
+
+        img.classList.remove('is-pending', 'is-shown');
+        img.classList.add('is-broken');
+
+        // Inside a <picture> the resource is re-selected when the src changes,
+        // and a matching <source srcset> still beats the img's own src - so
+        // the broken file would simply come back and the visitor would keep
+        // the browser's torn-page icon. The storefront uses <picture> for
+        // exactly the images most likely to be missing: the hero and promo
+        // slides and the popup poster, whose mobile variant is a separate
+        // upload that can go missing on its own.
+        const parent = img.parentElement;
+        if (parent && parent.tagName === 'PICTURE') {
+            $$('source', parent).forEach(source => source.remove());
+        }
+        img.removeAttribute('srcset');
+        img.removeAttribute('sizes');
+        img.src = BROKEN_IMG;
+    }
+
+    const imageObserver = ('IntersectionObserver' in window)
+        ? new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                const img = entry.target;
+                imageObserver.unobserve(img);
+                if (img.complete) return;
+                img.classList.add('is-pending');
+            });
+        }, { rootMargin: '0px 0px 80px 0px' })
+        : null;
+
+    SIK.images = {
+        /** Start watching the lazy images inside `root` (default: the page). */
+        watch: function (root) {
+            $$('img', root).forEach(function (img) {
+                if (img.dataset.imgWatched === '1') return;
+                img.dataset.imgWatched = '1';
+
+                // Failed before this script ran: complete, with no pixels.
+                if (img.complete) {
+                    const src = img.getAttribute('src') || '';
+                    if (src && img.naturalWidth === 0 && !/\.svg(\?|#|$)/i.test(src) && src.indexOf('data:') !== 0) {
+                        breakImage(img);
+                    }
+                    return;
+                }
+                if (imageObserver && img.loading === 'lazy' && !img.classList.contains('sik-card__img--hover')) {
+                    imageObserver.observe(img);
+                }
+            });
+        }
+    };
+
+    // load and error do not bubble, but they can be captured - one pair of
+    // listeners covers every image, including ones injected later.
+    document.addEventListener('load', function (e) {
+        const img = e.target;
+        if (!img || img.tagName !== 'IMG') return;
+        if (imageObserver) imageObserver.unobserve(img);
+        if (!img.classList.contains('is-pending')) return;
+        img.classList.remove('is-pending');
+        img.classList.add('is-shown');
+        img.addEventListener('animationend', function () { img.classList.remove('is-shown'); }, { once: true });
+    }, true);
+
+    document.addEventListener('error', function (e) {
+        const img = e.target;
+        if (!img || img.tagName !== 'IMG') return;
+        if (imageObserver) imageObserver.unobserve(img);
+        if ((img.getAttribute('src') || '').indexOf('data:') === 0) return;
+        breakImage(img);
+    }, true);
+
+    /* ----------------------------------------------------------------------
        Overlay, drawers and modals
        ---------------------------------------------------------------------- */
     let openLayers = [];
@@ -443,6 +695,10 @@
     SIK.openModal = function (id) {
         const modal = document.getElementById(id);
         if (!modal) return;
+        // Quick View now opens on the click itself, so the second half of a
+        // double-click lands on the backdrop that just appeared under the
+        // pointer. The backdrop handler ignores clicks this young.
+        modal._openedAt = Date.now();
         modal.classList.add('is-open');
         modal.setAttribute('aria-hidden', 'false');
         document.body.classList.add('sik-no-scroll');
@@ -747,13 +1003,54 @@
         if (el.dataset.loaded === '1') return;
         el.dataset.loaded = '1';
 
+        // Whatever the shell arrived with (a reserved skeleton, or nothing) is
+        // what a Retry puts back.
+        if (el._skelHtml === undefined) el._skelHtml = el.innerHTML;
+
+        // A deferred skeleton (recently viewed, which is empty on a first
+        // visit) is only drawn while the shell is still below the fold: if the
+        // answer turns out empty, the band collapses where nobody can see it
+        // move. Already on screen, it waits for the real thing instead.
+        const deferred = el.querySelector('template[data-skel-deferred]');
+        if (deferred && el.getBoundingClientRect().top > window.innerHeight) {
+            el.appendChild(deferred.content.cloneNode(true));
+            el.setAttribute('aria-busy', 'true');
+        }
+
         const result = await SIK.get('widgets/render.php', { key: el.dataset.lazyWidget });
+        el.removeAttribute('aria-busy');
+        el.classList.remove('is-failed');
+
         if (result.success && result.data && result.data.html) {
             el.innerHTML = result.data.html;
+            SIK.skeleton.reveal(el);
             SIK.refresh(el);
-        } else {
-            el.remove();
+            return;
         }
+
+        // Answered, with nothing to show (or the section is gone): the shell
+        // was only ever a placeholder, so it goes.
+        if (result.success || result.status === 404 || !el.querySelector('.sik-skel')) {
+            el.remove();
+            return;
+        }
+
+        // The request itself failed while a skeleton was promising content.
+        // The Retry block takes the skeleton's exact height, so failing moves
+        // nothing either.
+        const height = el.offsetHeight;
+        el.classList.add('is-failed');
+        el.style.minHeight = height + 'px';
+        SIK.skeleton.error(el, {
+            title: el.dataset.skelError || 'Unable to load this section',
+            retry: function () {
+                el.classList.remove('is-failed');
+                el.style.minHeight = '';
+                el.innerHTML = el._skelHtml;
+                el.dataset.loaded = '';
+                loadWidget(el);
+            }
+        });
     }
 
     /* ----------------------------------------------------------------------
@@ -893,6 +1190,7 @@
        Re-initialise everything inside a container after an AJAX swap
        ---------------------------------------------------------------------- */
     SIK.refresh = function (root) {
+        SIK.images.watch(root);
         SIK.initAnimations(root);
         SIK.initRails(root);
         SIK.initCountdowns(root);
@@ -904,6 +1202,7 @@
        Boot
        ---------------------------------------------------------------------- */
     function boot() {
+        SIK.images.watch();
         SIK.initTheme();
         initAnnounce();
         initScratchCards();
@@ -937,7 +1236,9 @@
             SIK.closeModal(this.dataset.closeModal || this.closest('.sik-modal'));
         });
         SIK.on('click', '.sik-modal__backdrop', function () {
-            SIK.closeModal(this.closest('.sik-modal'));
+            const modal = this.closest('.sik-modal');
+            if (modal && Date.now() - (modal._openedAt || 0) < 400) return;
+            SIK.closeModal(modal);
         });
 
         // Copy-to-clipboard (coupon codes, product links).

@@ -10,6 +10,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/menu-functions.php';
+require_once __DIR__ . '/skeletons.php';
 
 /** Every active widget in a zone, respecting schedule and visibility rules. */
 function zone_widgets(string $zone = 'home'): array
@@ -45,7 +46,26 @@ function render_widget(array $widget, array $context = []): string
         // No padding on the shell: a widget that turns out to have nothing to
         // show (recently viewed, for a first visit) must not leave a band of
         // empty section rhythm behind it.
-        return '<div data-lazy-widget="' . e_attr($widget['section_key']) . '" class="sik-lazy-widget"></div>';
+        //
+        // The body really does arrive later here, so this is one of the few
+        // places a skeleton is honest. skeleton_widget() decides how: widgets
+        // that reliably have content hold their space from the first paint;
+        // recently viewed ships its skeleton in a <template> that app.js only
+        // uses below the fold; anything unpredictable gets no skeleton.
+        $shell = '<div data-lazy-widget="' . e_attr($widget['section_key']) . '" class="sik-lazy-widget"';
+        if (in_array($widget['widget_type'], ['product_grid', 'product_carousel', 'recommendations', 'recently_viewed'], true)) {
+            // The wording the Retry block uses if the fetch fails.
+            $shell .= ' data-skel-error="Unable to load products"';
+        }
+        $skeleton = skeleton_widget($widget);
+
+        if ($skeleton['html'] === '') {
+            return $shell . '></div>';
+        }
+        if ($skeleton['reserve']) {
+            return $shell . ' aria-busy="true">' . $skeleton['html'] . '</div>';
+        }
+        return $shell . '><template data-skel-deferred>' . $skeleton['html'] . '</template></div>';
     }
 
     ob_start();

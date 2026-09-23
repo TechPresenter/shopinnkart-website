@@ -23,6 +23,14 @@
 
 declare(strict_types=1);
 
+// Command line only, like every other seed and migration: this rewrites
+// homepage sections, menus and popup rows, and nothing on the web should be
+// able to set the storefront back to a seeded state.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 require_once dirname(__DIR__, 2) . '/includes/init.php';
 
 $log = [];
