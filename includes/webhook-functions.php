@@ -21,7 +21,32 @@ declare(strict_types=1);
 const WEBHOOK_GATEWAYS = ['razorpay', 'stripe', 'cashfree', 'payu'];
 
 /**
+ * Config keys whose value is a credential, not a setting.
+ *
+ * Everything named here is encrypted at rest with secret_encrypt() and is
+ * never rendered back into the admin form. The publishable half of a gateway
+ * key pair (key_id, merchant_id, mode) deliberately is not: it appears in the
+ * checkout page source anyway, and keeping it readable is what lets an
+ * operator confirm which account a method points at.
+ */
+const GATEWAY_SECRET_KEYS = [
+    'key_secret', 'secret_key', 'webhook_secret', 'merchant_salt', 'salt',
+    'api_secret', 'client_secret', 'auth_token', 'access_token', 'private_key',
+];
+
+/** True for a config key that must be stored encrypted. */
+function gateway_key_is_secret(string $key): bool
+{
+    return in_array(strtolower($key), GATEWAY_SECRET_KEYS, true);
+}
+
+/**
  * The decoded config blob for a payment method, or [] when there is none.
+ *
+ * Secret values come back in plaintext: this is the one place that decrypts
+ * them, so a gateway class keeps working unchanged while the column holds
+ * ciphertext. Values written before encryption existed pass through
+ * secret_decrypt() untouched, so an install mid-migration still charges cards.
  */
 function gateway_config(string $code): array
 {
@@ -39,8 +64,39 @@ function gateway_config(string $code): array
     }
 
     $decoded = json_decode($raw, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
 
-    return is_array($decoded) ? $decoded : [];
+    foreach ($decoded as $key => $value) {
+        if (is_string($value) && gateway_key_is_secret((string) $key)) {
+            $decoded[$key] = secret_decrypt($value);
+        }
+    }
+
+    return $decoded;
+}
+
+/**
+ * Encrypt the secret keys of a config array for storage.
+ *
+ * A value that is already ciphertext is left alone, which is what makes the
+ * migration - and a re-save that carried the stored value along - idempotent.
+ * The version is matched loosely rather than pinned to the envelope of the day:
+ * secret_encrypt() moved from enc:v1 to enc:v2 when per-purpose key derivation
+ * arrived, and a hardcoded "v1" here would have re-encrypted every already
+ * encrypted secret into an unreadable double wrapper.
+ */
+function gateway_config_encrypt(array $config): array
+{
+    foreach ($config as $key => $value) {
+        if (!is_string($value) || $value === '' || !gateway_key_is_secret((string) $key)) {
+            continue;
+        }
+        $config[$key] = preg_match('/^enc:v\d+:/', $value) === 1 ? $value : secret_encrypt($value);
+    }
+
+    return $config;
 }
 
 /**
@@ -54,6 +110,7 @@ function gateway_webhook_secret(string $code): string
         return $env;
     }
 
+    // gateway_config() already decrypted them.
     $config = gateway_config($code);
 
     // Razorpay and Stripe carry a dedicated webhook secret. Cashfree signs with
@@ -61,7 +118,7 @@ function gateway_webhook_secret(string $code): string
     foreach (['webhook_secret', 'secret_key', 'merchant_salt'] as $key) {
         $value = trim((string) ($config[$key] ?? ''));
         if ($value !== '') {
-            return secret_decrypt($value);
+            return $value;
         }
     }
 
@@ -355,30 +412,17 @@ function webhook_normalise_event(string $gateway, string $rawBody, array $decode
 /**
  * IP-scoped rate limit that does not need a session.
  *
- * api_rate_limit() keeps its counter in $_SESSION, which a gateway never sends
- * a cookie for — every webhook would start a fresh session and the limit would
- * never bite. This one is backed by the file cache instead.
+ * A gateway never sends a cookie, so a session-backed counter would never
+ * bite. This used to use the file cache instead — but Cache obeys the
+ * `cache_enabled` admin toggle, so switching a performance setting off in
+ * Admin > Settings silently switched off webhook IP limiting and the
+ * brute-force cap on bad signatures with it. It is backed by the shared
+ * `rate_limits` table now, which no performance switch can reach.
  */
 function webhook_rate_limit_hit(string $bucket, int $max, int $windowSeconds): bool
 {
-    $key = 'webhook_rate_' . md5($bucket);
-    $now = time();
-
-    $hits = Cache::get($key);
-    $hits = is_array($hits) ? $hits : [];
-
-    $hits = array_values(array_filter(
-        $hits,
-        static fn ($ts): bool => is_int($ts) && ($now - $ts) < $windowSeconds
-    ));
-
-    if (count($hits) >= $max) {
-        Cache::put($key, $hits, $windowSeconds);
-        return false;
-    }
-
-    $hits[] = $now;
-    Cache::put($key, $hits, $windowSeconds);
-
-    return true;
+    // One bucket name, the caller's string as the key: the key is hashed, so
+    // an IPv6 address cannot overflow the 40-character bucket column and drop
+    // every long address into one shared counter.
+    return rate_limit_attempt('webhook', $bucket, $max, $windowSeconds);
 }

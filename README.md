@@ -179,8 +179,17 @@ cp config/db.local.example.php config/db.local.php   # then edit it
 # 2. Import the schema
 mysql -u root shopinnkart < database/schema.sql
 
-# 3. Apply any migrations added since
-php database/migrate.php
+# 3. Apply the migrations, oldest first (see the list below)
+php database/migrations/2026_08_13_invoice_email_system.php
+php database/migrations/2026_08_14_email_verification_returns.php
+php database/migrations/2026_09_14_storefront_redesign.php
+php database/migrations/2026_09_21_combo_offers.php
+php database/migrations/2026_09_21_shipping_hub.php
+php database/migrations/2026_09_22_security.php
+php database/migrations/2026_09_22_shipping_fixes.php
+php database/migrations/2026_09_23_security_admin.php
+php database/migrations/2026_09_23_security_auth.php
+php database/migrations/2026_09_23_security_platform.php
 
 # 4. Clear the file cache after any direct SQL write
 rm -f storage/cache/*.cache
@@ -189,6 +198,22 @@ rm -f storage/cache/*.cache
 `database/schema.sql` contains `CREATE DATABASE` and `USE`, so it ignores whatever database you
 name on the command line — comment those two lines out before importing into a scratch schema.
 
+There is no migration runner: each file in `database/migrations/` is its own CLI script, run from
+the project root. They are idempotent and never `DROP`, so running one twice is a no-op and running
+the whole list after any `git pull` is the safe habit. File name order is apply order — a later one
+may depend on an earlier one's tables. The command is the same on a live host over SSH.
+
+The two newest pairs matter most, because nothing else creates what they add:
+
+| Migration | Without it |
+|---|---|
+| `2026_09_21_shipping_hub.php` | no `shipping_providers`, `shipments` or `shipment_events` — the shipping hub is simply absent from the admin |
+| `2026_09_22_shipping_fixes.php` | no `shipments.courier_id`, no `shipping_providers.webhook_slug`, and no Shiprocket row to configure |
+| `2026_09_22_security.php`, `2026_09_23_security_*.php` | no `auth_version` columns (a password change no longer ends the other sessions), no security permissions for the role editor, no "remember me" token table, and none of the platform security settings |
+
+A database built from `database/schema.sql` alone is a *hub-less, pre-hardening* install: it starts
+and serves pages, so the gap is easy to miss.
+
 ### Deployment workflow
 
 1. Upload everything except the ignored files (see `.gitignore`)
@@ -196,9 +221,14 @@ name on the command line — comment those two lines out before importing into a
    `DB_HOST` / `DB_NAME` / `DB_USER` / `DB_PASS` environment variables, which take precedence
 3. Make `storage/`, `storage/logs/`, `storage/cache/`, `uploads/` and `config/` writable
 4. Point the document root at the project root; `.htaccess` handles the rewrites
-5. **Serve over https.** Voice search, and any future browser feature that needs a secure context,
+5. **Run the migrations** against the live database — every file in `database/migrations/`, in name
+   order, exactly as in the development workflow above. A host with SSH runs them directly; without
+   SSH, run them locally first and let `php database/export-for-hosting.php` carry the result. Skip
+   this and the site still starts, so the gap shows up later as a missing shipping hub or a security
+   setting that will not save
+6. **Serve over https.** Voice search, and any future browser feature that needs a secure context,
    is refused on plain http
-6. Set `APP_DEBUG` to `false` in `config/config.php`
+7. Set `APP_DEBUG` to `false` in `config/config.php`
 
 ---
 

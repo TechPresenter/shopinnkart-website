@@ -22,19 +22,18 @@ $page = cms_page('contact-us');
 if (is_post()) {
     csrf_require();
 
-    // Shared with the API endpoint so the two paths cannot be used to double
-    // the quota.
-    $bucket = '_rate_contact_send';
-    $now    = time();
-    $state  = $_SESSION[$bucket] ?? ['count' => 0, 'reset' => $now + 900];
-    if ($now > $state['reset']) {
-        $state = ['count' => 0, 'reset' => $now + 900];
+    // Counted per client address in the shared table, not in $_SESSION: the
+    // old window reset itself whenever the sender dropped their cookie, so the
+    // "3 per 15 minutes" it advertised never actually bit.
+    if (!form_rate_limit('contact_send', 5, 3600)) {
+        flash('error', 'Too many messages from this device. Please try again in a little while.');
+        redirect(url('contact.php') . '#sikContactForm');
     }
-    $state['count']++;
-    $_SESSION[$bucket] = $state;
 
-    if ($state['count'] > 3) {
-        flash('error', 'Too many messages from this session. Please try again in a few minutes.');
+    // Honeypot: a field no human sees and every form-filling bot completes.
+    if (trim((string) input('website', '')) !== '') {
+        security_event('api.honeypot', 'low', ['endpoint' => 'contact']);
+        flash('success', 'Thanks for writing in. Our support team replies within one business day.');
         redirect(url('contact.php') . '#sikContactForm');
     }
 
@@ -248,6 +247,11 @@ echo cms_page_banner($page ?? [
                 <form method="post" action="<?= e(url('contact.php')) ?>"
                       data-ajax-form="contact/send.php" data-reset-on-success="true" novalidate>
                     <?= csrf_field() ?>
+
+                    <?php // Honeypot. Hidden from people and from screen readers; bots fill it in. ?>
+                    <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">
+                        <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+                    </div>
 
                     <div class="sik-field">
                         <label class="sik-label" for="contactName">Your name <span class="req">*</span></label>
