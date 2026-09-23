@@ -557,6 +557,9 @@ function account_menu(): array
             'items' => [
                 ['label' => 'Preferences',     'url' => 'preferences.php',     'icon' => 'settings'],
                 ['label' => 'Change Password', 'url' => 'change-password.php', 'icon' => 'lock'],
+                // Hidden while the owner has customer 2FA switched off, the
+                // same way the wishlist entry disappears with its feature.
+                ['label' => 'Two-Step Sign In', 'url' => 'account-security.php', 'icon' => 'shield'],
             ],
         ],
     ];

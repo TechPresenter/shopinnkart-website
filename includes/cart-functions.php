@@ -14,48 +14,123 @@ declare(strict_types=1);
 // ===========================================================================
 
 /**
- * The current cart row, creating one if needed.
- * Pass $fresh after writing to `carts` (coupon apply/remove) so the memoised
- * row does not hand stale coupon data to cart_totals() later in the request.
+ * This visitor's cart row, or null when they have never put anything in one.
+ *
+ * Reading a cart must never write one. cart_count() runs from
+ * includes/header.php on every single page, so the old create-on-read gave
+ * every crawler and every one-page visit a `carts` row of its own - 3,797 of
+ * the live database's 3,800 rows were empty guest carts, which buried the real
+ * abandoned-cart figure the store reports on.
+ *
+ * Pass $fresh after writing to `carts` (coupon apply/remove, a rehome) so the
+ * memoised row does not hand stale coupon data to cart_totals() later in the
+ * same request.
+ */
+function cart_row(bool $fresh = false): ?array
+{
+    // false = "not looked up yet"; null = "looked up, there isn't one".
+    static $cart = false;
+    if ($cart !== false && !$fresh) {
+        return $cart;
+    }
+
+    $userId = current_user_id();
+    if ($userId !== null) {
+        return $cart = Database::fetch(
+            'SELECT * FROM `carts` WHERE `user_id` = :uid ORDER BY `id` DESC LIMIT 1',
+            ['uid' => $userId]
+        );
+    }
+
+    $sessionId = session_key();
+    if ($sessionId === '') {
+        return $cart = null;
+    }
+
+    return $cart = Database::fetch(
+        'SELECT * FROM `carts` WHERE `session_id` = :sid AND `user_id` IS NULL ORDER BY `id` DESC LIMIT 1',
+        ['sid' => $sessionId]
+    );
+}
+
+/**
+ * The cart row, created on demand.
+ *
+ * Only the writers call this - cart_add(), cart_add_combo() and the coupon
+ * endpoints - so a cart exists exactly when something has been put in it.
  */
 function get_or_create_cart(bool $fresh = false): array
 {
-    static $cart = null;
-    if ($cart !== null && !$fresh) {
-        return $cart;
+    $row = cart_row($fresh);
+    if ($row !== null) {
+        return $row;
     }
 
     $userId = current_user_id();
     $sessionId = session_key();
 
-    if ($userId !== null) {
-        $row = Database::fetch('SELECT * FROM `carts` WHERE `user_id` = :uid ORDER BY `id` DESC LIMIT 1', ['uid' => $userId]);
-        if ($row === null) {
-            $id = Database::insert('carts', ['user_id' => $userId, 'session_id' => null]);
-            $row = Database::fetch('SELECT * FROM `carts` WHERE `id` = :id', ['id' => $id]);
-        }
-        return $cart = $row;
-    }
-
-    if ($sessionId === '') {
+    if ($userId === null && $sessionId === '') {
         // No session (CLI or cookies disabled) - hand back an empty in-memory cart.
-        return $cart = ['id' => 0, 'user_id' => null, 'session_id' => null, 'coupon_id' => null, 'coupon_code' => null];
+        return ['id' => 0, 'user_id' => null, 'session_id' => null, 'coupon_id' => null, 'coupon_code' => null];
     }
 
-    $row = Database::fetch(
-        'SELECT * FROM `carts` WHERE `session_id` = :sid AND `user_id` IS NULL ORDER BY `id` DESC LIMIT 1',
-        ['sid' => $sessionId]
-    );
-    if ($row === null) {
-        $id = Database::insert('carts', ['user_id' => null, 'session_id' => $sessionId]);
-        $row = Database::fetch('SELECT * FROM `carts` WHERE `id` = :id', ['id' => $id]);
-    }
-    return $cart = $row;
+    $id = Database::insert('carts', [
+        'user_id'    => $userId,
+        'session_id' => $userId === null ? $sessionId : null,
+    ]);
+
+    return cart_row(true)
+        ?? ['id' => $id, 'user_id' => $userId, 'session_id' => $sessionId, 'coupon_id' => null, 'coupon_code' => null];
 }
 
+/** The cart's id, or 0 when this visitor has no cart yet. */
 function cart_id(): int
 {
-    return (int) get_or_create_cart()['id'];
+    return (int) (cart_row()['id'] ?? 0);
+}
+
+/**
+ * Carry a guest's basket across a session-id rotation.
+ *
+ * includes/init.php rotates the id every 30 minutes to blunt fixation, and a
+ * guest cart is keyed on that id: without this the shopper came back from a
+ * long browse to an empty basket, and the row they had filled was orphaned.
+ * Never throws - a rotation must not be able to break the page it happens on.
+ */
+function cart_session_rehome(string $oldSessionId, string $newSessionId): void
+{
+    if ($oldSessionId === '' || $newSessionId === '' || $oldSessionId === $newSessionId) {
+        return;
+    }
+
+    try {
+        Database::query(
+            'UPDATE `carts` SET `session_id` = :new WHERE `session_id` = :old AND `user_id` IS NULL',
+            ['new' => $newSessionId, 'old' => $oldSessionId]
+        );
+        cart_row(true);
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Cart rehome after session rotation failed: ' . $e->getMessage());
+    }
+}
+
+/**
+ * The most units of one product a single cart line may hold: live stock, and
+ * the product's own per-order cap.
+ */
+function cart_line_ceiling(int $productId, ?int $variantId = null): int
+{
+    $product = Database::fetch('SELECT `stock`, `max_order_qty` FROM `products` WHERE `id` = :id', ['id' => $productId]);
+    if ($product === null) {
+        return 0;
+    }
+
+    $stock = (int) $product['stock'];
+    if ($variantId !== null) {
+        $stock = (int) Database::fetchColumn('SELECT `stock` FROM `product_variants` WHERE `id` = :id', ['id' => $variantId]);
+    }
+
+    return max(0, min($stock, max(1, (int) $product['max_order_qty'])));
 }
 
 /** Fold a guest cart into the customer's cart at login. */
@@ -93,15 +168,27 @@ function cart_merge_guest_into_user(string $sessionId, int $userId): void
                     ['cid' => (int) $userCart['id'], 'pid' => (int) $item['product_id'], 'vid' => $item['variant_id']]
                 );
 
+                // The per-order cap was only ever applied when a line was
+                // added, so a full guest cart folded into a full account cart
+                // walked straight past it - ten plus ten went in as twenty.
+                $ceiling = cart_line_ceiling(
+                    (int) $item['product_id'],
+                    $item['variant_id'] === null ? null : (int) $item['variant_id']
+                );
+
                 if ($existing !== null) {
+                    $merged = (int) $existing['quantity'] + (int) $item['quantity'];
                     Database::update(
                         'cart_items',
-                        ['quantity' => (int) $existing['quantity'] + (int) $item['quantity']],
+                        ['quantity' => max(1, min($merged, max(1, $ceiling)))],
                         '`id` = :id',
                         ['id' => (int) $existing['id']]
                     );
                 } else {
-                    Database::update('cart_items', ['cart_id' => (int) $userCart['id']], '`id` = :id', ['id' => (int) $item['id']]);
+                    Database::update('cart_items', [
+                        'cart_id'  => (int) $userCart['id'],
+                        'quantity' => max(1, min((int) $item['quantity'], max(1, $ceiling))),
+                    ], '`id` = :id', ['id' => (int) $item['id']]);
                 }
             }
 
@@ -170,7 +257,8 @@ function cart_add(int $productId, ?int $variantId = null, int $quantity = 1): ar
         return ['ok' => false, 'message' => 'This product is out of stock.', 'item_id' => null];
     }
 
-    $cartId = cart_id();
+    // The first thing actually going in is what brings a cart into existence.
+    $cartId = (int) get_or_create_cart()['id'];
     if ($cartId === 0) {
         return ['ok' => false, 'message' => 'Please enable cookies to use the cart.', 'item_id' => null];
     }
@@ -417,26 +505,64 @@ function cart_is_empty(): bool
 // ===========================================================================
 
 /**
- * Recalculate every money value for the cart. This is the single source of
- * truth used by the cart page, the checkout page and order creation.
+ * The payment method a total is priced against.
  *
- * @param array|null $items Pass pre-fetched items to avoid a second query.
+ * One lookup for the cart, the checkout summary and create_order(), so the
+ * handling fee shown and the handling fee charged are read from the same row.
  */
-function cart_totals(?array $items = null, string $shippingMethod = SHIPPING_STANDARD, ?string $paymentMethod = null): array
+function pricing_payment_method(?string $code): ?array
 {
-    $items = $items ?? cart_items();
-    $cart = get_or_create_cart();
+    if ($code === null || $code === '') {
+        return null;
+    }
+
+    return Database::fetch(
+        "SELECT * FROM `payment_methods` WHERE `code` = :code AND `status` = 'active' LIMIT 1",
+        ['code' => $code]
+    );
+}
+
+/**
+ * THE PRICING ENGINE - the one place a basket's money is decided.
+ *
+ * The cart page, /api/checkout/totals and create_order() all price through
+ * here. They used to each do their own arithmetic, and create_order()'s copy
+ * had no combo logic at all: the shopper agreed to a set price and the order,
+ * the payment row and the invoice were written at the full component price.
+ * One engine means the figure on the checkout page and the figure in the
+ * order row cannot disagree.
+ *
+ * Nothing in here writes. Callers that want a side effect (dropping a coupon
+ * that stopped qualifying, claiming a usage) do it themselves.
+ *
+ * @param array $lines   cart_items() rows, or the same shape rebuilt from
+ *                       locked product rows inside create_order(). Each needs
+ *                       product_id, variant_id, quantity, price, mrp,
+ *                       tax_rate, free_shipping, combo_id, combo_group.
+ * @param array $options coupon_code, coupon (a pre-locked coupon row),
+ *                       user_id, email, phone, shipping_method,
+ *                       payment_method.
+ */
+function cart_quote(array $lines, array $options = []): array
+{
+    $shippingMethod = (string) ($options['shipping_method'] ?? SHIPPING_STANDARD);
+    $paymentMethod  = $options['payment_method'] ?? null;
 
     $subtotal = 0.0;
     $mrpTotal = 0.0;
     $units = 0;
-    $allFreeShipping = $items !== [];
+    $allFreeShipping = $lines !== [];
 
-    foreach ($items as $item) {
-        $subtotal += (float) $item['subtotal'];
-        $mrpTotal += (float) $item['mrp'] * (int) $item['quantity'];
-        $units += (int) $item['quantity'];
-        if (!$item['free_shipping']) {
+    foreach ($lines as $index => $line) {
+        $quantity = max(0, (int) $line['quantity']);
+        $lineSubtotal = money_round((float) $line['price'] * $quantity);
+        $lines[$index]['quantity'] = $quantity;
+        $lines[$index]['subtotal'] = $lineSubtotal;
+
+        $subtotal += $lineSubtotal;
+        $mrpTotal += (float) $line['mrp'] * $quantity;
+        $units    += $quantity;
+        if (empty($line['free_shipping'])) {
             $allFreeShipping = false;
         }
     }
@@ -444,24 +570,32 @@ function cart_totals(?array $items = null, string $shippingMethod = SHIPPING_STA
     $mrpTotal = money_round($mrpTotal);
 
     // --- coupon -------------------------------------------------------------
-    $discount = 0.0;
+    $couponDiscount = 0.0;
+    $couponRow = null;
     $couponCode = null;
     $couponFreeShipping = false;
     $couponMessage = null;
+    $couponOk = true;
 
-    if (!empty($cart['coupon_code'])) {
-        $result = validate_coupon((string) $cart['coupon_code'], $subtotal, $items);
+    $requestedCoupon = trim((string) ($options['coupon_code'] ?? ''));
+    if ($requestedCoupon !== '') {
+        $result = validate_coupon($requestedCoupon, $subtotal, $lines, $options['user_id'] ?? null, [
+            'email'   => $options['email'] ?? null,
+            'phone'   => $options['phone'] ?? null,
+            'coupon'  => $options['coupon'] ?? null,
+            'locking' => !empty($options['locking']),
+        ]);
         if ($result['ok']) {
-            $discount = (float) $result['discount'];
-            $couponCode = $result['coupon']['code'];
-            $couponFreeShipping = $result['free_shipping'];
+            $couponDiscount     = (float) $result['discount'];
+            $couponRow          = $result['coupon'];
+            $couponCode         = (string) $result['coupon']['code'];
+            $couponFreeShipping = (bool) $result['free_shipping'];
         } else {
-            // The coupon stopped qualifying (cart changed, expired, limit hit).
-            Database::update('carts', ['coupon_id' => null, 'coupon_code' => null], '`id` = :id', ['id' => (int) $cart['id']]);
+            $couponOk = false;
             $couponMessage = $result['message'];
         }
     }
-    $discount = money_round(min($discount, $subtotal));
+    $couponDiscount = money_round(min($couponDiscount, $subtotal));
 
     // --- combos -------------------------------------------------------------
     // A set's saving is the difference between its components' own prices and
@@ -472,30 +606,33 @@ function cart_totals(?array $items = null, string $shippingMethod = SHIPPING_STA
     // It stacks with a coupon on purpose: the coupon was validated against the
     // subtotal BEFORE this, which is the stricter order. The pair is then
     // clamped so the two together can never exceed what is in the basket.
-    $comboDiscount = cart_combo_discount($items);
-    $discount      = money_round(min($discount + $comboDiscount, $subtotal));
+    // create_order() passes its own, derived from the whole cart lines before
+    // a part-covered flash sale split any of them: a set is counted in
+    // components, not in what each component happened to cost.
+    $comboGroups   = $options['combo_groups'] ?? cart_combo_groups($lines);
+    $comboDiscount = 0.0;
+    foreach ($comboGroups as $group) {
+        $comboDiscount += (float) $group['saving'];
+    }
+    $comboDiscount = money_round($comboDiscount);
 
+    $discount = money_round(min($couponDiscount + $comboDiscount, $subtotal));
 
     // --- shipping -----------------------------------------------------------
     $shipping = calculate_shipping($subtotal - $discount, $shippingMethod, $allFreeShipping || $couponFreeShipping);
 
     // --- tax ----------------------------------------------------------------
     $taxable = max(0.0, $subtotal - $discount);
-    $tax = calculate_tax($items, $subtotal, $discount);
+    $tax = calculate_tax($lines, $subtotal, $discount);
 
     // --- payment surcharge / discount --------------------------------------
+    $methodRow = pricing_payment_method(is_string($paymentMethod) ? $paymentMethod : null);
     $paymentCharge = 0.0;
     $paymentDiscount = 0.0;
-    if ($paymentMethod !== null) {
-        $method = Database::fetch(
-            "SELECT * FROM `payment_methods` WHERE `code` = :code AND `status` = 'active' LIMIT 1",
-            ['code' => $paymentMethod]
-        );
-        if ($method !== null) {
-            $paymentCharge = money_round((float) $method['extra_charge']);
-            if ((float) $method['discount_percent'] > 0) {
-                $paymentDiscount = money_round($taxable * ((float) $method['discount_percent'] / 100));
-            }
+    if ($methodRow !== null) {
+        $paymentCharge = money_round((float) $methodRow['extra_charge']);
+        if ((float) $methodRow['discount_percent'] > 0) {
+            $paymentDiscount = money_round($taxable * ((float) $methodRow['discount_percent'] / 100));
         }
     }
 
@@ -505,6 +642,81 @@ function cart_totals(?array $items = null, string $shippingMethod = SHIPPING_STA
         $total += $tax;
     }
     $total = money_round(max(0.0, $total));
+
+    return [
+        'lines'            => $lines,
+        'items_count'      => count($lines),
+        'units'            => $units,
+        'mrp_total'        => $mrpTotal,
+        'subtotal'         => $subtotal,
+        'combo_groups'     => $comboGroups,
+        'combo_discount'   => $comboDiscount,
+        'coupon'           => $couponRow,
+        'coupon_code'      => $couponCode,
+        'coupon_discount'  => $couponDiscount,
+        'coupon_ok'        => $couponOk,
+        'coupon_message'   => $couponMessage,
+        'coupon_free_shipping' => $couponFreeShipping,
+        'discount'         => $discount,
+        'taxable'          => $taxable,
+        // The proportion of each line that is still taxable after a cart-level
+        // discount. order_items and calculate_tax() have to use the same one or
+        // the line taxes will not sum to orders.tax_amount.
+        'tax_ratio'        => $subtotal > 0 ? max(0.0, ($subtotal - $discount) / $subtotal) : 1.0,
+        'shipping'         => $shipping,
+        'tax'              => $tax,
+        'tax_inclusive'    => $taxInclusive,
+        'payment_method_row' => $methodRow,
+        'payment_charge'   => $paymentCharge,
+        'payment_discount' => $paymentDiscount,
+        'all_free_shipping' => $allFreeShipping,
+        'total'            => $total,
+    ];
+}
+
+/**
+ * Every money value for the current cart, in the shape the views expect.
+ *
+ * A thin presentation layer over cart_quote(): the arithmetic lives there so
+ * checkout and order creation share it, and this adds the display strings and
+ * the free-delivery meter.
+ *
+ * @param array|null $items Pass pre-fetched items to avoid a second query.
+ */
+function cart_totals(?array $items = null, string $shippingMethod = SHIPPING_STANDARD, ?string $paymentMethod = null): array
+{
+    $items = $items ?? cart_items();
+    $cart = cart_row();
+
+    $quote = cart_quote($items, [
+        'coupon_code'     => $cart['coupon_code'] ?? null,
+        'shipping_method' => $shippingMethod,
+        'payment_method'  => $paymentMethod,
+    ]);
+
+    // The coupon stopped qualifying (cart changed, expired, limit hit). This
+    // is the one write cart_totals() makes, and the engine deliberately leaves
+    // it to the caller.
+    $couponMessage = null;
+    if (!$quote['coupon_ok'] && !empty($cart['id'])) {
+        Database::update('carts', ['coupon_id' => null, 'coupon_code' => null], '`id` = :id', ['id' => (int) $cart['id']]);
+        cart_row(true);
+        $couponMessage = $quote['coupon_message'];
+    }
+
+    $subtotal = $quote['subtotal'];
+    $mrpTotal = $quote['mrp_total'];
+    $discount = $quote['discount'];
+    $taxable  = $quote['taxable'];
+    $shipping = $quote['shipping'];
+    $tax      = $quote['tax'];
+    $paymentCharge   = $quote['payment_charge'];
+    $paymentDiscount = $quote['payment_discount'];
+    $taxInclusive    = $quote['tax_inclusive'];
+    $comboDiscount   = $quote['combo_discount'];
+    $couponCode      = $quote['coupon_code'];
+    $units           = $quote['units'];
+    $total           = $quote['total'];
 
     // The free-shipping meter has to measure the same bar the shipping quote
     // actually clears. calculate_shipping() honours the chosen method's
@@ -640,49 +852,124 @@ function calculate_tax(array $items, float $subtotal, float $discount = 0.0): fl
 // ===========================================================================
 
 /**
+ * The one message an unknown, inactive, not-yet-started, expired or exhausted
+ * code gets.
+ *
+ * Telling those four apart confirmed to a guesser that a code exists, which is
+ * most of the work of guessing a private, customer-issued code. A shopper
+ * holding a real code that simply does not fit this basket still gets the
+ * specific reason (minimum order, already used, selected items only).
+ */
+function coupon_refusal_message(): string
+{
+    return "This code can't be applied to your order.";
+}
+
+/**
+ * How many times one customer has used a coupon.
+ *
+ * Keyed on identity, not on the session: an account id when they are signed
+ * in, and the email and phone on the order either way. Counting only user_id
+ * let a signed-out shopper use a once-per-customer coupon as often as they
+ * liked, and let a registered customer who had used it sign out and use it
+ * again with the same email.
+ */
+function coupon_uses_by_identity(int $couponId, ?int $userId, ?string $email, ?string $phone, bool $locking = false): int
+{
+    $where  = [];
+    $params = ['cid' => $couponId];
+
+    if ($userId !== null) {
+        $where[] = '`user_id` = :uid';
+        $params['uid'] = $userId;
+    }
+    $email = $email === null ? '' : mb_strtolower(trim($email));
+    if ($email !== '') {
+        $where[] = 'LOWER(`email`) = :email';
+        $params['email'] = $email;
+    }
+    $phone = $phone === null ? '' : (string) (normalize_phone($phone) ?? '');
+    if ($phone !== '') {
+        $where[] = '`phone` = :phone';
+        $params['phone'] = $phone;
+    }
+
+    if ($where === []) {
+        return 0;
+    }
+
+    // Inside create_order this has to be a LOCKING read. The transaction's
+    // REPEATABLE READ snapshot was fixed by its first SELECT, so a plain count
+    // here still showed zero usages after the other tab had already committed
+    // one - both checkouts passed a per_user_limit of 1. A locking read always
+    // sees the latest committed rows, and the coupon row is already held
+    // exclusively, so only one checkout is ever inside this at a time.
+    $suffix = $locking ? ' LOCK IN SHARE MODE' : '';
+
+    return (int) Database::fetchColumn(
+        'SELECT COUNT(*) FROM `coupon_usage` WHERE `coupon_id` = :cid AND (' . implode(' OR ', $where) . ')' . $suffix,
+        $params
+    );
+}
+
+/**
  * Validate a coupon against the current cart. All checks are server-side.
  *
- * @return array{ok:bool, message:string, discount:float, free_shipping:bool, coupon:?array}
+ * @param array $options email / phone (the identity the per-customer limit is
+ *                       keyed on) and `coupon` - a row already read FOR UPDATE
+ *                       by create_order(), so the limits are tested against
+ *                       the locked figures rather than a stale snapshot.
+ * @return array{ok:bool, message:string, reason:?string, discount:float, free_shipping:bool, coupon:?array}
  */
-function validate_coupon(string $code, float $subtotal, ?array $items = null, ?int $userId = null): array
+function validate_coupon(string $code, float $subtotal, ?array $items = null, ?int $userId = null, array $options = []): array
 {
-    $fail = static fn (string $message): array => [
-        'ok' => false, 'message' => $message, 'discount' => 0.0, 'free_shipping' => false, 'coupon' => null,
+    $fail = static fn (string $message, string $reason): array => [
+        'ok' => false, 'message' => $message, 'reason' => $reason,
+        'discount' => 0.0, 'free_shipping' => false, 'coupon' => null,
     ];
 
     $code = strtoupper(trim($code));
     if ($code === '') {
-        return $fail('Enter a coupon code.');
+        return $fail('Enter a coupon code.', 'empty');
     }
 
-    $coupon = Database::fetch('SELECT * FROM `coupons` WHERE UPPER(`code`) = :code LIMIT 1', ['code' => $code]);
+    $coupon = $options['coupon'] ?? null;
     if ($coupon === null) {
-        return $fail('This coupon code is not valid.');
+        $coupon = Database::fetch('SELECT * FROM `coupons` WHERE UPPER(`code`) = :code LIMIT 1', ['code' => $code]);
+    }
+
+    // Everything down to the usage limit answers with the same sentence: see
+    // coupon_refusal_message().
+    if ($coupon === null) {
+        return $fail(coupon_refusal_message(), 'unknown');
     }
     if ($coupon['status'] !== 'active') {
-        return $fail('This coupon is no longer active.');
+        return $fail(coupon_refusal_message(), 'inactive');
     }
     if (!schedule_is_live($coupon['start_date'], $coupon['end_date'])) {
-        $notStarted = !empty($coupon['start_date']) && strtotime((string) $coupon['start_date']) > time();
-        return $fail($notStarted ? 'This coupon is not active yet.' : 'This coupon has expired.');
+        return $fail(coupon_refusal_message(), 'schedule');
     }
     if ($coupon['usage_limit'] !== null && (int) $coupon['used_count'] >= (int) $coupon['usage_limit']) {
-        return $fail('This coupon has reached its usage limit.');
+        return $fail(coupon_refusal_message(), 'exhausted');
     }
     if ($subtotal < (float) $coupon['minimum_order']) {
-        return $fail('Add ' . money((float) $coupon['minimum_order'] - $subtotal) . ' more to use this coupon.');
+        return $fail('Add ' . money((float) $coupon['minimum_order'] - $subtotal) . ' more to use this coupon.', 'minimum');
     }
 
     $userId = $userId ?? current_user_id();
 
-    // Per-customer usage limit.
-    if ($userId !== null && (int) $coupon['per_user_limit'] > 0) {
-        $used = (int) Database::fetchColumn(
-            'SELECT COUNT(*) FROM `coupon_usage` WHERE `coupon_id` = :cid AND `user_id` = :uid',
-            ['cid' => (int) $coupon['id'], 'uid' => $userId]
+    // Per-customer usage limit, keyed on who the customer is rather than on
+    // whether they happen to be signed in.
+    if ((int) $coupon['per_user_limit'] > 0) {
+        $used = coupon_uses_by_identity(
+            (int) $coupon['id'],
+            $userId,
+            $options['email'] ?? (current_user()['email'] ?? null),
+            $options['phone'] ?? null,
+            !empty($options['locking'])
         );
         if ($used >= (int) $coupon['per_user_limit']) {
-            return $fail('You have already used this coupon.');
+            return $fail('You have already used this coupon.', 'per_user');
         }
     }
 
@@ -696,12 +983,12 @@ function validate_coupon(string $code, float $subtotal, ?array $items = null, ?i
         $items = $items ?? cart_items();
         $check = coupon_restrictions_pass($restrictions, $items, $userId);
         if (!$check['ok']) {
-            return $fail($check['message']);
+            return $fail($check['message'], 'restriction');
         }
         // A product/category/brand restriction narrows the discountable base.
         $subtotal = $check['eligible_subtotal'] ?? $subtotal;
         if ($subtotal <= 0) {
-            return $fail('This coupon does not apply to the items in your cart.');
+            return $fail('This coupon does not apply to the items in your cart.', 'restriction');
         }
     }
 
@@ -723,6 +1010,7 @@ function validate_coupon(string $code, float $subtotal, ?array $items = null, ?i
     return [
         'ok'            => true,
         'message'       => 'Coupon applied.',
+        'reason'        => null,
         'discount'      => money_round($discount),
         'free_shipping' => $freeShipping,
         'coupon'        => $coupon,
@@ -820,9 +1108,123 @@ function coupon_restrictions_pass(array $restrictions, array $items, ?int $userI
     return ['ok' => true, 'message' => '', 'eligible_subtotal' => money_round($eligibleSubtotal)];
 }
 
+// ---------------------------------------------------------------------------
+//  Guessing a coupon code
+//
+//  Private and customer-issued codes are short, so trying them is cheap. The
+//  only limit used to be 20/min on /api/coupons/validate.php, kept in
+//  $_SESSION - a new cookie reset it - and /api/cart/coupon.php and the cart
+//  page's own form had no limit at all.
+//
+//  Two buckets, both through the shared database-backed limiter:
+//    coupon.try   every attempt, generous, so a real shopper is never stopped
+//    coupon.fail  only wrong codes, tight, so guessing costs something
+//  Both are keyed on the address AND on the basket/account, so neither a
+//  shared office address nor a fresh cookie hands out a new quota. A code that
+//  turns out to be real clears the failure bucket, which is why a mistyped
+//  first attempt never blocks the second.
+// ---------------------------------------------------------------------------
+
+/** The identities a coupon attempt is counted against. */
+function coupon_guess_keys(): array
+{
+    $keys = ['ip:' . client_ip()];
+
+    $userId = current_user_id();
+    if ($userId !== null) {
+        return array_merge($keys, ['user:' . $userId]);
+    }
+
+    // Only a basket that EXISTS gets a key of its own. A visitor who has not
+    // started one has cart_id() === 0, and "cart:0" was therefore a single
+    // bucket shared by every basket-less visitor on the internet: thirty tries
+    // from one empty session spent it, and the next such visitor - any address,
+    // any browser - was told "Too many coupon attempts" on their first try.
+    // The address key still holds the guesser; this one only ever had to stop
+    // somebody spreading the guessing across baskets of their own.
+    $cartId = cart_id();
+    if ($cartId > 0) {
+        $keys[] = 'cart:' . $cartId;
+    }
+
+    return $keys;
+}
+
+/**
+ * May this visitor try another coupon code?
+ *
+ * @return array{ok:bool, message:string, retry_after:int}
+ */
+function coupon_guess_allowed(): array
+{
+    foreach (coupon_guess_keys() as $key) {
+        if (!rate_limit_allows('coupon.fail', $key, 10, 900)) {
+            return [
+                'ok' => false,
+                'message' => 'Too many coupon attempts. Please wait a few minutes and try again.',
+                'retry_after' => rate_limit_retry_after(900),
+            ];
+        }
+        if (!rate_limit_attempt('coupon.try', $key, 30, 300)) {
+            return [
+                'ok' => false,
+                'message' => 'Too many coupon attempts. Please wait a few minutes and try again.',
+                'retry_after' => rate_limit_retry_after(300),
+            ];
+        }
+    }
+
+    return ['ok' => true, 'message' => '', 'retry_after' => 0];
+}
+
+/**
+ * Record how an attempt turned out.
+ *
+ * Only a code that does not exist, is not live or is exhausted counts as a
+ * guess; "you have already used this" or "add ₹200 more" came from somebody
+ * holding a real code, and charging them for it would lock out the customer
+ * the coupon was issued to.
+ */
+function coupon_guess_record(?string $reason): void
+{
+    if ($reason === null) {
+        // A code that turned out to be real. Forgiving the failures before it
+        // is what keeps a mistyped first attempt from costing anything.
+        foreach (coupon_guess_keys() as $key) {
+            rate_limit_clear('coupon.fail', $key);
+        }
+        return;
+    }
+
+    if (!in_array($reason, ['unknown', 'inactive', 'schedule', 'exhausted'], true)) {
+        return;
+    }
+
+    $spent = false;
+    foreach (coupon_guess_keys() as $key) {
+        rate_limit_attempt('coupon.fail', $key, 10, 900);
+        // The attempt that used the budget up is the one worth telling the
+        // admin about - once, not once per refused try afterwards.
+        if (!rate_limit_allows('coupon.fail', $key, 10, 900)) {
+            $spent = true;
+        }
+    }
+
+    if ($spent) {
+        security_event('coupon.guess_burst', 'medium', [
+            'reason' => $reason,
+        ], current_user_id(), current_user_id() === null ? null : 'customer');
+    }
+}
+
 /** Attach a validated coupon to the cart. */
 function cart_apply_coupon(string $code): array
 {
+    $allowed = coupon_guess_allowed();
+    if (!$allowed['ok']) {
+        return ['ok' => false, 'message' => $allowed['message'], 'rate_limited' => true];
+    }
+
     $items = cart_items();
     if ($items === []) {
         return ['ok' => false, 'message' => 'Your cart is empty.'];
@@ -830,6 +1232,7 @@ function cart_apply_coupon(string $code): array
 
     $subtotal = array_sum(array_column($items, 'subtotal'));
     $result = validate_coupon($code, money_round((float) $subtotal), $items);
+    coupon_guess_record($result['ok'] ? null : ($result['reason'] ?? 'unknown'));
 
     if (!$result['ok']) {
         return ['ok' => false, 'message' => $result['message']];
@@ -844,17 +1247,25 @@ function cart_apply_coupon(string $code): array
     // redirects straight after, which rebuilds the memo in a new request;
     // an AJAX caller that reads cart_totals() in THIS request would
     // otherwise be handed the discount from before the coupon was applied.
-    get_or_create_cart(true);
+    cart_row(true);
 
     return ['ok' => true, 'message' => 'Coupon "' . $result['coupon']['code'] . '" applied.', 'discount' => $result['discount']];
 }
 
 function cart_remove_coupon(): void
 {
-    Database::update('carts', ['coupon_id' => null, 'coupon_code' => null], '`id` = :id', ['id' => cart_id()]);
+    $cartId = cart_id();
+    if ($cartId === 0) {
+        // Nothing to detach, and nothing worth minting a cart row for: this
+        // endpoint is reachable from any session, and creating one here would
+        // put back the empty rows cart_row() was split out to stop.
+        return;
+    }
+
+    Database::update('carts', ['coupon_id' => null, 'coupon_code' => null], '`id` = :id', ['id' => $cartId]);
     // Same reason as cart_apply_coupon(): without this a caller that reads
     // the totals in the same request still sees the removed coupon.
-    get_or_create_cart(true);
+    cart_row(true);
 }
 
 // ===========================================================================
@@ -1571,10 +1982,13 @@ function cart_combo_groups(?array $items = null): array
 
     $out = [];
     foreach ($groups as $group => $data) {
-        $combo = combo_find($data['combo_id'], true);
+        // Live only. This used to pass anyStatus, so a set the store had
+        // switched off - or one whose end_date had passed - went on taking its
+        // saving off the basket for as long as the lines sat there. The
+        // products stay; they are still real, they simply stop being a set and
+        // fall through to the loose list at their own prices.
+        $combo = combo_find($data['combo_id']);
         if ($combo === null) {
-            // The combo was deleted after it went in the basket. The products
-            // stay - they are still real - they simply stop being a set.
             continue;
         }
 
@@ -1629,6 +2043,23 @@ function cart_combo_discount(?array $items = null): float
 }
 
 /**
+ * How many whole sets of one combo the basket already holds, across every
+ * group. combos.max_per_order is a limit on the order, so it has to be counted
+ * this way rather than per add-to-cart click.
+ */
+function combo_sets_in_cart(int $comboId, ?array $items = null): int
+{
+    $sets = 0;
+    foreach (cart_combo_groups($items) as $group) {
+        if ((int) $group['combo']['id'] === $comboId) {
+            $sets += (int) $group['sets'];
+        }
+    }
+
+    return $sets;
+}
+
+/**
  * Put a combo in the basket.
  *
  * Adds the component lines the cart already knows how to hold, tagged with one
@@ -1648,12 +2079,25 @@ function cart_add_combo(int $comboId, int $quantity = 1): array
     }
 
     $quantity = max(1, $quantity);
-    $ceiling  = min(combo_available_sets($combo, $items), max(1, (int) $combo['max_per_order']));
+
+    // max_per_order is a cap on the basket, not on one click: every add-combo
+    // call minted a fresh group, so three calls each at the cap put three
+    // times the cap in the cart and create_order() never looked.
+    $already  = combo_sets_in_cart($comboId);
+    $ceiling  = min(
+        combo_available_sets($combo, $items),
+        max(1, (int) $combo['max_per_order']) - $already
+    );
     if ($quantity > $ceiling) {
         $quantity = $ceiling;
     }
     if ($quantity < 1) {
-        return ['ok' => false, 'message' => 'That combo is out of stock.'];
+        return [
+            'ok' => false,
+            'message' => $already > 0
+                ? 'You already have the most of this combo we can sell in one order.'
+                : 'That combo is out of stock.',
+        ];
     }
 
     $cartId = (int) get_or_create_cart()['id'];

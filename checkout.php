@@ -67,7 +67,14 @@ if (is_post()) {
 
     if ($result['ok']) {
         $orderNumber = (string) $result['order']['order_number'];
-        remember_placed_order($orderNumber);
+        // Only a guest's order is remembered in the session - see
+        // remember_placed_order(). This call site was missed when the API one
+        // was fixed, so the no-JavaScript checkout went on writing a claim for
+        // a signed-in customer: a claim they do not need, on the one order
+        // lookup that does not ask who you are.
+        remember_placed_order($orderNumber, $result['order']['user_id'] === null
+            ? null
+            : (int) $result['order']['user_id']);
         redirect(url('order-success.php?order=' . rawurlencode($orderNumber)));
     }
 
@@ -88,7 +95,6 @@ $value = static function (string $key, $default = '') use ($old): string {
 };
 
 $items  = cart_items();
-$totals = cart_totals($items);
 
 $shippingMethods = Database::fetchAll(
     "SELECT * FROM `shipping_methods` WHERE `status` = 'active' ORDER BY `sort_order`, `id`"
@@ -101,6 +107,15 @@ $defaultShipping = $value('shipping_method', in_array(SHIPPING_STANDARD, $shippi
     : (string) ($shippingCodes[0] ?? SHIPPING_STANDARD));
 $defaultPayment  = $value('payment_method', $paymentMethods === [] ? '' : (string) $paymentMethods[0]['code']);
 $billingSame     = $old === [] ? true : !empty($old['billing_same']);
+
+// Priced for the delivery and payment the form is actually showing, not for
+// "no method chosen". The summary panel is what the shopper agrees to and what
+// expected_total carries, so a COD handling fee that create_order() will add
+// has to be in both. Quoting without the method printed a total ₹49 under the
+// one the order came to, and the no-JavaScript checkout refused its own page.
+// With JavaScript, cart.js repaints this panel and the hidden field together
+// every time the choice changes.
+$totals = cart_totals($items, $defaultShipping, $defaultPayment === '' ? null : $defaultPayment);
 
 $defaultAddressId = 0;
 foreach ($addresses as $address) {
@@ -154,6 +169,14 @@ $invalid = static fn (string $name): string => error_for($errors, $name) ? ' is-
 
     <form method="post" action="<?= e(url('checkout.php')) ?>" id="sikCheckoutForm" novalidate>
         <?= csrf_field() ?>
+        <?php /* The figure the summary panel is showing right now. create_order()
+                 refuses the order when its own total differs, so a price, a
+                 coupon or an offer that moves between rendering this page and
+                 pressing the button sends the shopper back to look rather than
+                 charging them a total they never agreed to. cart.js keeps it in
+                 step every time the panel is repainted. */ ?>
+        <input type="hidden" name="expected_total" data-expected-total
+               value="<?= e(number_format((float) $totals['total'], 2, '.', '')) ?>">
 
         <div class="sik-checkout">
             <div class="sik-checkout__main">
@@ -564,13 +587,16 @@ $invalid = static fn (string $name): string => error_for($errors, $name) ? ' is-
                             <span>Delivery</span>
                             <span data-total="shipping"><?= e($totals['display']['shipping']) ?></span>
                         </div>
-                        <div class="sik-summary__row" data-total-row="payment_charge" hidden>
+                        <?php /* Rendered, not blank-and-hidden: the panel is quoted for the
+                                 payment method the form is showing, so the fee inside the
+                                 Total has to be named here from the first paint too. */ ?>
+                        <div class="sik-summary__row" data-total-row="payment_charge"<?= (float) $totals['payment_charge'] > 0 ? '' : ' hidden' ?>>
                             <span>Payment handling fee</span>
-                            <span data-total="payment_charge"><?= e(money(0)) ?></span>
+                            <span data-total="payment_charge"><?= e(money((float) $totals['payment_charge'])) ?></span>
                         </div>
-                        <div class="sik-summary__row" data-total-row="payment_discount" hidden>
+                        <div class="sik-summary__row" data-total-row="payment_discount"<?= (float) $totals['payment_discount'] > 0 ? '' : ' hidden' ?>>
                             <span>Payment discount</span>
-                            <span style="color:var(--sik-success-ink)" data-total="payment_discount">- <?= e(money(0)) ?></span>
+                            <span style="color:var(--sik-success-ink)" data-total="payment_discount">- <?= e(money((float) $totals['payment_discount'])) ?></span>
                         </div>
                         <div class="sik-summary__row" data-total-row="tax"<?= (float) $totals['tax'] > 0 ? '' : ' hidden' ?>>
                             <span><?= $totals['tax_inclusive'] ? 'Includes ' . e((string) $totals['tax_label']) : e((string) $totals['tax_label']) ?></span>

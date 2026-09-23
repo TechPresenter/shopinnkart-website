@@ -259,7 +259,11 @@ function email_template_sample_vars(): array
         ? order_notification_vars($order)
         : [
             'customer_name' => 'Sample Customer',
-            'order_number'  => 'SIK' . date('Ymd') . '0001',
+            // The shape generate_order_number() now writes: prefix, date and a
+            // random suffix. A counter-style sample here taught staff to expect
+            // a number the store has not issued since order numbers stopped
+            // counting the day's orders.
+            'order_number'  => (string) setting('order_prefix', ORDER_PREFIX) . '-' . date('Ymd') . '-7KQ4MX',
             'order_total'   => money(2499),
             'order_date'    => format_date(date('Y-m-d')),
         ];

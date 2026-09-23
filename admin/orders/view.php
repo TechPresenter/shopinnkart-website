@@ -743,6 +743,21 @@ require ADMIN_PATH . '/includes/header.php';
                             <span class="ad-muted">Amount paid</span>
                             <span><?= e(money((float) $invoice['amount_paid'])) ?></span>
                         </div>
+                        <?php // What became of it. A cancelled invoice declared no
+                              // supply; a credit note reverses one that stands. ?>
+                        <?php if ((string) $invoice['status'] === 'cancelled'): ?>
+                            <div style="display:flex;justify-content:space-between;gap:12px">
+                                <span class="ad-muted">Status</span>
+                                <span style="color:#b91c1c;font-weight:600">Cancelled &mdash; nothing supplied</span>
+                            </div>
+                        <?php endif; ?>
+                        <?php foreach (get_credit_notes_for_order($orderId) as $creditNote): ?>
+                            <div style="display:flex;justify-content:space-between;gap:12px">
+                                <span class="ad-muted">Credit note</span>
+                                <span class="ad-mono"><?= e((string) $creditNote['note_number']) ?>
+                                    &middot; <?= e(money((float) $creditNote['total_amount'])) ?></span>
+                            </div>
+                        <?php endforeach; ?>
                         <?php if ((float) $invoice['balance_due'] > 0): ?>
                             <div style="display:flex;justify-content:space-between;gap:12px">
                                 <span class="ad-muted">Balance due</span>

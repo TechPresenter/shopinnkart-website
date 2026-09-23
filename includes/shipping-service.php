@@ -1622,8 +1622,12 @@ function shipping_order_block_reason(array $order): ?string
     }
     // Prepaid means paid first. An abandoned card payment leaves the order
     // pending with nothing collected; shipping it gives the goods away.
+    // A partially refunded order HAS been paid - part of it has gone back, as
+    // a price adjustment does - so it may still be dispatched. A fully
+    // refunded one may not: there is nothing left holding the goods.
     $isCod = strtolower((string) ($order['payment_method'] ?? '')) === 'cod';
-    if (!$isCod && (string) ($order['payment_status'] ?? '') !== PAYMENT_STATUS_PAID) {
+    if (!$isCod && !in_array((string) ($order['payment_status'] ?? ''),
+        [PAYMENT_STATUS_PAID, PAYMENT_STATUS_PARTIALLY_REFUNDED], true)) {
         return 'This prepaid order has not been paid yet.';
     }
     return null;

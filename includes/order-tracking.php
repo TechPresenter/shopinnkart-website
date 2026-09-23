@@ -493,6 +493,7 @@ function order_tracking_panel_html(array $order, ?array $items = null, array $op
         PAYMENT_STATUS_PENDING  => 'amber',
         PAYMENT_STATUS_PAID     => 'green',
         PAYMENT_STATUS_FAILED   => 'red',
+        PAYMENT_STATUS_PARTIALLY_REFUNDED => 'gray',
         PAYMENT_STATUS_REFUNDED => 'gray',
     ];
 

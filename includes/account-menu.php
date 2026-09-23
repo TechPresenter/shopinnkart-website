@@ -40,6 +40,9 @@ function account_menu_feature_live(string $url): bool
     return match (account_menu_key($url)) {
         'wishlist' => wishlist_shows_on('header'),
         'compare'  => compare_shows_on('header'),
+        // account-security.php redirects when the owner has customer 2FA off,
+        // so the menu must not offer a destination that bounces straight back.
+        'account-security' => mfa_customers_enabled(),
         default    => true,
     };
 }

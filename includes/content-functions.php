@@ -117,6 +117,24 @@ function content_tokens(): array
     // A percentage reads as "18", not "18.00", but must survive 12.5.
     $rate = (string) setting_float('default_tax_rate', 18.0);
 
+    // The COD figures a policy page quotes are the ones checkout will actually
+    // apply, not a second copy of them kept on another screen. The fee is the
+    // payment_methods row's extra_charge (Settings > Payment) - the only figure
+    // create_order() charges - and the ceiling is whichever limit bites first,
+    // that row's max_amount or settings.cod_max_amount. settings.cod_charge
+    // survives only as the fallback for a store with no active COD row.
+    $codMethod = Database::fetch(
+        "SELECT `extra_charge`, `max_amount` FROM `payment_methods`
+          WHERE `code` = :code AND `status` = 'active' LIMIT 1",
+        ['code' => PAYMENT_METHOD_COD]
+    );
+    $codFee = $codMethod !== null ? (float) $codMethod['extra_charge'] : setting_float('cod_charge', 0);
+    $codCap = setting_float('cod_max_amount', 50000);
+    $rowCap = $codMethod === null || $codMethod['max_amount'] === null ? 0.0 : (float) $codMethod['max_amount'];
+    if ($rowCap > 0 && ($codCap <= 0 || $rowCap < $codCap)) {
+        $codCap = $rowCap;
+    }
+
     $tokens = [
         'store_name'     => $text('store_name') !== '' ? $text('store_name') : SITE_NAME,
         'store_email'    => $text('store_email'),
@@ -137,8 +155,8 @@ function content_tokens(): array
 
         'shipping_cost'           => money(setting_float('default_shipping_cost', 0)),
         'free_shipping_threshold' => money(setting_float('free_shipping_threshold', 0)),
-        'cod_charge'              => money(setting_float('cod_charge', 0)),
-        'cod_max_amount'          => money(setting_float('cod_max_amount', 50000)),
+        'cod_charge'              => money($codFee),
+        'cod_max_amount'          => money($codCap),
 
         'free_shipping_enabled' => $flag('free_shipping_enabled'),
         'cod_enabled'           => $flag('cod_enabled'),

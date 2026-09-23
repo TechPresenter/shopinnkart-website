@@ -21,6 +21,25 @@ declare(strict_types=1);
 const WEBHOOK_GATEWAYS = ['razorpay', 'stripe', 'cashfree', 'payu'];
 
 /**
+ * Gateways whose payloads carry the currency of the payment.
+ *
+ * It matters because a paid event is refused when it cannot prove its
+ * currency: an account that can accept USD as well as INR would otherwise let
+ * a genuine, signed payment of the same NUMBER in the cheaper currency settle
+ * an INR order. PayU's form POST has no currency field anywhere in the scheme
+ * - the merchant account itself is single-currency - so requiring one there
+ * would refuse every real PayU payment. It is exempt by protocol, not by
+ * convenience, and the amount and order matching still apply to it.
+ */
+const WEBHOOK_GATEWAYS_WITH_CURRENCY = ['razorpay', 'stripe', 'cashfree'];
+
+/** Does this gateway tell us the currency it charged in? */
+function webhook_gateway_reports_currency(string $gateway): bool
+{
+    return in_array(strtolower($gateway), WEBHOOK_GATEWAYS_WITH_CURRENCY, true);
+}
+
+/**
  * Config keys whose value is a credential, not a setting.
  *
  * Everything named here is encrypted at rest with secret_encrypt() and is
@@ -269,7 +288,11 @@ function webhook_verify_signature(string $gateway, string $rawBody, array $heade
  * Translate a gateway payload into the shape payment_record_event() expects.
  *
  * Only the fields needed to identify the order and the outcome are read; the
- * amount is always re-checked against the order downstream.
+ * amount AND the currency are re-checked against the order downstream, and an
+ * event that carries neither is refused there rather than assumed to be right.
+ * `amount` and `currency` are deliberately null when the payload does not
+ * carry them - a default would be a guess, and a guess is what let a payload
+ * with no amount confirm an order.
  *
  * @return array{ok:bool, event:array, reason:string}
  */
@@ -309,6 +332,7 @@ function webhook_normalise_event(string $gateway, string $rawBody, array $decode
                 'status'       => $status,
                 // Razorpay reports paise.
                 'amount'       => isset($entity['amount']) ? ((float) $entity['amount']) / 100 : null,
+                'currency'     => isset($entity['currency']) ? strtoupper((string) $entity['currency']) : null,
                 'reference'    => (string) ($entity['id'] ?? ''),
                 'message'      => (string) ($entity['error_description'] ?? ''),
                 'payload'      => $decoded,
@@ -343,6 +367,8 @@ function webhook_normalise_event(string $gateway, string $rawBody, array $decode
                 'amount'       => isset($object['amount_received'])
                     ? ((float) $object['amount_received']) / 100
                     : (isset($object['amount_total']) ? ((float) $object['amount_total']) / 100 : null),
+                // Stripe lowercases its currency codes.
+                'currency'     => isset($object['currency']) ? strtoupper((string) $object['currency']) : null,
                 'reference'    => (string) ($object['id'] ?? ''),
                 'message'      => (string) ($object['last_payment_error']['message'] ?? ''),
                 'payload'      => $decoded,
@@ -372,6 +398,9 @@ function webhook_normalise_event(string $gateway, string $rawBody, array $decode
                 'order_number' => (string) ($order['order_tags']['order_number'] ?? ($order['order_id'] ?? '')),
                 'status'       => $status,
                 'amount'       => isset($payment['payment_amount']) ? (float) $payment['payment_amount'] : null,
+                'currency'     => isset($payment['payment_currency'])
+                    ? strtoupper((string) $payment['payment_currency'])
+                    : (isset($order['order_currency']) ? strtoupper((string) $order['order_currency']) : null),
                 'reference'    => (string) ($payment['cf_payment_id'] ?? ''),
                 'message'      => (string) ($payment['payment_message'] ?? ''),
                 'payload'      => $decoded,
@@ -400,6 +429,9 @@ function webhook_normalise_event(string $gateway, string $rawBody, array $decode
                 'order_number' => (string) ($fields['txnid'] ?? ''),
                 'status'       => $status,
                 'amount'       => isset($fields['amount']) ? (float) $fields['amount'] : null,
+                // PayU's scheme carries no currency at all - see
+                // WEBHOOK_GATEWAYS_WITH_CURRENCY for why that is not a hole.
+                'currency'     => null,
                 'reference'    => (string) ($fields['mihpayid'] ?? ''),
                 'message'      => (string) ($fields['error_Message'] ?? ($fields['field9'] ?? '')),
                 'payload'      => $fields,
@@ -425,4 +457,69 @@ function webhook_rate_limit_hit(string $bucket, int $max, int $windowSeconds): b
     // an IPv6 address cannot overflow the 40-character bucket column and drop
     // every long address into one shared counter.
     return rate_limit_attempt('webhook', $bucket, $max, $windowSeconds);
+}
+
+// ===========================================================================
+//  Payment webhook throttle
+//
+//  Failed calls only, and a VERIFIED call is never refused by it - the same
+//  rule the courier hub arrived at (includes/shipping-functions.php). A
+//  gateway settling a busy hour pushes hundreds of deliveries from one egress
+//  address, and refusing one of those loses a payment: the gateway eventually
+//  gives up retrying. Anything that counts verified traffic also hands an
+//  anonymous caller a way to silence the gateway by spending the budget for
+//  it. Forging a verified call needs the HMAC secret, so "unlimited if signed"
+//  costs nothing.
+//
+//  The budget itself is the tight one the old code only PROMISED: the counter
+//  for failed verifications was recorded and its answer thrown away, so the
+//  only thing in force was a general 120/minute that counted genuine
+//  deliveries too.
+// ===========================================================================
+
+const PAYMENT_WEBHOOK_MAX_FAILURES = 10;
+const PAYMENT_WEBHOOK_WINDOW       = 300;
+const PAYMENT_WEBHOOK_BUCKET       = 'payment_webhook';
+
+/** How many refusals in a window are logged in full before only counted. */
+const PAYMENT_WEBHOOK_LOG_FAILURES = 3;
+
+/**
+ * The counter's key: the caller AND the gateway it named.
+ *
+ * On the address alone, noise aimed at one gateway's URL would spend the
+ * budget another gateway's real deliveries need. The gateway part is the
+ * RESOLVED code, never the string the caller sent - keyed on that, a prober
+ * would mint itself a fresh counter per request just by changing it.
+ */
+function payment_webhook_key(string $ip, string $gateway): string
+{
+    return $ip . '|' . ($gateway === '' ? '-' : mb_substr($gateway, 0, 40));
+}
+
+/**
+ * Record one failed call and say where it leaves the caller.
+ *
+ * @return array{count:int, quiet:bool, over:bool, tripped:bool}
+ */
+function payment_webhook_note_failure(string $key): array
+{
+    $count = (int) ceil(rate_limit_count(PAYMENT_WEBHOOK_BUCKET, $key, PAYMENT_WEBHOOK_WINDOW, true));
+
+    return [
+        'count'   => $count,
+        // Past this the refusal is counted but not written down: a stranger
+        // choosing both the body and the rate otherwise chooses how much of
+        // the error log to fill.
+        'quiet'   => $count > PAYMENT_WEBHOOK_LOG_FAILURES,
+        'over'    => $count > PAYMENT_WEBHOOK_MAX_FAILURES,
+        // The one call that crosses the line, so it is recorded once.
+        'tripped' => $count > PAYMENT_WEBHOOK_MAX_FAILURES && $count - 1 <= PAYMENT_WEBHOOK_MAX_FAILURES,
+    ];
+}
+
+/** Is this caller over its failure budget? Records nothing. */
+function payment_webhook_throttled(string $key): bool
+{
+    return !rate_limit_allows(PAYMENT_WEBHOOK_BUCKET, $key, PAYMENT_WEBHOOK_MAX_FAILURES, PAYMENT_WEBHOOK_WINDOW);
 }

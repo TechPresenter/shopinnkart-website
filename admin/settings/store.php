@@ -89,7 +89,7 @@ $spec = [
     'order_prefix' => [
         'type' => 'text', 'label' => 'Order number prefix', 'required' => true, 'max' => 10,
         'group' => 'order',
-        'help' => 'Order numbers are prefix + date + a daily counter.',
+        'help' => 'Order numbers are prefix + date + six random characters, so they cannot be counted or guessed.',
     ],
     'invoice_prefix' => [
         'type' => 'text', 'label' => 'Invoice prefix', 'required' => true, 'max' => 10,
@@ -193,7 +193,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <div class="ad-card__title">Orders</div>
                     <div class="ad-card__sub">
-                        Next order number would be
+                        Order numbers look like
                         <span class="ad-mono"><?= e(generate_order_number()) ?></span>
                     </div>
                 </div>

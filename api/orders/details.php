@@ -24,7 +24,7 @@ if ($orderId <= 0 && $orderNumber === '') {
     json_validation_error(['id' => 'An order id or order number is required.']);
 }
 
-// Answers 403 when the order exists but belongs to someone else.
+// Answers the same 404 whether the order is someone else's or does not exist.
 $order = api_require_own_order((int) $user['id'], $orderId, $orderNumber);
 $orderId = (int) $order['id'];
 

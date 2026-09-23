@@ -156,6 +156,14 @@
         // only when the item list was re-rendered, so a coupon left it stale.
         $$('#sikCartDrawerTotal').forEach(el => { el.textContent = totals.display.total; });
 
+        // The checkout form carries the total the customer is looking at, and
+        // the server refuses an order whose own total differs. Every repaint
+        // has to move it, or picking COD would fail the order it just priced.
+        $$('[data-expected-total]').forEach(function (el) {
+            const value = Number(totals.total);
+            if (!isNaN(value)) el.value = value.toFixed(2);
+        });
+
         // Free-shipping meter. free_ship_remaining is already 0 when delivery
         // is free for any reason, so this needs no rule of its own.
         $$('[data-ship-progress]').forEach(el => { el.style.width = totals.free_ship_progress + '%'; });

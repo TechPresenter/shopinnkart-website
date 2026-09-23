@@ -256,7 +256,9 @@ function invoice_build_data(array $order): array
     }
 
     $paymentStatus = (string) $order['payment_status'];
-    $amountPaid = in_array($paymentStatus, [PAYMENT_STATUS_PAID, PAYMENT_STATUS_REFUNDED], true)
+    // A refunded order WAS paid: the money came in and then went back out, and
+    // the going back out is the credit note's job to say, not this document's.
+    $amountPaid = in_array($paymentStatus, PAYMENT_STATUSES_SETTLED, true)
         ? $grandTotal
         : 0.0;
     $balanceDue = money_round(max(0.0, $grandTotal - $amountPaid));
@@ -621,9 +623,15 @@ function invoice_sync_payment(int $orderId): void
         return;
     }
 
+    // A cancelled invoice is a document for nothing: it owes nothing and
+    // nothing was paid against it, whatever the order says.
+    if ((string) $invoice['status'] === 'cancelled') {
+        return;
+    }
+
     $status = (string) $order['payment_status'];
     $total  = (float) $invoice['total_amount'];
-    $paid   = in_array($status, [PAYMENT_STATUS_PAID, PAYMENT_STATUS_REFUNDED], true) ? $total : 0.0;
+    $paid   = in_array($status, PAYMENT_STATUSES_SETTLED, true) ? $total : 0.0;
 
     if ($status === (string) $invoice['payment_status'] && abs($paid - (float) $invoice['amount_paid']) < 0.01) {
         return;
@@ -634,6 +642,300 @@ function invoice_sync_payment(int $orderId): void
         'amount_paid'    => money_round($paid),
         'balance_due'    => money_round(max(0.0, $total - $paid)),
     ], '`id` = :id', ['id' => (int) $invoice['id']]);
+}
+
+// ===========================================================================
+//  CANCELLING AND CREDITING
+//
+//  A tax invoice is a declaration of supply, and an "issued" one for goods
+//  that never left the building over-reports output tax - the customer could
+//  also download an invoice for an order that was cancelled the same hour.
+//  The honest treatment depends on whether anything was actually supplied, so
+//  there are two, and only one of them can apply to an order:
+//
+//    nothing supplied  the invoice is CANCELLED. There was no supply, so
+//                      there is nothing to declare and nothing to credit.
+//    supplied, then came back or was refunded
+//                      the invoice STANDS - withdrawing a document the buyer
+//                      may already have claimed input credit against is not
+//                      ours to do - and a numbered CREDIT NOTE in its own
+//                      series reverses it.
+// ===========================================================================
+
+/** Did this order ever leave us? */
+function order_was_supplied(array $order): bool
+{
+    return $order['shipped_at'] !== null
+        || $order['delivered_at'] !== null
+        || in_array((string) $order['status'], [
+            ORDER_STATUS_SHIPPED, ORDER_STATUS_OUT_FOR_DELIVERY,
+            ORDER_STATUS_DELIVERED, ORDER_STATUS_RETURNED,
+        ], true);
+}
+
+/** The credit note series for a date, e.g. "CRN-2026". Mirrors invoice_series(). */
+function credit_note_series(?string $date = null): string
+{
+    $timestamp = $date === null ? time() : (strtotime($date) ?: time());
+    $prefix = trim((string) setting('credit_note_prefix', 'CRN')) ?: 'CRN';
+
+    if ((string) setting('invoice_year_mode', 'calendar') === 'financial') {
+        $year  = (int) date('Y', $timestamp);
+        $month = (int) date('n', $timestamp);
+        $start = $month >= 4 ? $year : $year - 1;
+
+        return sprintf('%s-%d-%02d', $prefix, $start, ($start + 1) % 100);
+    }
+
+    return $prefix . '-' . date('Y', $timestamp);
+}
+
+/** Credit notes raised against an order, oldest first. */
+function get_credit_notes_for_order(int $orderId): array
+{
+    try {
+        return Database::fetchAll(
+            'SELECT * FROM `credit_notes` WHERE `order_id` = :o ORDER BY `id`',
+            ['o' => $orderId]
+        );
+    } catch (Throwable $e) {
+        // The table arrives with 2026_09_23_security_commerce_payments.php; a
+        // site mid-migration still renders its orders.
+        return [];
+    }
+}
+
+/** How much of an order has already been credited back. */
+function credit_notes_total(int $orderId): float
+{
+    try {
+        return money_round((float) Database::fetchColumn(
+            'SELECT COALESCE(SUM(`total_amount`), 0) FROM `credit_notes` WHERE `order_id` = :o',
+            ['o' => $orderId]
+        ));
+    } catch (Throwable $e) {
+        return 0.0;
+    }
+}
+
+/**
+ * Raise a numbered credit note against an order's invoice.
+ *
+ * @param float|null $amount What to credit. null means "whatever is left".
+ *        Never more than the invoice total less what has been credited
+ *        already, so two status moves for the same money raise one note's
+ *        worth of credit between them.
+ * @param string $cause Why, as a key: 'order:returned', 'refund:<event id>'.
+ *        UNIQUE(order_id, cause) is what makes a redelivery a no-op.
+ *
+ * @return array|null the credit note row, or null when there is nothing to credit
+ */
+function credit_note_issue(int $orderId, ?float $amount, string $cause, string $reason = ''): ?array
+{
+    try {
+        $invoice = get_invoice_for_order($orderId);
+        $order   = get_order($orderId);
+
+        if ($invoice === null || $order === null || (string) $invoice['status'] !== 'issued') {
+            return null;   // nothing was ever declared, so nothing to reverse
+        }
+
+        $existing = Database::fetch(
+            'SELECT * FROM `credit_notes` WHERE `order_id` = :o AND `cause` = :c LIMIT 1',
+            ['o' => $orderId, 'c' => $cause]
+        );
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $remaining = money_round((float) $invoice['total_amount'] - credit_notes_total($orderId));
+        $value = money_round(min($amount === null ? $remaining : max(0.0, $amount), $remaining));
+        if ($value < 0.01) {
+            return null;
+        }
+
+        $snapshot = invoice_snapshot($invoice);
+        $full = abs($value - (float) $invoice['total_amount']) < 0.01;
+
+        // Negative lines, which is what a credit note is. A partial credit
+        // cannot honestly be split across lines, so it carries one line saying
+        // exactly what it is against.
+        $lines = [];
+        if ($full) {
+            foreach ($snapshot['lines'] ?? [] as $index => $line) {
+                $lines[] = [
+                    'position'   => $index + 1,
+                    'name'       => (string) $line['name'],
+                    'sku'        => (string) ($line['sku'] ?? ''),
+                    'hsn'        => (string) ($line['hsn'] ?? ''),
+                    'quantity'   => -(int) $line['quantity'],
+                    'unit_price' => (float) $line['unit_price'],
+                    'taxable'    => -(float) $line['taxable'],
+                    'tax_rate'   => (float) $line['tax_rate'],
+                    'tax_amount' => -(float) $line['tax_amount'],
+                    'total'      => -(float) $line['total'],
+                ];
+            }
+        } else {
+            $lines[] = [
+                'position'   => 1,
+                'name'       => 'Credit against invoice ' . $invoice['invoice_number'],
+                'sku'        => '', 'hsn' => '', 'quantity' => -1,
+                'unit_price' => $value, 'taxable' => -$value, 'tax_rate' => 0.0,
+                'tax_amount' => 0.0, 'total' => -$value,
+            ];
+        }
+
+        // The tax being reversed, in the same proportion as the credit.
+        $share = (float) $invoice['total_amount'] > 0
+            ? $value / (float) $invoice['total_amount']
+            : 1.0;
+        $tax = money_round((float) $invoice['tax_amount'] * $share);
+
+        $issuedAt = date('Y-m-d H:i:s');
+        $series   = credit_note_series($issuedAt);
+        $sequence = invoice_next_sequence($series);
+        $number   = invoice_format_number($series, $sequence);
+
+        $noteId = Database::insert('credit_notes', [
+            'note_number'    => $number,
+            'series'         => $series,
+            'sequence_no'    => $sequence,
+            'invoice_id'     => (int) $invoice['id'],
+            'invoice_number' => (string) $invoice['invoice_number'],
+            'order_id'       => $orderId,
+            'order_number'   => (string) $order['order_number'],
+            'user_id'        => $order['user_id'] === null ? null : (int) $order['user_id'],
+            'customer_name'  => (string) $order['customer_name'],
+            'customer_email' => (string) $order['customer_email'],
+            'note_date'      => $issuedAt,
+            'currency'       => (string) $invoice['currency'],
+            'subtotal'       => money_round(-($value - $tax)),
+            'tax_amount'     => money_round(-$tax),
+            'total_amount'   => $value,
+            'reason'         => $reason !== '' ? mb_substr($reason, 0, 255) : null,
+            'cause'          => mb_substr($cause, 0, 60),
+            'snapshot'       => json_encode([
+                'company'  => $snapshot['company'] ?? invoice_company_details(),
+                'against'  => ['invoice' => (string) $invoice['invoice_number'], 'date' => (string) $invoice['invoice_date']],
+                'customer' => $snapshot['customer'] ?? [],
+                'billing'  => $snapshot['billing'] ?? [],
+                'lines'    => $lines,
+                'totals'   => ['credit' => $value, 'tax' => $tax, 'full' => $full],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]);
+
+        log_activity('credit_note.issued', 'invoice', (int) $invoice['id'],
+            'Credit note ' . $number . ' for ' . money($value) . ' against invoice ' . $invoice['invoice_number']);
+
+        // The stored PDF was rendered before this note existed and names no
+        // credit against it; the next download renders one that does.
+        invoice_pdf_invalidate($invoice);
+
+        return get_credit_note($noteId);
+    } catch (PDOException $e) {
+        // Lost the UNIQUE(order_id, cause) race: the winner's note is the answer.
+        if ($e->getCode() === '23000') {
+            return Database::fetch('SELECT * FROM `credit_notes` WHERE `order_id` = :o AND `cause` = :c LIMIT 1',
+                ['o' => $orderId, 'c' => $cause]);
+        }
+        ErrorHandler::log('error', 'Credit note failed for order ' . $orderId . ': ' . $e->getMessage());
+        return null;
+    } catch (Throwable $e) {
+        ErrorHandler::log('error', 'Credit note failed for order ' . $orderId . ': ' . $e->getMessage());
+        return null;
+    }
+}
+
+function get_credit_note(int $id): ?array
+{
+    return Database::fetch('SELECT * FROM `credit_notes` WHERE `id` = :id LIMIT 1', ['id' => $id]);
+}
+
+/**
+ * Credit a refund a gateway reported. Never throws: the money has already
+ * moved, and paperwork must not turn that into a webhook failure.
+ */
+function credit_note_for_refund(int $orderId, float $amount, string $cause, string $reason = ''): ?array
+{
+    return credit_note_issue($orderId, $amount, $cause, $reason);
+}
+
+/**
+ * Throw away a stored PDF so the next download renders the document as it now
+ * stands. The PDF is written once at issue time and served from disk after
+ * that, so without this a cancelled invoice kept handing out the live-looking
+ * copy that was rendered before anything went wrong.
+ */
+function invoice_pdf_invalidate(array $invoice): void
+{
+    try {
+        if (function_exists('invoice_pdf_path')) {
+            $file = invoice_pdf_path($invoice);
+            if ($file !== null) {
+                @unlink($file);
+            }
+        }
+
+        Database::update('invoices', [
+            'pdf_path' => null, 'pdf_filename' => null, 'pdf_size' => null,
+            'pdf_generated_at' => null, 'pdf_error' => null,
+        ], '`id` = :id', ['id' => (int) $invoice['id']]);
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Could not invalidate invoice PDF ' . ($invoice['invoice_number'] ?? '?') . ': ' . $e->getMessage());
+    }
+}
+
+/** Mark an order's invoice cancelled. Only ever for a supply that never happened. */
+function invoice_cancel_for_order(int $orderId, string $reason = ''): bool
+{
+    $invoice = get_invoice_for_order($orderId);
+    if ($invoice === null || (string) $invoice['status'] !== 'issued') {
+        return false;
+    }
+
+    Database::update('invoices', [
+        'status'      => 'cancelled',
+        'amount_paid' => 0.00,
+        'balance_due' => 0.00,
+    ], '`id` = :id', ['id' => (int) $invoice['id']]);
+
+    invoice_pdf_invalidate($invoice);
+
+    log_activity('invoice.cancelled', 'invoice', (int) $invoice['id'],
+        'Invoice ' . $invoice['invoice_number'] . ' cancelled' . ($reason !== '' ? ': ' . $reason : '.'));
+
+    return true;
+}
+
+/**
+ * The one entry point the order lifecycle calls when an order ends badly.
+ * Decides between the two honest treatments and applies exactly one.
+ */
+function invoice_settle_for_status(array $order, string $newStatus, ?string $reason = null): void
+{
+    if (!in_array($newStatus, [ORDER_STATUS_CANCELLED, ORDER_STATUS_RETURNED, ORDER_STATUS_REFUNDED], true)) {
+        return;
+    }
+
+    try {
+        if (get_invoice_for_order((int) $order['id']) === null) {
+            return;
+        }
+
+        $why = trim((string) ($reason ?? '')) !== ''
+            ? (string) $reason
+            : 'Order ' . (ORDER_STATUSES[$newStatus] ?? $newStatus);
+
+        if (order_was_supplied($order)) {
+            credit_note_issue((int) $order['id'], null, 'order:' . $newStatus, $why);
+            return;
+        }
+
+        invoice_cancel_for_order((int) $order['id'], $why);
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Invoice settlement failed for order ' . (int) $order['id'] . ': ' . $e->getMessage());
+    }
 }
 
 // ===========================================================================

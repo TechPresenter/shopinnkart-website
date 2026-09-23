@@ -9,6 +9,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../../includes/init.php';
+require_once __DIR__ . '/../includes/product-handler.php';
 require_once INCLUDES_PATH . '/widgets.php';
 
 api_require_method(['GET']);
@@ -33,13 +34,16 @@ if ($product === null) {
     json_error('That product is no longer available.', [], 404);
 }
 
-// Never ship buying prices or scheduling internals to the browser.
-foreach (['cost_price', 'hsn_code', 'vendor_id', 'published_at'] as $internal) {
-    unset($product[$internal]);
-}
-
+// The JSON answer is an ALLOWLIST (api_product_public), not the whole
+// decorated row minus a handful of keys. The list it replaced shipped
+// low_stock_threshold, sold_count, views, focus_keyword, schema_json, the
+// exact stock figure and the row timestamps to anyone who asked - and would
+// have shipped every internal column added to `products` after it.
+//
+// The Quick View branch below keeps working from the full row: it is rendered
+// here, server side, and puts only what it prints into the page.
 if (input('view', '') !== 'quick') {
-    json_success('OK', ['product' => $product]);
+    json_success('OK', ['product' => api_product_public($product)]);
 }
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,9 @@ api_require_csrf();
 cart_remove_coupon();
 
 // `carts` was just written - drop the memoised row so the totals below see it.
-get_or_create_cart(true);
+// cart_row(), not get_or_create_cart(): a session with no cart has nothing to
+// remove a coupon from, and must not be given one for asking.
+cart_row(true);
 
 $items = cart_items();
 

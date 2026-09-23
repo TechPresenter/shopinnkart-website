@@ -138,20 +138,43 @@ final class PaymentGatewayFactory
 // ===========================================================================
 
 /**
- * Sequential daily order number: SIK + YYYYMMDD + 4-digit counter.
- * The caller retries on a unique-key collision, which is the only race
- * this can lose.
+ * The alphabet an order number's random part is drawn from.
+ *
+ * Crockford's idea: no I, L, O, U, 0 or 1, so a number read out over the phone
+ * or copied off a printed invoice comes back as the one that was sent. 30
+ * symbols over 6 places is 729 million per day - guessing one is not a way in.
+ */
+const ORDER_NUMBER_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+const ORDER_NUMBER_RANDOM_LENGTH = 6;
+
+/**
+ * A human-readable, unguessable order number: SIK-20260923-7KQ4MX.
+ *
+ * It used to be the prefix, the date and COUNT(*) of the day's orders plus
+ * one. Anyone who placed a single order therefore learned the store's daily
+ * order count, and could write down every valid order number for that day -
+ * which left the customer's email address or 10-digit phone as the only thing
+ * between a stranger and the tracking page's name, address and items.
+ *
+ * The date stays because it is what makes the number readable and what support
+ * looks for first. The counter is gone; `orders`.`id` is still the sequence
+ * the books are kept in, and the invoice series is still unbroken.
+ *
+ * Nothing parses an order number - it is matched whole, everywhere - so orders
+ * placed before this change keep working unchanged, and both shapes travel
+ * through the /order/<number> route, which has always accepted hyphens.
  */
 function generate_order_number(): string
 {
     $prefix = (string) setting('order_prefix', ORDER_PREFIX);
-    $datePart = date('Ymd');
 
-    $todayCount = (int) Database::fetchColumn(
-        'SELECT COUNT(*) FROM `orders` WHERE DATE(`created_at`) = CURDATE()'
-    );
+    $random = '';
+    $last = strlen(ORDER_NUMBER_ALPHABET) - 1;
+    for ($i = 0; $i < ORDER_NUMBER_RANDOM_LENGTH; $i++) {
+        $random .= ORDER_NUMBER_ALPHABET[random_int(0, $last)];
+    }
 
-    return $prefix . $datePart . str_pad((string) ($todayCount + 1), 4, '0', STR_PAD_LEFT);
+    return $prefix . '-' . date('Ymd') . '-' . $random;
 }
 
 // ===========================================================================
@@ -237,7 +260,8 @@ function create_order(array $input): array
             // products.PRIMARY. restore_order_stock() walks them the same way,
             // so a checkout and a cancellation cannot deadlock either.
             $lines = Database::fetchAll(
-                'SELECT ci.`id` AS item_id, ci.`quantity`, ci.`product_id`, ci.`variant_id`
+                'SELECT ci.`id` AS item_id, ci.`quantity`, ci.`product_id`, ci.`variant_id`,
+                        ci.`combo_id`, ci.`combo_group`
                  FROM `cart_items` ci
                  WHERE ci.`cart_id` = :cid
                  ORDER BY ci.`product_id`, ci.`variant_id`, ci.`id`',
@@ -248,15 +272,35 @@ function create_order(array $input): array
                 throw new RuntimeException('EMPTY_CART');
             }
 
-            $items = [];
-            $subtotal = 0.0;
-
+            // ---- 3a. What is actually being asked for ---------------------
+            // Added up per (product, variant) across EVERY line, not line by
+            // line. One product on two lines - a combo component and a loose
+            // one - used to pass the same stock check twice, and adjust_stock()
+            // then hid the shortfall by clamping to zero: six units sold with
+            // four on the shelf, and stock_movements recorded stock_after = 0.
+            $wanted = [];
+            $perProduct = [];
             foreach ($lines as $line) {
+                $productId = (int) $line['product_id'];
+                $variantId = $line['variant_id'] === null ? null : (int) $line['variant_id'];
+                $key = $productId . ':' . ($variantId ?? '');
+                $quantity = max(1, (int) $line['quantity']);
+
+                $wanted[$key] = [
+                    'product_id' => $productId,
+                    'variant_id' => $variantId,
+                    'quantity'   => ($wanted[$key]['quantity'] ?? 0) + $quantity,
+                ];
+                $perProduct[$productId] = ($perProduct[$productId] ?? 0) + $quantity;
+            }
+
+            $locked = [];
+            foreach ($wanted as $key => $want) {
                 // FOR UPDATE holds the row until commit, so two simultaneous
                 // checkouts cannot both claim the last unit.
                 $product = Database::fetch(
                     'SELECT * FROM `products` WHERE `id` = :id FOR UPDATE',
-                    ['id' => (int) $line['product_id']]
+                    ['id' => $want['product_id']]
                 );
 
                 if ($product === null || $product['status'] !== 'active') {
@@ -264,111 +308,295 @@ function create_order(array $input): array
                 }
 
                 $variant = null;
-                if ($line['variant_id'] !== null) {
+                if ($want['variant_id'] !== null) {
                     $variant = Database::fetch(
                         'SELECT * FROM `product_variants` WHERE `id` = :id AND `product_id` = :pid FOR UPDATE',
-                        ['id' => (int) $line['variant_id'], 'pid' => (int) $product['id']]
+                        ['id' => $want['variant_id'], 'pid' => (int) $product['id']]
                     );
                     if ($variant === null || $variant['status'] !== 'active') {
                         throw new RuntimeException('UNAVAILABLE:' . $product['name']);
                     }
                 }
 
-                $quantity = max(1, (int) $line['quantity']);
                 $available = $variant !== null ? (int) $variant['stock'] : (int) $product['stock'];
-
-                if ($available < $quantity) {
-                    throw new RuntimeException(
-                        'STOCK:' . $product['name'] . '|' . $available
-                    );
+                if ($available < $want['quantity']) {
+                    throw new RuntimeException('STOCK:' . $product['name'] . '|' . $available);
                 }
 
-                // ---- 4. Price comes from the database, never the browser ---
-                $pricing = product_effective_price($product, $variant);
-                $lineSubtotal = money_round($pricing['price'] * $quantity);
-                $subtotal += $lineSubtotal;
+                // max_order_qty was read nowhere near checkout, so a guest-cart
+                // merge (ten plus ten) or a second combo group walked past it.
+                $cap = max(1, (int) $product['max_order_qty']);
+                if ($perProduct[(int) $product['id']] > $cap) {
+                    throw new RuntimeException('MAXQTY:' . $product['name'] . '|' . $cap);
+                }
 
-                $items[] = [
-                    'product'       => $product,
-                    'variant'       => $variant,
-                    'quantity'      => $quantity,
-                    'mrp'           => $pricing['mrp'],
-                    'price'         => $pricing['price'],
-                    'subtotal'      => $lineSubtotal,
-                    'tax_rate'      => (float) $product['tax_rate'],
-                    'cod_available' => (int) $product['cod_available'] === 1,
-                    'free_shipping' => (int) $product['free_shipping'] === 1,
-                ];
+                $locked[$key] = ['product' => $product, 'variant' => $variant];
             }
 
-            $subtotal = money_round($subtotal);
+            // ---- 3b. Promotions, locked and rationed ----------------------
+            // A flash sale or a deal caps how many units it covers. That cap
+            // was only tested when the price map was built, and the increment
+            // that followed had no WHERE guard at all, so one order for ten
+            // units took the last flash unit ten times over.
+            $flashRows = [];
+            $dealRows  = [];
+            $dealOf    = [];
+            $flashLeft = [];
+            $dealLeft  = [];
+
+            foreach (array_keys($perProduct) as $promoProductId) {
+                $flash = Database::fetch(
+                    "SELECT fsp.*, fs.`discount_type`, fs.`discount_value`
+                       FROM `flash_sale_products` fsp
+                       INNER JOIN `flash_sales` fs ON fs.`id` = fsp.`flash_sale_id`
+                      WHERE fsp.`product_id` = :pid AND fs.`status` = 'active'
+                        AND fs.`start_time` <= NOW() AND fs.`end_time` >= NOW()
+                      ORDER BY fsp.`id` LIMIT 1 FOR UPDATE",
+                    ['pid' => $promoProductId]
+                );
+                if ($flash !== null) {
+                    $flashRows[$promoProductId] = $flash;
+                    $flashLeft[$promoProductId] = $flash['stock_limit'] === null
+                        ? PHP_INT_MAX
+                        : max(0, (int) $flash['stock_limit'] - (int) $flash['stock_sold']);
+                }
+
+                $deal = Database::fetch(
+                    "SELECT d.*, dp.`deal_price`
+                       FROM `deals` d
+                       INNER JOIN `deal_products` dp ON dp.`deal_id` = d.`id`
+                      WHERE dp.`product_id` = :pid AND d.`status` = 'active'
+                        AND d.`start_time` <= NOW() AND d.`end_time` >= NOW()
+                      ORDER BY d.`id` LIMIT 1 FOR UPDATE",
+                    ['pid' => $promoProductId]
+                );
+                if ($deal !== null) {
+                    $dealId = (int) $deal['id'];
+                    $dealRows[$promoProductId] = $deal;
+                    $dealOf[$promoProductId]   = $dealId;
+                    $dealLeft[$dealId] = $dealLeft[$dealId] ?? ($deal['stock_limit'] === null
+                        ? PHP_INT_MAX
+                        : max(0, (int) $deal['stock_limit'] - (int) $deal['stock_sold']));
+                }
+            }
+
+            // ---- 4. Price comes from the database, never the browser -------
+            $items = [];
+            $flashClaims = [];
+            $dealClaims  = [];
+
+            foreach ($lines as $line) {
+                $productId = (int) $line['product_id'];
+                $variantId = $line['variant_id'] === null ? null : (int) $line['variant_id'];
+                $key = $productId . ':' . ($variantId ?? '');
+                $product = $locked[$key]['product'];
+                $variant = $locked[$key]['variant'];
+
+                $base   = product_base_price($product, $variant);
+                $normal = $base['price'];
+
+                // Cheapest promotion first, each limited to what it has left.
+                $candidates = [];
+                if (isset($flashRows[$productId])) {
+                    $candidates[] = [
+                        'price' => flash_row_price($flashRows[$productId], $product, $variant),
+                        'kind'  => 'flash',
+                        'key'   => $productId,
+                    ];
+                }
+                if (isset($dealRows[$productId])) {
+                    $candidates[] = [
+                        'price' => deal_row_price($dealRows[$productId], $product, $variant),
+                        'kind'  => 'deal',
+                        'key'   => $dealOf[$productId],
+                    ];
+                }
+                usort($candidates, static fn ($a, $b) => $a['price'] <=> $b['price']);
+
+                $remaining = max(1, (int) $line['quantity']);
+                $parts = [];
+                foreach ($candidates as $candidate) {
+                    if ($remaining <= 0 || $candidate['price'] >= $normal) {
+                        break;
+                    }
+                    $left = $candidate['kind'] === 'flash'
+                        ? ($flashLeft[$candidate['key']] ?? 0)
+                        : ($dealLeft[$candidate['key']] ?? 0);
+                    $take = max(0, min($remaining, $left));
+                    if ($take <= 0) {
+                        continue;
+                    }
+
+                    $parts[] = ['price' => $candidate['price'], 'quantity' => $take];
+                    $remaining -= $take;
+
+                    if ($candidate['kind'] === 'flash') {
+                        $flashLeft[$candidate['key']] -= $take;
+                        $flashRowId = (int) $flashRows[$candidate['key']]['id'];
+                        $flashClaims[$flashRowId] = ($flashClaims[$flashRowId] ?? 0) + $take;
+                    } else {
+                        $dealLeft[$candidate['key']] -= $take;
+                        $dealClaims[$candidate['key']] = ($dealClaims[$candidate['key']] ?? 0) + $take;
+                    }
+                }
+                // Whatever the promotion could not cover is sold at its own
+                // price, rather than the whole line getting a price the offer
+                // no longer has the stock to honour.
+                if ($remaining > 0) {
+                    $parts[] = ['price' => $normal, 'quantity' => $remaining];
+                }
+
+                foreach ($parts as $part) {
+                    $items[] = [
+                        'item_id'       => (int) $line['item_id'],
+                        'product'       => $product,
+                        'variant'       => $variant,
+                        'product_id'    => $productId,
+                        'variant_id'    => $variantId,
+                        'combo_id'      => $line['combo_id'] === null ? null : (int) $line['combo_id'],
+                        'combo_group'   => $line['combo_group'],
+                        'quantity'      => $part['quantity'],
+                        'mrp'           => $base['mrp'],
+                        'price'         => $part['price'],
+                        'tax_rate'      => (float) $product['tax_rate'],
+                        'cod_available' => (int) $product['cod_available'] === 1,
+                        'free_shipping' => (int) $product['free_shipping'] === 1,
+                    ];
+                }
+            }
+
+            // ---- 4a. The sets in the basket -------------------------------
+            // Derived from the WHOLE cart lines, before a part-covered flash
+            // sale split any of them: a set is counted in components, not in
+            // what each component happened to cost.
+            $comboGroups = cart_combo_groups(array_map(static fn ($line) => [
+                'item_id'     => (int) $line['item_id'],
+                'product_id'  => (int) $line['product_id'],
+                'quantity'    => max(1, (int) $line['quantity']),
+                'combo_id'    => $line['combo_id'] === null ? null : (int) $line['combo_id'],
+                'combo_group' => $line['combo_group'],
+            ], $lines));
+
+            // combos.max_per_order is a cap on the ORDER, and every add-combo
+            // call minted a new group, so it was only ever tested per click.
+            $setsPerCombo = [];
+            foreach ($comboGroups as $comboGroup) {
+                $comboKey = (int) $comboGroup['combo']['id'];
+                $setsPerCombo[$comboKey] = ($setsPerCombo[$comboKey] ?? 0) + (int) $comboGroup['sets'];
+            }
+            foreach ($setsPerCombo as $comboKey => $sets) {
+                $maxSets = max(1, (int) Database::fetchColumn(
+                    'SELECT `max_per_order` FROM `combos` WHERE `id` = :id',
+                    ['id' => $comboKey]
+                ));
+                if ($sets > $maxSets) {
+                    throw new RuntimeException('MAXCOMBO:' . $maxSets);
+                }
+            }
+
+            // ---- 5. Coupon: locked before it is tested --------------------
+            // A plain read let two simultaneous checkouts both see the last
+            // use available. The row is held from here through the conditional
+            // claim below, so only one of them can take it.
+            $cart = Database::fetch('SELECT * FROM `carts` WHERE `id` = :id', ['id' => $cartId]);
+            $couponRow = null;
+            if (!empty($cart['coupon_code'])) {
+                $couponRow = Database::fetch(
+                    'SELECT * FROM `coupons` WHERE UPPER(`code`) = :code LIMIT 1 FOR UPDATE',
+                    ['code' => strtoupper(trim((string) $cart['coupon_code']))]
+                );
+            }
+
+            $customerEmail = strtolower(trim((string) $input['customer_email']));
+            $customerPhone = (string) (normalize_phone((string) $input['customer_phone']) ?? $input['customer_phone']);
+
+            // ---- 6. ONE pricing engine decides the total ------------------
+            // The same cart_quote() the cart page and /api/checkout/totals
+            // call. This used to be a second, separate calculation with no
+            // combo logic in it at all, so a shopper who agreed to a set price
+            // was charged the full component price on the order, the payment
+            // row and the invoice.
+            $quote = cart_quote($items, [
+                'coupon_code'     => $cart['coupon_code'] ?? null,
+                'coupon'          => $couponRow,
+                // Read the per-customer count under a lock: this transaction's
+                // snapshot predates the other tab's commit.
+                'locking'         => true,
+                'combo_groups'    => $comboGroups,
+                'user_id'         => $userId,
+                'email'           => $customerEmail,
+                'phone'           => $customerPhone,
+                'shipping_method' => $shippingMethod,
+                'payment_method'  => $paymentMethod,
+            ]);
+
+            if (!$quote['coupon_ok']) {
+                // Not silently dropped any more: the customer agreed to a
+                // total that had this discount in it.
+                throw new RuntimeException('COUPON:' . $quote['coupon_message']);
+            }
+
+            $subtotal        = $quote['subtotal'];
+            $discount        = $quote['discount'];
+            $comboDiscount   = $quote['combo_discount'];
+            $shipping        = $quote['shipping'];
+            $tax             = $quote['tax'];
+            $taxInclusive    = $quote['tax_inclusive'];
+            $total           = $quote['total'];
+            $couponId        = $quote['coupon'] === null ? null : (int) $quote['coupon']['id'];
+            $couponCode      = $quote['coupon_code'];
+            // The payment cluster owns this row's status / min / max rules.
+            $methodRow       = $quote['payment_method_row'];
+            $paymentCharge   = $quote['payment_charge'];
+            $paymentDiscount = $quote['payment_discount'];
 
             $minOrder = setting_float('min_order_amount', 0);
             if ($minOrder > 0 && $subtotal < $minOrder) {
                 throw new RuntimeException('MINORDER:' . $minOrder);
             }
 
-            // ---- 5. Coupon (re-validated server side) --------------------
-            $cart = Database::fetch('SELECT * FROM `carts` WHERE `id` = :id', ['id' => $cartId]);
-            $discount = 0.0;
-            $couponId = null;
-            $couponCode = null;
-            $couponFreeShipping = false;
-
-            if (!empty($cart['coupon_code'])) {
-                $totalsItems = array_map(static fn ($i) => [
-                    'product_id' => (int) $i['product']['id'],
-                    'subtotal'   => $i['subtotal'],
-                    'quantity'   => $i['quantity'],
-                ], $items);
-
-                $couponResult = validate_coupon((string) $cart['coupon_code'], $subtotal, $totalsItems, $userId);
-                if ($couponResult['ok']) {
-                    $discount = money_round(min((float) $couponResult['discount'], $subtotal));
-                    $couponId = (int) $couponResult['coupon']['id'];
-                    $couponCode = (string) $couponResult['coupon']['code'];
-                    $couponFreeShipping = (bool) $couponResult['free_shipping'];
-                }
-                // An invalid coupon is silently dropped rather than blocking checkout.
+            // ---- 6b. The payment method's own rules -----------------------
+            //
+            // $methodRow is the ACTIVE payment_methods row the engine priced
+            // against (pricing_payment_method()), and a registered gateway
+            // class is not permission to use a method. 'cod' stays registered
+            // in PaymentGatewayFactory when the admin switches the COD row off
+            // on Settings > Payment - a different screen from
+            // settings.cod_enabled - and the order went through anyway, with
+            // the row's handling fee skipped along with the row: the customer
+            // paid neither the fee nor the posted price of the method.
+            if ($methodRow === null) {
+                throw new RuntimeException('GATEWAY:' . $gateway->label() . ' is not available right now.');
             }
 
-            // ---- 6. Shipping ---------------------------------------------
-            $allFreeShipping = true;
-            foreach ($items as $item) {
-                if (!$item['free_shipping']) {
-                    $allFreeShipping = false;
-                    break;
-                }
+            // The floor and ceiling the admin sets per method on that screen.
+            // They were saved, displayed and read by nothing: only
+            // settings.cod_max_amount was ever checked, so a COD ceiling set
+            // on the Payment screen did not hold. NULL means "no limit" there,
+            // which is what the screen's "No minimum" placeholder promises.
+            $payMin = $methodRow['min_amount'] === null ? null : (float) $methodRow['min_amount'];
+            $payMax = $methodRow['max_amount'] === null ? null : (float) $methodRow['max_amount'];
+
+            if ($payMin !== null && $payMin > 0 && $total < $payMin - 0.005) {
+                throw new RuntimeException(sprintf('PAYLIMIT:%s is for orders of %s and above.',
+                    (string) $methodRow['name'], money($payMin)));
             }
-            $shipping = calculate_shipping($subtotal - $discount, $shippingMethod, $allFreeShipping || $couponFreeShipping);
-
-            // ---- 7. Tax ---------------------------------------------------
-            $taxItems = array_map(static fn ($i) => ['subtotal' => $i['subtotal'], 'tax_rate' => $i['tax_rate']], $items);
-            $tax = calculate_tax($taxItems, $subtotal, $discount);
-            $taxInclusive = setting_bool('tax_inclusive', true);
-
-            // ---- 8. Payment surcharge ------------------------------------
-            $paymentCharge = 0.0;
-            $paymentDiscount = 0.0;
-            $methodRow = Database::fetch(
-                "SELECT * FROM `payment_methods` WHERE `code` = :code AND `status` = 'active' LIMIT 1",
-                ['code' => $paymentMethod]
-            );
-            if ($methodRow !== null) {
-                $paymentCharge = money_round((float) $methodRow['extra_charge']);
-                if ((float) $methodRow['discount_percent'] > 0) {
-                    $paymentDiscount = money_round(($subtotal - $discount) * ((float) $methodRow['discount_percent'] / 100));
-                }
+            if ($payMax !== null && $payMax > 0 && $total > $payMax + 0.005) {
+                throw new RuntimeException(sprintf('PAYLIMIT:%s is not available for orders above %s.',
+                    (string) $methodRow['name'], money($payMax)));
             }
 
-            // ---- 9. Grand total ------------------------------------------
-            $total = ($subtotal - $discount) + $shipping['amount'] + $paymentCharge - $paymentDiscount;
-            if (!$taxInclusive) {
-                $total += $tax;
+            // ---- 7. The total the customer actually confirmed -------------
+            // The checkout form carries the figure its summary panel showed.
+            // When the two differ something moved under the shopper, and they
+            // get to look again rather than be charged the difference.
+            $expectedTotal = $input['expected_total'] ?? null;
+            if ($expectedTotal !== null && $expectedTotal !== '' && is_numeric($expectedTotal)
+                && abs((float) $expectedTotal - $total) > 0.01) {
+                throw new RuntimeException('TOTALCHANGED:' . $total);
             }
-            $total = money_round(max(0.0, $total));
 
-            // ---- 10. Addresses -------------------------------------------
+            // ---- 8. Addresses ---------------------------------------------
             $billingSame = !empty($input['billing_same']) || empty($input['billing_address']);
             $estimatedDays = $pincodeRow !== null
                 ? (int) $pincodeRow['delivery_days']
@@ -378,8 +606,8 @@ function create_order(array $input): array
                 'order_number'      => '',
                 'user_id'           => $userId,
                 'customer_name'     => trim((string) $input['customer_name']),
-                'customer_email'    => strtolower(trim((string) $input['customer_email'])),
-                'customer_phone'    => (string) (normalize_phone((string) $input['customer_phone']) ?? $input['customer_phone']),
+                'customer_email'    => $customerEmail,
+                'customer_phone'    => $customerPhone,
 
                 'shipping_name'     => trim((string) ($input['shipping_name'] ?? $input['customer_name'])),
                 'shipping_phone'    => (string) (normalize_phone((string) ($input['shipping_phone'] ?? $input['customer_phone'])) ?? $input['customer_phone']),
@@ -401,6 +629,9 @@ function create_order(array $input): array
 
                 'subtotal'          => $subtotal,
                 'discount_amount'   => $discount,
+                // Stored on its own so the invoice, reports and the customer
+                // can all see what the set itself was worth.
+                'combo_discount'    => $comboDiscount,
                 'coupon_id'         => $couponId,
                 'coupon_code'       => $couponCode,
                 'shipping_amount'   => $shipping['amount'],
@@ -420,12 +651,12 @@ function create_order(array $input): array
                 'user_agent'        => user_agent(),
             ];
 
-            // ---- 11. Gateway pre-flight ----------------------------------
-            if (!$gateway->validate($orderData, ['items' => $items])) {
+            // ---- 9. Gateway pre-flight ------------------------------------
+            if (!$gateway->validate($orderData, ['items' => $quote['lines'], 'method' => $methodRow])) {
                 throw new RuntimeException('GATEWAY:' . $gateway->label() . ' is not available for this order.');
             }
 
-            // ---- 12. Insert the order (retrying on number collision) ------
+            // ---- 10. Insert the order (retrying on number collision) ------
             $orderId = 0;
             for ($attempt = 0; $attempt < 5; $attempt++) {
                 $orderData['order_number'] = generate_order_number();
@@ -433,14 +664,16 @@ function create_order(array $input): array
                     $orderId = Database::insert('orders', $orderData);
                     break;
                 } catch (PDOException $e) {
-                    // 23000 = integrity constraint violation (duplicate order_number)
+                    // 23000 = integrity constraint violation (duplicate order_number).
+                    // The next turn of the loop draws a fresh random number, so
+                    // there is nothing to patch up here: the fallback that used
+                    // to sit in this branch built a counter-style number
+                    // (SIK202609230001) - the very shape the random suffix
+                    // replaced - and it was dead code besides, overwritten at
+                    // the top of the retry before it could ever be inserted.
                     if ($e->getCode() !== '23000' || $attempt === 4) {
                         throw $e;
                     }
-                    // Nudge the counter and retry.
-                    $orderData['order_number'] = (string) setting('order_prefix', ORDER_PREFIX)
-                        . date('Ymd')
-                        . str_pad((string) random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
                 }
             }
 
@@ -448,14 +681,31 @@ function create_order(array $input): array
                 throw new RuntimeException('Could not allocate an order number.');
             }
 
-            // ---- 13. Order items + stock ---------------------------------
-            // A cart-level coupon reduces the taxable value of every line, so
-            // the same proportion is applied here that calculate_tax() used.
-            // Without it the line taxes would not sum to orders.tax_amount and
-            // the GST invoice would not reconcile.
-            $taxRatio = $subtotal > 0 ? max(0.0, ($subtotal - $discount) / $subtotal) : 1.0;
+            // ---- 11. Order items + stock ----------------------------------
+            // A cart-level discount reduces the taxable value of every line, so
+            // the same proportion the engine used is applied here. Without it
+            // the line taxes would not sum to orders.tax_amount and the GST
+            // invoice would not reconcile.
+            $taxRatio = $quote['tax_ratio'];
+            $comboNames = [];
 
-            foreach ($items as $item) {
+            // The ratio alone is not enough to make them reconcile.
+            // calculate_tax() adds the lines up unrounded and rounds ONCE;
+            // rounding every line here instead leaves a residue, so a
+            // three-line order came to ₹213.55 across its lines against the
+            // ₹213.56 on the order - and invoice.php prints both figures, the
+            // line table's sum and orders.tax_amount, a paisa apart on the same
+            // page. The last taxed line carries the difference, which is the
+            // usual way an apportioned tax is closed out.
+            $taxAssigned = 0.0;
+            $lastTaxedLine = null;
+            foreach ($quote['lines'] as $lineKey => $item) {
+                if ((float) $item['tax_rate'] > 0) {
+                    $lastTaxedLine = $lineKey;
+                }
+            }
+
+            foreach ($quote['lines'] as $lineKey => $item) {
                 $product = $item['product'];
                 $variant = $item['variant'];
                 $taxableValue = $item['subtotal'] * $taxRatio;
@@ -463,10 +713,28 @@ function create_order(array $input): array
                     ? money_round($taxableValue - ($taxableValue * 100 / (100 + $item['tax_rate'])))
                     : money_round($taxableValue * ($item['tax_rate'] / 100));
 
+                if ($lineKey === $lastTaxedLine) {
+                    $lineTax = money_round($tax - $taxAssigned);
+                }
+                $taxAssigned = money_round($taxAssigned + $lineTax);
+
+                $lineComboId = $item['combo_id'];
+                if ($lineComboId !== null && !array_key_exists($lineComboId, $comboNames)) {
+                    $comboNames[$lineComboId] = Database::fetchColumn(
+                        'SELECT `name` FROM `combos` WHERE `id` = :id',
+                        ['id' => $lineComboId]
+                    );
+                }
+
                 Database::insert('order_items', [
                     'order_id'      => $orderId,
                     'product_id'    => (int) $product['id'],
                     'variant_id'    => $variant !== null ? (int) $variant['id'] : null,
+                    // Which set this line belonged to, so a return, a refund
+                    // or a reorder can tell a bundle from a loose product.
+                    'combo_id'      => $lineComboId,
+                    'combo_name'    => $lineComboId === null ? null : ($comboNames[$lineComboId] ?? null),
+                    'combo_group'   => $item['combo_group'],
                     'vendor_id'     => $product['vendor_id'] !== null ? (int) $product['vendor_id'] : null,
                     'product_name'  => (string) $product['name'],
                     'product_sku'   => (string) ($variant['sku'] ?? $product['sku']),
@@ -495,36 +763,69 @@ function create_order(array $input): array
                     'UPDATE `products` SET `sold_count` = `sold_count` + :q WHERE `id` = :id',
                     ['q' => $item['quantity'], 'id' => (int) $product['id']]
                 );
-
-                // Burn down flash-sale and deal allocations.
-                Database::query(
-                    'UPDATE `flash_sale_products` fsp
-                     INNER JOIN `flash_sales` fs ON fs.`id` = fsp.`flash_sale_id`
-                     SET fsp.`stock_sold` = fsp.`stock_sold` + :q
-                     WHERE fsp.`product_id` = :pid AND fs.`status` = \'active\'
-                       AND fs.`start_time` <= NOW() AND fs.`end_time` >= NOW()',
-                    ['q' => $item['quantity'], 'pid' => (int) $product['id']]
-                );
-                Database::query(
-                    'UPDATE `deals` d
-                     INNER JOIN `deal_products` dp ON dp.`deal_id` = d.`id`
-                     SET d.`stock_sold` = d.`stock_sold` + :q
-                     WHERE dp.`product_id` = :pid AND d.`status` = \'active\'
-                       AND d.`start_time` <= NOW() AND d.`end_time` >= NOW()',
-                    ['q' => $item['quantity'], 'pid' => (int) $product['id']]
-                );
             }
 
-            // ---- 14. Coupon usage ----------------------------------------
+            // ---- 12. Burn down only the promotion units actually sold -----
+            foreach ($flashClaims as $flashRowId => $claimed) {
+                $taken = Database::query(
+                    'UPDATE `flash_sale_products` SET `stock_sold` = `stock_sold` + :q
+                      WHERE `id` = :id AND (`stock_limit` IS NULL OR `stock_sold` + :q2 <= `stock_limit`)',
+                    ['q' => $claimed, 'q2' => $claimed, 'id' => $flashRowId]
+                )->rowCount();
+                if ($taken === 0) {
+                    throw new RuntimeException('PROMOGONE');
+                }
+            }
+            foreach ($dealClaims as $claimDealId => $claimed) {
+                $taken = Database::query(
+                    'UPDATE `deals` SET `stock_sold` = `stock_sold` + :q
+                      WHERE `id` = :id AND (`stock_limit` IS NULL OR `stock_sold` + :q2 <= `stock_limit`)',
+                    ['q' => $claimed, 'q2' => $claimed, 'id' => $claimDealId]
+                )->rowCount();
+                if ($taken === 0) {
+                    throw new RuntimeException('PROMOGONE');
+                }
+            }
+
+            // ---- 13. Claim the combo allocations --------------------------
+            // combos.sold_count was never incremented anywhere, so a limited
+            // run ('track') never depleted and could be sold for ever.
+            foreach ($setsPerCombo as $comboKey => $sets) {
+                $taken = Database::query(
+                    "UPDATE `combos` SET `sold_count` = `sold_count` + :n
+                      WHERE `id` = :id
+                        AND (`stock_mode` <> 'track' OR `stock` IS NULL OR `sold_count` + :n2 <= `stock`)",
+                    ['n' => $sets, 'n2' => $sets, 'id' => $comboKey]
+                )->rowCount();
+                if ($taken === 0) {
+                    throw new RuntimeException('COMBOGONE');
+                }
+            }
+
+            // ---- 14. Claim the coupon -------------------------------------
             if ($couponId !== null) {
+                // Conditional: the limit is enforced by the database, so the
+                // loser of a race fails the order instead of quietly taking a
+                // use the coupon did not have.
+                $taken = Database::query(
+                    'UPDATE `coupons` SET `used_count` = `used_count` + 1
+                      WHERE `id` = :id AND (`usage_limit` IS NULL OR `used_count` < `usage_limit`)',
+                    ['id' => $couponId]
+                )->rowCount();
+                if ($taken === 0) {
+                    throw new RuntimeException('COUPON:That coupon has just been fully used. Please remove it and try again.');
+                }
+
                 Database::insert('coupon_usage', [
                     'coupon_id' => $couponId,
                     'user_id'   => $userId,
                     'order_id'  => $orderId,
                     'email'     => $orderData['customer_email'],
-                    'discount'  => $discount,
+                    // The identity the per-customer limit is counted on, so
+                    // signing out and checking out as a guest is not a reset.
+                    'phone'     => $orderData['customer_phone'],
+                    'discount'  => $quote['coupon_discount'],
                 ]);
-                Database::query('UPDATE `coupons` SET `used_count` = `used_count` + 1 WHERE `id` = :id', ['id' => $couponId]);
             }
 
             // ---- 15. Payment record --------------------------------------
@@ -575,8 +876,32 @@ function create_order(array $input): array
         if (strpos($message, 'MINORDER:') === 0) {
             return $fail('Minimum order value is ' . money((float) substr($message, 9)) . '.');
         }
+        if (strpos($message, 'MAXQTY:') === 0) {
+            [$name, $cap] = explode('|', substr($message, 7)) + ['', '1'];
+            return $fail(sprintf('You can order up to %d of "%s" per order. Please update your cart.', (int) $cap, $name));
+        }
+        if (strpos($message, 'MAXCOMBO:') === 0) {
+            return $fail('You can buy up to ' . (int) substr($message, 9) . ' of that combo per order. Please update your cart.');
+        }
+        if (strpos($message, 'COUPON:') === 0) {
+            return $fail(substr($message, 7), ['coupon_code' => 'Please review the coupon on your cart.']);
+        }
+        if (strpos($message, 'TOTALCHANGED:') === 0) {
+            return $fail(
+                'Your total changed to ' . money((float) substr($message, 13))
+                . ' while you were checking out. Please review your order and confirm again.'
+            );
+        }
+        if (strpos($message, 'STOCK_SHORT') === 0 || $message === 'PROMOGONE' || $message === 'COMBOGONE') {
+            return $fail('Something in your cart sold out while you were checking out. Please review your cart and try again.');
+        }
         if (strpos($message, 'GATEWAY:') === 0) {
             return $fail(substr($message, 8), ['payment_method' => 'Choose another payment method.']);
+        }
+        // The message is already the sentence the shopper reads: it names the
+        // method and the limit the admin set on it.
+        if (strpos($message, 'PAYLIMIT:') === 0) {
+            return $fail(substr($message, 9), ['payment_method' => 'Choose another payment method.']);
         }
 
         ErrorHandler::log('error', 'Order creation failed: ' . $message);
@@ -682,13 +1007,36 @@ function adjust_stock(
         return true;
     }
 
+    // A SALE may never quietly settle for less than it asked for. The old
+    // max(0, $before + $delta) hid a shortfall: two cart lines of the same
+    // product each passed their own stock check, the second decrement clamped
+    // to zero, and six units shipped with four on the shelf while
+    // stock_movements recorded a tidy stock_after = 0. A conditional UPDATE
+    // makes the database itself refuse, whatever the caller believed.
+    // Everything else - restocks, returns, admin corrections - keeps the
+    // clamp, because a count already out of step must still be correctable.
+    $strict = $delta < 0 && $movementType === 'order';
+    $take = -$delta;
+
     // FOR UPDATE: the latest committed stock, held until the caller commits.
     // A plain read inside a transaction can return an older snapshot, and the
     // absolute write below then undid another order's movement.
     if ($variantId !== null) {
         $before = (int) Database::fetchColumn('SELECT `stock` FROM `product_variants` WHERE `id` = :id FOR UPDATE', ['id' => $variantId]);
-        $after = max(0, $before + $delta);
-        Database::update('product_variants', ['stock' => $after], '`id` = :id', ['id' => $variantId]);
+
+        if ($strict) {
+            $sold = Database::query(
+                'UPDATE `product_variants` SET `stock` = `stock` - :q WHERE `id` = :id AND `stock` >= :q2',
+                ['q' => $take, 'q2' => $take, 'id' => $variantId]
+            )->rowCount();
+            if ($sold === 0) {
+                throw new RuntimeException('STOCK_SHORT:' . $productId);
+            }
+            $after = $before - $take;
+        } else {
+            $after = max(0, $before + $delta);
+            Database::update('product_variants', ['stock' => $after], '`id` = :id', ['id' => $variantId]);
+        }
 
         // Keep the parent product's stock as the sum of its variants.
         $variantTotal = (int) Database::fetchColumn(
@@ -698,8 +1046,20 @@ function adjust_stock(
         Database::update('products', ['stock' => $variantTotal], '`id` = :id', ['id' => $productId]);
     } else {
         $before = (int) Database::fetchColumn('SELECT `stock` FROM `products` WHERE `id` = :id FOR UPDATE', ['id' => $productId]);
-        $after = max(0, $before + $delta);
-        Database::update('products', ['stock' => $after], '`id` = :id', ['id' => $productId]);
+
+        if ($strict) {
+            $sold = Database::query(
+                'UPDATE `products` SET `stock` = `stock` - :q WHERE `id` = :id AND `stock` >= :q2',
+                ['q' => $take, 'q2' => $take, 'id' => $productId]
+            )->rowCount();
+            if ($sold === 0) {
+                throw new RuntimeException('STOCK_SHORT:' . $productId);
+            }
+            $after = $before - $take;
+        } else {
+            $after = max(0, $before + $delta);
+            Database::update('products', ['stock' => $after], '`id` = :id', ['id' => $productId]);
+        }
     }
 
     Database::insert('stock_movements', [
@@ -1172,7 +1532,10 @@ function update_order_status(
                 // Only money that was taken can be given back. An RTO'd COD
                 // order was never paid: marking it refunded showed the invoice
                 // paid in full and told the customer their money was on its way.
-                if ($order['payment_status'] === PAYMENT_STATUS_PAID) {
+                // A partially refunded order was paid, and is being refunded
+                // the rest of the way.
+                if (in_array((string) $order['payment_status'],
+                    [PAYMENT_STATUS_PAID, PAYMENT_STATUS_PARTIALLY_REFUNDED], true)) {
                     $update['payment_status'] = PAYMENT_STATUS_REFUNDED;
                     Database::update('payments', ['status' => PAYMENT_STATUS_REFUNDED], '`order_id` = :id', ['id' => $orderId]);
                 } else {
@@ -1219,12 +1582,20 @@ function update_order_status(
             $updated = get_order($orderId);
         }
 
-        // A cancellation or refund does not void the invoice — the document
-        // stands — but its payment figures follow the order. Delivery too:
-        // that is when COD is collected, and the invoice kept showing the
-        // whole amount due on a paid order.
+        // The invoice's payment figures follow the order. Delivery is when COD
+        // is collected, and the invoice kept showing the whole amount due on a
+        // paid order.
         if ($updated !== null && in_array($newStatus, [ORDER_STATUS_DELIVERED, ORDER_STATUS_CANCELLED, ORDER_STATUS_RETURNED, ORDER_STATUS_REFUNDED], true)) {
             invoice_sync_payment($orderId);
+        }
+
+        // An order that ends badly does not get to keep an "issued" tax
+        // invoice with its full taxable value: nothing supplied means the
+        // invoice is cancelled, and goods that WERE supplied get a numbered
+        // credit note against an invoice that stands. See
+        // invoice_settle_for_status() for why it is those two and not one.
+        if ($updated !== null) {
+            invoice_settle_for_status($updated, $newStatus, $note);
         }
 
         // Outbound email, then the in-app feed the customer sees under the bell.

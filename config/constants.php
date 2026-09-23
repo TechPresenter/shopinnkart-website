@@ -102,13 +102,29 @@ const REVENUE_ORDER_STATUSES_SQL = "'confirmed','processing','packed','shipped',
 const PAYMENT_STATUS_PENDING  = 'pending';
 const PAYMENT_STATUS_PAID     = 'paid';
 const PAYMENT_STATUS_FAILED   = 'failed';
+/**
+ * Some of the money came back, not all of it.
+ *
+ * Without this state a single Rs 1 refund marked a Rs 12,000 order "Refunded"
+ * — on the order, on the invoice and in the customer's email. The sum of
+ * `payment_refunds` decides which of the two a refund leaves the order in.
+ */
+const PAYMENT_STATUS_PARTIALLY_REFUNDED = 'partially_refunded';
 const PAYMENT_STATUS_REFUNDED = 'refunded';
 
 const PAYMENT_STATUSES = [
     PAYMENT_STATUS_PENDING  => 'Pending',
     PAYMENT_STATUS_PAID     => 'Paid',
     PAYMENT_STATUS_FAILED   => 'Failed',
+    PAYMENT_STATUS_PARTIALLY_REFUNDED => 'Partially refunded',
     PAYMENT_STATUS_REFUNDED => 'Refunded',
+];
+
+/** Payment states in which the customer's money is (still) with us. */
+const PAYMENT_STATUSES_SETTLED = [
+    PAYMENT_STATUS_PAID,
+    PAYMENT_STATUS_PARTIALLY_REFUNDED,
+    PAYMENT_STATUS_REFUNDED,
 ];
 
 const PAYMENT_METHOD_COD = 'cod';

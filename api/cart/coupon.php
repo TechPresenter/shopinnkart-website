@@ -42,6 +42,16 @@ if ($v->fails()) {
 $result = cart_apply_coupon((string) request_input('code', ''));
 
 if (!$result['ok']) {
+    // cart_apply_coupon() owns the guessing budget (see coupon_guess_allowed);
+    // an exhausted one is a 429 here rather than another 422, so the browser
+    // can tell "wrong code" from "stop trying" without reading the sentence.
+    if (!empty($result['rate_limited'])) {
+        if (!headers_sent()) {
+            header('Retry-After: ' . rate_limit_retry_after(900));
+        }
+        json_error($result['message'], [], 429, 'rate_limit');
+    }
+
     // 422, not 404: the code may well exist and simply not apply to this cart
     // (minimum spend, first-order only, expired). The message says which.
     json_error($result['message'], ['code' => $result['message']], 422);

@@ -497,7 +497,7 @@ function order_notification_vars(array $order, ?array $invoice = null): array
         // came back (RTO) is left at - and promised a refund of cash the
         // courier never collected.
         'refund_note'     => (float) $order['total_amount'] > 0
-            && in_array((string) $order['payment_status'], [PAYMENT_STATUS_PAID, PAYMENT_STATUS_REFUNDED], true)
+            && in_array((string) $order['payment_status'], PAYMENT_STATUSES_SETTLED, true)
             ? 'Any amount already paid is refunded to the original payment method within 5-7 working days.'
             : 'No amount was charged for this order.',
         'support_email'   => $storeEmail,

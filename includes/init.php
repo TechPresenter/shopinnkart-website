@@ -70,11 +70,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Rotate the session id periodically to blunt fixation attacks.
+// The rotation itself is in section 6c: it has to carry a guest's basket to
+// the new id, and cart-functions.php is not loaded yet at this point.
 if (!isset($_SESSION['_regenerated_at'])) {
-    $_SESSION['_regenerated_at'] = time();
-} elseif (time() - (int) $_SESSION['_regenerated_at'] > 1800) {
-    session_regenerate_id(true);
     $_SESSION['_regenerated_at'] = time();
 }
 
@@ -147,6 +145,22 @@ if (PHP_SAPI !== 'cli') {
     // "Keep me signed in": a valid token restores the session the browser no
     // longer has. Rotates the token; does nothing when there is no cookie.
     auth_remember_restore();
+}
+
+// ---------------------------------------------------------------------------
+// 6c. Session id rotation
+//
+// Rotated every 30 minutes to blunt fixation. A guest's cart is keyed on the
+// session id, so the new id has to be handed the cart the old one was holding:
+// rotating without that emptied a browsing shopper's basket every half hour
+// and left the filled row behind as an orphan. Nothing has been echoed yet,
+// so the new cookie can still go out.
+// ---------------------------------------------------------------------------
+if (PHP_SAPI !== 'cli' && time() - (int) ($_SESSION['_regenerated_at'] ?? time()) > 1800) {
+    $previousSessionId = session_id();
+    session_regenerate_id(true);
+    cart_session_rehome((string) $previousSessionId, (string) session_id());
+    $_SESSION['_regenerated_at'] = time();
 }
 
 // ---------------------------------------------------------------------------

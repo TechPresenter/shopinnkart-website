@@ -43,7 +43,7 @@ function api_place_order(): void
     $order = $result['order'];
     $orderNumber = (string) $order['order_number'];
 
-    remember_placed_order($orderNumber);
+    remember_placed_order($orderNumber, $order['user_id'] === null ? null : (int) $order['user_id']);
 
     json_success($result['message'], [
         'order_number' => $orderNumber,
@@ -53,12 +53,27 @@ function api_place_order(): void
 }
 
 /**
- * Keep freshly placed order numbers in the session.
- * A guest has no account to look the order up in, so order-success.php uses
- * this list to decide whether the visitor may see the confirmation.
+ * Keep freshly placed GUEST order numbers in the session.
+ *
+ * A guest has no account to look the order up in, so order-success.php,
+ * invoice.php and invoice-download.php use this list to decide whether the
+ * visitor may see the confirmation. It is the weakest claim the app accepts -
+ * anyone holding the cookie has it - so it is kept as small as it can be:
+ *
+ *   - an order placed by a signed-in customer is NOT recorded. That customer
+ *     reaches it through their account, which is a claim that survives a new
+ *     device and does not travel with a shared browser;
+ *   - auth_forget_order_claims() drops whatever is here on sign-in and on
+ *     sign-out. Before that, a customer who signed out on a family laptop left
+ *     their name, address, phone and invoice PDF readable by the next person
+ *     to use it - signed in as someone else, or not signed in at all.
  */
-function remember_placed_order(string $orderNumber): void
+function remember_placed_order(string $orderNumber, ?int $userId = null): void
 {
+    if ($userId !== null) {
+        return;
+    }
+
     $_SESSION['_last_order'] = $orderNumber;
 
     $recent = $_SESSION['_recent_orders'] ?? [];
@@ -166,7 +181,22 @@ function api_order_public(array $order): array
 }
 
 /**
- * Load an order the signed-in customer owns, or answer 403/404 and stop.
+ * The one answer every order lookup gives a customer who may not have it.
+ *
+ * "This order is not yours" (403) and "no such order" (404) are two different
+ * answers to the same question, and order ids are sequential: a customer could
+ * walk id=1,2,3... and read off which ones exist, which is the store's order
+ * volume, and then feed the valid numbers to the tracking page's email-or-
+ * phone guess. One answer for both tells them nothing they did not bring.
+ *
+ * Everything that resolves an order by id or number answers with THIS, word
+ * for word, so the pages cannot drift apart: order-details.php, invoice.php,
+ * invoice-download.php, order-success.php and the order API.
+ */
+const ORDER_NOT_FOUND_MESSAGE = 'We could not find that order.';
+
+/**
+ * Load an order the signed-in customer owns, or answer 404 and stop.
  * Guest orders (user_id NULL) are never reachable this way - they are looked
  * up through /api/orders/track.php instead.
  */
@@ -179,11 +209,10 @@ function api_require_own_order(int $userId, ?int $orderId, string $orderNumber =
         $order = get_order_by_number($orderNumber);
     }
 
-    if ($order === null) {
-        json_error('We could not find that order.', [], 404);
-    }
-    if ($order['user_id'] === null || (int) $order['user_id'] !== $userId) {
-        json_error('This order does not belong to your account.', [], 403);
+    // Deliberately one branch: "not yours" and "not here" are indistinguishable
+    // to the caller, down to the wording and the status code.
+    if ($order === null || $order['user_id'] === null || (int) $order['user_id'] !== $userId) {
+        json_error(ORDER_NOT_FOUND_MESSAGE, [], 404);
     }
 
     return $order;

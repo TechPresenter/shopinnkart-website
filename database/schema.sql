@@ -716,13 +716,19 @@ CREATE TABLE `coupon_usage` (
     `coupon_id`  INT UNSIGNED NOT NULL,
     `user_id`    INT UNSIGNED NULL,
     `order_id`   INT UNSIGNED NULL,
+    -- Identity, not session: the per-customer limit counts an account id
+    -- when there is one and the email/phone on the order either way, so
+    -- signing out and checking out as a guest is not a reset.
     `email`      VARCHAR(190) NULL,
+    `phone`      VARCHAR(20) NULL,
     `discount`   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `idx_usage_coupon` (`coupon_id`),
     KEY `idx_usage_user` (`user_id`),
     KEY `idx_usage_order` (`order_id`),
+    KEY `idx_usage_identity_email` (`coupon_id`, `email`),
+    KEY `idx_usage_identity_phone` (`coupon_id`, `phone`),
     CONSTRAINT `fk_usage_coupon` FOREIGN KEY (`coupon_id`) REFERENCES `coupons` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -810,6 +816,9 @@ CREATE TABLE `orders` (
 
     `subtotal`         DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     `discount_amount`  DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    -- The part of discount_amount a combo earned, kept apart from the
+    -- coupon's so the invoice and the reports can name it.
+    `combo_discount`   DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     `coupon_id`        INT UNSIGNED NULL,
     `coupon_code`      VARCHAR(60) NULL,
     `shipping_amount`  DECIMAL(12,2) NOT NULL DEFAULT 0.00,

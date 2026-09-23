@@ -42,8 +42,11 @@ $owns = $userId !== null && $order['user_id'] !== null && (int) $order['user_id'
  */
 $isStaff = admin_can('orders.view');
 
+// The same 404 as "no such order" above. A 403 here told a signed-in customer
+// walking sequential ids exactly which ones exist - the store's order volume,
+// and a list of valid numbers to try on the tracking page.
 if (!$owns && !$isStaff && !session_placed_order((string) $order['order_number'])) {
-    require __DIR__ . '/403.php';
+    require __DIR__ . '/404.php';
     exit;
 }
 
@@ -140,6 +143,34 @@ require INCLUDES_PATH . '/header.php';
             </button>
         </div>
     </div>
+
+    <?php
+    // A cancelled order must not hand out a document that reads like a live
+    // tax invoice. Which of the two notices shows depends on whether anything
+    // was actually supplied - see invoice_settle_for_status().
+    $isCancelledInvoice = $invoiceRecord !== null && (string) $invoiceRecord['status'] === 'cancelled';
+    $creditNotes = $invoiceRecord === null ? [] : get_credit_notes_for_order($orderId);
+    ?>
+
+    <?php if ($isCancelledInvoice): ?>
+        <div class="sik-alert sik-alert--warning" style="margin-bottom:var(--sp-4)">
+            <strong>This invoice has been cancelled.</strong>
+            Order <?= e((string) $order['order_number']) ?> was
+            <?= e(strtolower(ORDER_STATUSES[$order['status']] ?? (string) $order['status'])) ?>
+            before anything was dispatched, so nothing was supplied against it and nothing is owed.
+        </div>
+    <?php elseif ($creditNotes !== []): ?>
+        <div class="sik-alert sik-alert--info" style="margin-bottom:var(--sp-4)">
+            <strong>Credited.</strong>
+            <?= count($creditNotes) === 1 ? 'A credit note has' : count($creditNotes) . ' credit notes have' ?>
+            been raised against this invoice:
+            <?php foreach ($creditNotes as $index => $note): ?>
+                <?= $index > 0 ? ', ' : '' ?><strong><?= e((string) $note['note_number']) ?></strong>
+                for <?= e(money((float) $note['total_amount'])) ?>
+            <?php endforeach; ?>.
+            The invoice itself stands; the credit note reverses it.
+        </div>
+    <?php endif; ?>
 
     <div class="sik-invoice sik-panel">
 

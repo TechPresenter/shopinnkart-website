@@ -22,22 +22,16 @@ declare(strict_types=1);
  */
 function product_effective_price(array $product, ?array $variant = null): array
 {
-    $mrp = (float) ($variant['price'] ?? $product['price'] ?? 0);
-    $price = $mrp;
-    $source = 'mrp';
-
-    // Base sale price on the product or the chosen variant.
-    $salePrice = $variant !== null
-        ? ($variant['sale_price'] ?? null)
-        : ($product['sale_price'] ?? null);
-
-    if ($salePrice !== null && (float) $salePrice > 0 && (float) $salePrice < $mrp) {
-        $price = (float) $salePrice;
-        $source = 'sale';
-    }
+    $base = product_base_price($product, $variant);
+    $mrp = $base['mrp'];
+    $price = $base['price'];
+    $source = $price < $mrp ? 'sale' : 'mrp';
 
     // An active flash sale overrides the regular sale price when it is cheaper.
-    $flashPrice = flash_sale_price_for((int) $product['id']);
+    // The variant goes in: a flash price is stored against the product, and
+    // applying that one number to every variant sold a ₹5,000 option for the
+    // ₹500 the base product was marked down to.
+    $flashPrice = flash_sale_price_for((int) $product['id'], $variant, (float) ($product['price'] ?? 0));
     if ($flashPrice !== null && $flashPrice > 0 && $flashPrice < $price) {
         $price = $flashPrice;
         $source = 'flash';
@@ -62,14 +56,133 @@ function product_effective_price(array $product, ?array $variant = null): array
     ];
 }
 
-/** Per-product flash sale price, or null when no active sale covers it. */
-function flash_sale_price_for(int $productId): ?float
+/**
+ * What a product costs before any promotion: the variant's own sale price,
+ * else its list price, else the product's.
+ *
+ * create_order() needs this on its own, because a flash sale or a deal only
+ * covers so many units - the ones past the cap are sold at this.
+ *
+ * @return array{mrp:float, price:float}
+ */
+function product_base_price(array $product, ?array $variant = null): array
 {
-    $map = active_flash_sale_prices();
-    return $map[$productId] ?? null;
+    $mrp = (float) ($variant['price'] ?? $product['price'] ?? 0);
+    $price = $mrp;
+
+    $salePrice = $variant !== null
+        ? ($variant['sale_price'] ?? null)
+        : ($product['sale_price'] ?? null);
+
+    if ($salePrice !== null && (float) $salePrice > 0 && (float) $salePrice < $mrp) {
+        $price = (float) $salePrice;
+    }
+
+    return ['mrp' => money_round($mrp), 'price' => money_round(max(0.0, $price))];
 }
 
-/** productId => sale_price for every product in the running flash sale. */
+/**
+ * What one unit costs under a flash-sale row that create_order() has locked.
+ *
+ * Same rule as flash_sale_price_for(): a price pinned against the product is
+ * applied to a variant as the same proportion off, never as the same number.
+ */
+function flash_row_price(array $flashRow, array $product, ?array $variant = null): float
+{
+    $base = (float) ($product['price'] ?? 0);
+    $unit = $variant !== null ? (float) ($variant['price'] ?? 0) : $base;
+
+    $pinned = $flashRow['sale_price'] !== null && (float) $flashRow['sale_price'] > 0
+        ? (float) $flashRow['sale_price']
+        : null;
+
+    if ($pinned !== null) {
+        if ($variant === null || $base <= 0) {
+            return money_round(max(0.0, $pinned));
+        }
+        return money_round($unit * max(0.0, min(1.0, $pinned / $base)));
+    }
+
+    return (string) $flashRow['discount_type'] === 'fixed'
+        ? money_round(max(0.0, $unit - (float) $flashRow['discount_value']))
+        : money_round($unit * (1 - ((float) $flashRow['discount_value'] / 100)));
+}
+
+/** The same, for a deal row create_order() has locked. */
+function deal_row_price(array $dealRow, array $product, ?array $variant = null): float
+{
+    $base = (float) ($product['price'] ?? 0);
+    $unit = $variant !== null ? (float) ($variant['price'] ?? 0) : $base;
+
+    $pinned = ($dealRow['deal_price'] ?? null) !== null && (float) $dealRow['deal_price'] > 0
+        ? (float) $dealRow['deal_price']
+        : null;
+
+    if ($pinned !== null) {
+        if ($variant === null || $base <= 0) {
+            return money_round(max(0.0, $pinned));
+        }
+        return money_round($unit * max(0.0, min(1.0, $pinned / $base)));
+    }
+
+    return (string) $dealRow['discount_type'] === 'fixed'
+        ? money_round(max(0.0, $unit - (float) $dealRow['discount_value']))
+        : money_round($unit * (1 - ((float) $dealRow['discount_value'] / 100)));
+}
+
+/**
+ * Flash-sale price for a product, or for one of its variants.
+ *
+ * A flash price is stored per product, so a variant has to be priced by what
+ * the sale is worth rather than by the number itself: a sale that takes the
+ * ₹1,000 base product to ₹500 is half off, and half off a ₹5,000 variant is
+ * ₹2,500 - not ₹500, which is what pricing every variant from the product's
+ * own row used to charge.
+ *
+ * @param array|null $variant the chosen variant, when the product has any
+ * @param float|null $base    the product's own price, for the ratio
+ */
+function flash_sale_price_for(int $productId, ?array $variant = null, ?float $base = null): ?float
+{
+    $rule = flash_sale_rule_for($productId);
+    if ($rule === null) {
+        return null;
+    }
+
+    $variantPrice = $variant === null ? null : (float) ($variant['price'] ?? 0);
+    if ($variantPrice === null || $variantPrice <= 0) {
+        return $rule['price'];
+    }
+
+    // A sale-wide rule already knows how to apply itself to any price.
+    if ($rule['sale_price'] === null) {
+        return $rule['type'] === 'fixed'
+            ? money_round(max(0.0, $variantPrice - $rule['value']))
+            : money_round($variantPrice * (1 - ($rule['value'] / 100)));
+    }
+
+    $base = $base !== null && $base > 0 ? $base : $rule['base'];
+    if ($base <= 0) {
+        return null;
+    }
+
+    return money_round($variantPrice * max(0.0, min(1.0, $rule['sale_price'] / $base)));
+}
+
+/** The flash-sale rule covering a product, or null. */
+function flash_sale_rule_for(int $productId): ?array
+{
+    return active_flash_sale_prices()[$productId] ?? null;
+}
+
+/**
+ * productId => the running flash sale's rule for it.
+ *
+ * `price` is what the base product costs under the sale; `sale_price` is the
+ * absolute price the admin pinned (null when the sale-wide discount applies),
+ * and `headroom` is how many units of the per-product cap are left - null when
+ * there is no cap.
+ */
 function active_flash_sale_prices(): array
 {
     static $map = null;
@@ -83,7 +196,7 @@ function active_flash_sale_prices(): array
     }
 
     $rows = Database::fetchAll(
-        'SELECT fsp.`product_id`, fsp.`sale_price`, fsp.`stock_limit`, fsp.`stock_sold`, p.`price`
+        'SELECT fsp.`id`, fsp.`product_id`, fsp.`sale_price`, fsp.`stock_limit`, fsp.`stock_sold`, p.`price`
          FROM `flash_sale_products` fsp
          INNER JOIN `products` p ON p.`id` = fsp.`product_id`
          WHERE fsp.`flash_sale_id` = :id',
@@ -93,20 +206,28 @@ function active_flash_sale_prices(): array
     $map = [];
     foreach ($rows as $row) {
         // A per-product cap that has been exhausted ends the offer for that item.
-        if ($row['stock_limit'] !== null && (int) $row['stock_sold'] >= (int) $row['stock_limit']) {
+        $headroom = $row['stock_limit'] === null
+            ? null
+            : max(0, (int) $row['stock_limit'] - (int) $row['stock_sold']);
+        if ($headroom !== null && $headroom <= 0) {
             continue;
         }
 
-        if ($row['sale_price'] !== null && (float) $row['sale_price'] > 0) {
-            $map[(int) $row['product_id']] = (float) $row['sale_price'];
-            continue;
-        }
-
-        // Fall back to the sale-wide discount.
         $base = (float) $row['price'];
-        $map[(int) $row['product_id']] = $sale['discount_type'] === 'fixed'
-            ? max(0.0, $base - (float) $sale['discount_value'])
-            : money_round($base * (1 - ((float) $sale['discount_value'] / 100)));
+        $pinned = $row['sale_price'] !== null && (float) $row['sale_price'] > 0 ? (float) $row['sale_price'] : null;
+
+        $map[(int) $row['product_id']] = [
+            'row_id'     => (int) $row['id'],
+            'sale_id'    => (int) $sale['id'],
+            'sale_price' => $pinned,
+            'type'       => (string) $sale['discount_type'],
+            'value'      => (float) $sale['discount_value'],
+            'base'       => $base,
+            'headroom'   => $headroom,
+            'price'      => $pinned ?? ($sale['discount_type'] === 'fixed'
+                ? max(0.0, $base - (float) $sale['discount_value'])
+                : money_round($base * (1 - ((float) $sale['discount_value'] / 100)))),
+        ];
     }
 
     return $map;

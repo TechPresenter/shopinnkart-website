@@ -16,17 +16,17 @@ require_once ROOT_PATH . '/api/includes/order-handler.php';
 $orderNumber = trim((string) input('order', ''));
 $order = $orderNumber === '' ? null : get_order_by_number($orderNumber);
 
-if ($order === null) {
-    flash('error', 'We could not find that order.');
-    redirect(url('track-order.php'));
-}
-
 $userId = current_user_id();
-$owns = $userId !== null && $order['user_id'] !== null && (int) $order['user_id'] === $userId;
+$owns = $order !== null && $userId !== null
+    && $order['user_id'] !== null && (int) $order['user_id'] === $userId;
 
-if (!$owns && !session_placed_order((string) $order['order_number'])) {
+// One answer for "no such order" and "not yours to see". They used to differ -
+// a different message, and a redirect that either carried the order number or
+// did not - which told anyone walking a day's order numbers which of them
+// were real. Tracking asks for the email or mobile on the order either way.
+if ($order === null || (!$owns && !session_placed_order((string) $order['order_number']))) {
     flash('info', 'Please confirm the email address or mobile number on the order to view it.');
-    redirect(url('track-order.php?order=' . rawurlencode((string) $order['order_number'])));
+    redirect(url('track-order.php?order=' . rawurlencode($orderNumber)));
 }
 
 $orderId  = (int) $order['id'];

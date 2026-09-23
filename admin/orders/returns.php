@@ -90,7 +90,10 @@ if (is_post()) {
     // parcel the courier brings back (RTO) now arrives here with nothing paid,
     // and "refunding" it marked the invoice paid in full and emailed the
     // customer that money was on its way.
-    if ($newStatus === ORDER_STATUS_REFUNDED && (string) $order['payment_status'] !== PAYMENT_STATUS_PAID) {
+    // A partially refunded order HAS been paid - some of it has already gone
+    // back - so it may be refunded the rest of the way.
+    if ($newStatus === ORDER_STATUS_REFUNDED
+        && !in_array((string) $order['payment_status'], [PAYMENT_STATUS_PAID, PAYMENT_STATUS_PARTIALLY_REFUNDED], true)) {
         flash('error', 'Order ' . $order['order_number'] . ' was never paid (payment '
             . strtolower(PAYMENT_STATUSES[$order['payment_status']] ?? (string) $order['payment_status'])
             . '), so there is nothing to refund.'

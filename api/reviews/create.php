@@ -16,6 +16,10 @@ api_require_csrf();
 $user = api_require_login();
 api_rate_limit('reviews_create', 5, 600);
 
+// Signed in, so this is a low bar: the honeypot and the timing check, which
+// together stop a compromised account being driven as a review farm.
+bot_guard_api('review', ['key' => (string) $user['id']]);
+
 $v = new Validator(request_all(), [
     'product_id' => 'Product',
     'rating'     => 'Rating',

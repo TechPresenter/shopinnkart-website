@@ -339,16 +339,35 @@ function invoice_pdf_write_masthead(TCPDF $pdf, array $data, array $invoice): vo
     $leftBottom = $pdf->GetY();
 
     // ---- Invoice identity (right) ---------------------------------------
+    // A document for a supply that never happened must say so on its face -
+    // the customer downloads this PDF, and an order cancelled before dispatch
+    // used to hand back a tax invoice that read exactly like a live one.
+    $cancelled = (string) ($invoice['status'] ?? 'issued') === 'cancelled';
+
     $pdf->SetXY(110, $top);
     $pdf->SetFont('dejavusans', 'B', 16);
-    $pdf->SetTextColor(15, 33, 67);
-    $pdf->Cell(85, 8, 'TAX INVOICE', 0, 1, 'R');
+    $pdf->SetTextColor(...($cancelled ? [185, 28, 28] : [15, 33, 67]));
+    $pdf->Cell(85, 8, $cancelled ? 'TAX INVOICE - CANCELLED' : 'TAX INVOICE', 0, 1, 'R');
 
-    $paid = (string) $data['order']['payment_status'] === PAYMENT_STATUS_PAID;
+    $paid = !$cancelled && (string) $data['order']['payment_status'] === PAYMENT_STATUS_PAID;
     $pdf->SetXY(110, $top + 9);
     $pdf->SetFont('dejavusans', 'B', 8);
     $pdf->SetTextColor(...($paid ? [4, 120, 87] : [180, 83, 9]));
-    $pdf->Cell(85, 5, strtoupper((string) $data['order']['payment_status_label']), 0, 1, 'R');
+    $pdf->Cell(85, 5, $cancelled
+        ? 'NOTHING SUPPLIED - NOTHING DUE'
+        : strtoupper((string) $data['order']['payment_status_label']), 0, 1, 'R');
+
+    // Credit notes stand beside the invoice rather than replacing it, so the
+    // invoice names them and the reader can follow the money both ways.
+    $credits = get_credit_notes_for_order((int) $invoice['order_id']);
+    if ($credits !== []) {
+        $pdf->SetXY(110, $top + 14);
+        $pdf->SetFont('dejavusans', 'B', 7);
+        $pdf->SetTextColor(180, 83, 9);
+        $pdf->Cell(85, 4, 'CREDITED BY ' . implode(', ', array_map(
+            static fn (array $note): string => (string) $note['note_number'], $credits
+        )), 0, 1, 'R');
+    }
 
     $meta = [
         ['Invoice no.', (string) $invoice['invoice_number']],
@@ -360,7 +379,9 @@ function invoice_pdf_write_masthead(TCPDF $pdf, array $data, array $invoice): vo
         $meta[] = ['Place of supply', (string) $data['tax']['place_of_supply']];
     }
 
-    $y = $top + 15.5;
+    // The credit line above takes a row of its own, so the meta block starts
+    // below it rather than on top of it.
+    $y = $top + ($credits !== [] ? 19.5 : 15.5);
     foreach ($meta as [$label, $value]) {
         $pdf->SetXY(110, $y);
         $pdf->SetFont('dejavusans', '', 7.5);

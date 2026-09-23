@@ -37,9 +37,14 @@ if ($order === null) {
 
 // ---------------------------------------------------------------------------
 //  Authorise before anything else touches the filesystem
+//
+//  The SAME 404 as "no such order" above, not a 403. Order ids and invoice ids
+//  are sequential, and answering 403 for "exists but is not yours" turned this
+//  page into a way to count the store's orders and collect valid numbers for
+//  the tracking guess. See ORDER_NOT_FOUND_MESSAGE.
 // ---------------------------------------------------------------------------
 if (!invoice_viewable($invoice ?? [], $order)) {
-    require __DIR__ . '/403.php';
+    require __DIR__ . '/404.php';
     exit;
 }
 

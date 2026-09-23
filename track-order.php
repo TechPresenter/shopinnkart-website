@@ -34,14 +34,15 @@ if (is_post()) {
     $formEmail = strtolower(trim((string) input('email', '')));
     $formPhone = trim((string) input('phone', ''));
 
-    // Same fixed window as api_rate_limit('order_track'), shared through the
-    // same session bucket - but this path has to answer in HTML, not JSON.
-    $bucket = $_SESSION['_rate_order_track'] ?? ['count' => 0, 'reset' => time() + 300];
-    if (time() > $bucket['reset']) {
-        $bucket = ['count' => 0, 'reset' => time() + 300];
-    }
-    $bucket['count']++;
-    $_SESSION['_rate_order_track'] = $bucket;
+    // The same budget as api_rate_limit('order_track'), counted the same way:
+    // one DB-backed counter per client address, shared with the JSON endpoint
+    // so posting to both does not buy two quotas.
+    //
+    // It used to be a counter in $_SESSION. A guesser only had to drop the
+    // cookie to start again, which made this - the one order lookup that asks
+    // for no account - effectively unlimited: an order number plus a 10-digit
+    // phone or an email address is all it reads out.
+    $trackAllowed = form_rate_limit('order_track', 12, 300);
 
     $validator = new Validator($_POST, [
         'order_number' => 'Order number',
@@ -57,7 +58,7 @@ if (is_post()) {
     // cannot be used to confirm that an order number exists.
     $notFound = 'We could not find an order matching those details. Please check the order number and try again.';
 
-    if ($bucket['count'] > 12) {
+    if (!$trackAllowed) {
         $trackError = 'Too many lookups. Please wait a few minutes and try again.';
     } elseif ($validator->fails()) {
         $trackError = (string) $validator->firstError();
@@ -90,7 +91,8 @@ if (is_post()) {
 
 // The invoice page has its own, stricter gate (owner session or staff). Linking
 // to it for a guest who only proved the email address would be a button that
-// always answers 403, so it is offered only when it will actually open.
+// always answers "not found" - the one answer that page gives to everyone who
+// may not see it - so it is offered only when it will actually open.
 $invoiceUrl = null;
 if ($order !== null && order_has_invoice($order)) {
     $viewerId = current_user_id();
@@ -154,7 +156,7 @@ require INCLUDES_PATH . '/header.php';
                         <label class="sik-field">
                             <span class="sik-label">Order number <span class="req">*</span></span>
                             <input type="text" class="sik-input" name="order_number" maxlength="40" required
-                                   placeholder="<?= e((string) setting('order_prefix', ORDER_PREFIX)) ?>202608120001"
+                                   placeholder="<?= e((string) setting('order_prefix', ORDER_PREFIX)) ?>-20260812-7KQ4MX"
                                    autocomplete="off" value="<?= e($formOrder) ?>">
                             <span class="sik-help">It is in your confirmation email and SMS.</span>
                         </label>
@@ -200,8 +202,8 @@ require INCLUDES_PATH . '/header.php';
                 </div>
                 <div class="sik-panel__body text-sm" style="line-height:1.75;color:var(--sik-muted)">
                     <p>
-                        It looks like <strong><?= e((string) setting('order_prefix', ORDER_PREFIX)) ?>202608120001</strong> &mdash;
-                        the store prefix, the date you ordered and a four digit counter.
+                        It looks like <strong><?= e((string) setting('order_prefix', ORDER_PREFIX)) ?>-20260812-7KQ4MX</strong> &mdash;
+                        the store prefix, the date you ordered and six characters that are yours alone.
                     </p>
                     <p style="margin-top:var(--sp-3)">
                         You will find it in the order confirmation email, in the SMS we sent, and on the

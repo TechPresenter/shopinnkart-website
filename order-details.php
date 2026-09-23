@@ -31,8 +31,10 @@ if ($order === null) {
 }
 
 // Guest orders have no user_id at all, so an exact match is the only way in.
+// The same 404 the block above gives for an order number that does not exist:
+// telling the two apart let a customer enumerate the store's orders by id.
 if ($order['user_id'] === null || (int) $order['user_id'] !== $userId) {
-    require __DIR__ . '/403.php';
+    require __DIR__ . '/404.php';
     exit;
 }
 
@@ -380,6 +382,29 @@ account_layout_open('orders', [
         </div>
     </div>
 </div>
+
+<?php
+// What became of the tax invoice, when the order ended badly. A cancelled
+// order's invoice is cancelled; goods that were supplied and came back are
+// reversed by a numbered credit note, which the customer is entitled to see.
+$orderInvoice = get_invoice_for_order($orderId);
+$orderCredits = $orderInvoice === null ? [] : get_credit_notes_for_order($orderId);
+?>
+<?php if ($orderInvoice !== null && (string) $orderInvoice['status'] === 'cancelled'): ?>
+    <div class="sik-alert sik-alert--warning" style="margin-bottom:var(--sp-4)">
+        <strong>Invoice <?= e((string) $orderInvoice['invoice_number']) ?> has been cancelled.</strong>
+        Nothing was dispatched against this order, so nothing was supplied and nothing is owed.
+    </div>
+<?php elseif ($orderCredits !== []): ?>
+    <div class="sik-alert sik-alert--info" style="margin-bottom:var(--sp-4)">
+        <strong>Credit note<?= count($orderCredits) > 1 ? 's' : '' ?> raised.</strong>
+        <?php foreach ($orderCredits as $index => $note): ?>
+            <?= $index > 0 ? ', ' : '' ?><strong><?= e((string) $note['note_number']) ?></strong>
+            for <?= e(money((float) $note['total_amount'])) ?>
+        <?php endforeach; ?>
+        against invoice <?= e((string) $orderInvoice['invoice_number']) ?>.
+    </div>
+<?php endif; ?>
 
 <div class="sik-panel">
     <div class="sik-panel__body">
