@@ -467,14 +467,15 @@ const SHIPPING_WEBHOOK_BUCKET       = 'shipping_webhook';
 const SHIPPING_WEBHOOK_LOG_FAILURES = 3;
 
 /**
- * The counter's key: the caller AND the integration it named.
+ * The LOG budget's key: the caller AND the integration it named.
  *
- * On the IP alone, an attacker POSTing to a guessed ?provider= spends the
- * budget the courier's own pushes need - and behind a proxy every push and
- * every attacker share one REMOTE_ADDR. On both, one integration's noise
- * cannot silence another's. The integration part is the resolved provider
- * code, never the string the caller sent: keyed on that, a prober would mint a
- * fresh counter (and a fresh log line) per request just by changing it.
+ * Only how much a refusal is written down is decided here, never what the
+ * caller is told - see shipping_webhook_caller_key() for that. Keeping the
+ * writing budget per integration is what stops an attacker hammering one
+ * courier's URL from using up the three log lines another courier's genuinely
+ * malformed push needs. The integration part is the RESOLVED provider code,
+ * never the string the caller sent: keyed on that, a prober would mint a fresh
+ * counter (and a fresh log line) per request just by changing it.
  */
 function shipping_webhook_key(string $ip, string $providerCode): string
 {
@@ -482,7 +483,32 @@ function shipping_webhook_key(string $ip, string $providerCode): string
 }
 
 /**
+ * The THROTTLE's key: the caller, and nothing else.
+ *
+ * Keyed on the caller AND the integration, the 429 was an enumeration oracle:
+ * every code that does not resolve shares one "<ip>|-" bucket, so a prober
+ * spent that bucket on nonsense and then read a real hook slug off the reply -
+ * 401 for a code that resolved to its own fresh bucket, 429 for one that did
+ * not. That is precisely what the collapsed 401 (see api/shipping/webhook.php)
+ * exists to hide.
+ *
+ * Counting every refusal from one address into one bucket cannot lose a
+ * courier's update, because a call whose signature verifies is never refused
+ * by the throttle at all - so one integration's flood still silences nothing.
+ * "*" can never collide with a provider code: those match [a-z0-9_-]{2,40}.
+ */
+function shipping_webhook_caller_key(string $ip): string
+{
+    return $ip . '|*';
+}
+
+/**
  * Record one failed call and say where that leaves the caller.
+ *
+ * Two counters, on purpose: what the caller is TOLD is decided by its own
+ * total (so every refusal from one address crosses the line together and says
+ * nothing about which integrations exist), while what is WRITTEN DOWN is
+ * decided per integration (so one courier's noise does not hide another's).
  *
  * Database-backed (includes/rate-limit.php), not the file cache: the cache is
  * switched off with cache_enabled=0 - which would make this inert - wiped by
@@ -490,27 +516,32 @@ function shipping_webhook_key(string $ip, string $providerCode): string
  * address left a file behind that nothing deleted. rate_limits is atomic,
  * survives both and prunes itself.
  *
- * @return array{count:int, first:bool, quiet:bool, over:bool, tripped:bool}
+ * @return array{count:int, total:int, first:bool, quiet:bool, over:bool, tripped:bool}
  */
-function shipping_webhook_note_failure(string $key): array
+function shipping_webhook_note_failure(string $ip, string $providerCode): array
 {
-    $count = (int) ceil(rate_limit_count(SHIPPING_WEBHOOK_BUCKET, $key, SHIPPING_WEBHOOK_WINDOW, true));
+    $count = (int) ceil(rate_limit_count(SHIPPING_WEBHOOK_BUCKET, shipping_webhook_key($ip, $providerCode),
+        SHIPPING_WEBHOOK_WINDOW, true));
+    $total = (int) ceil(rate_limit_count(SHIPPING_WEBHOOK_BUCKET, shipping_webhook_caller_key($ip),
+        SHIPPING_WEBHOOK_WINDOW, true));
 
     return [
         'count'   => $count,
+        'total'   => $total,
         'first'   => $count <= 1,
         // Past this the refusal is counted but not written down.
         'quiet'   => $count > SHIPPING_WEBHOOK_LOG_FAILURES,
-        'over'    => $count > SHIPPING_WEBHOOK_MAX_FAILURES,
+        'over'    => $total > SHIPPING_WEBHOOK_MAX_FAILURES,
         // The one call that crosses the line, so the throttle is recorded once.
-        'tripped' => $count > SHIPPING_WEBHOOK_MAX_FAILURES && $count - 1 <= SHIPPING_WEBHOOK_MAX_FAILURES,
+        'tripped' => $total > SHIPPING_WEBHOOK_MAX_FAILURES && $total - 1 <= SHIPPING_WEBHOOK_MAX_FAILURES,
     ];
 }
 
 /** Is this caller over its failure budget? Records nothing. */
-function shipping_webhook_throttled(string $key): bool
+function shipping_webhook_throttled(string $ip): bool
 {
-    return !rate_limit_allows(SHIPPING_WEBHOOK_BUCKET, $key, SHIPPING_WEBHOOK_MAX_FAILURES, SHIPPING_WEBHOOK_WINDOW);
+    return !rate_limit_allows(SHIPPING_WEBHOOK_BUCKET, shipping_webhook_caller_key($ip),
+        SHIPPING_WEBHOOK_MAX_FAILURES, SHIPPING_WEBHOOK_WINDOW);
 }
 
 // ===========================================================================
@@ -531,11 +562,26 @@ const SHIPPING_LOG_MAX_BODY = 65536;
  * in this table - the same reason notification_queue has
  * email_log_retention_days. A floor of a week, because a courier dispute is
  * argued from these rows and a mistyped 0 must not empty them.
+ *
+ * Set in Admin > Settings > Shipping, beside the delivery rules.
  */
 function shipping_log_retention_days(): int
 {
     return max(7, setting_int('shipping_log_retention_days', 30));
 }
+
+/**
+ * Rows one prune may delete before it is worth an admin's attention.
+ *
+ * On a store whose cron prunes every half hour, a thousand rows falling past
+ * retention between two runs means something wrote thousands of rows in a day,
+ * and the only thing that can do that from outside is the unauthenticated
+ * webhook URL. Recorded rather than acted on: deleting expired rows is correct
+ * either way, and the numbers are what tell an admin whether to put the
+ * courier's URL behind an allow-list. The first prune of an install that never
+ * had one will trip it once, honestly, while its backlog clears.
+ */
+const SHIPPING_LOG_PRUNE_NOTABLE = 1000;
 
 /**
  * Delete log rows past their retention.
@@ -549,16 +595,32 @@ function shipping_log_retention_days(): int
  */
 function shipping_prune_logs(int $limit = 1000): int
 {
+    $days = shipping_log_retention_days();
+
     try {
-        return Database::query(
+        $deleted = Database::query(
             'DELETE FROM `shipping_api_logs` WHERE `created_at` < DATE_SUB(NOW(), INTERVAL :days DAY)
               ORDER BY `id` ASC LIMIT ' . max(1, $limit),
-            ['days' => shipping_log_retention_days()]
+            ['days' => $days]
         )->rowCount();
     } catch (Throwable $e) {
         ErrorHandler::log('warning', 'Could not prune shipping_api_logs: ' . $e->getMessage());
         return 0;
     }
+
+    if ($deleted >= SHIPPING_LOG_PRUNE_NOTABLE) {
+        // "medium", not higher: nothing is broken and nothing was refused, but
+        // it is the one signal an admin gets that the open URL is being used.
+        security_event('shipping.log_pruned', 'medium', [
+            'deleted'        => $deleted,
+            'retention_days' => $days,
+            'remaining'      => (int) Database::fetchColumn('SELECT COUNT(*) FROM `shipping_api_logs`'),
+            'note'           => 'A single prune hit its ceiling. The courier webhook is unauthenticated, '
+                              . 'so check Shipping > API log for a flood before lowering the retention.',
+        ]);
+    }
+
+    return $deleted;
 }
 
 /**

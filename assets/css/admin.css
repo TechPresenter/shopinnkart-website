@@ -1681,6 +1681,10 @@ pre.ad-mono,
 .ad-checklist > li.is-ok::before   { content: "\2713"; color: #16A34A; }
 .ad-checklist > li.is-bad::before  { content: "\2715"; color: #B91C1C; }
 .ad-checklist > li.is-todo::before { content: "\2022"; color: #B45309; }
+/* A check that could not be RUN - the store's own address did not answer in
+   time - is neither a tick nor a cross. Marking it failed would accuse the
+   shop of a fault nobody has looked for yet. (settings/seo-health.php) */
+.ad-checklist > li.is-unknown::before { content: "?"; color: var(--ad-muted); }
 
 /* `.ad-table-scroll` used to live here: a bare `overflow-x: auto` wrapper for
    wide tables. It is deleted rather than kept, and deliberately not replaced
@@ -2077,9 +2081,11 @@ pre.ad-mono,
     border: 0;
     background: none;
     padding: 0;
-    /* Claims the pointer for dragging instead of the page for scrolling - and
-       unlike the old menu grip, there IS a touch drag here to protect. */
-    touch-action: none;
+    /* Same reasoning as `[data-grip]` in section 42, and the same value: this
+       grip is a full-height strip down the designer's section list, so
+       `touch-action: none` here stopped a finger scrolling that list at all.
+       The drag is armed by a hold in admin.js instead. */
+    touch-action: manipulation;
 }
 .ad-sec__grip:active { cursor: grabbing; }
 .ad-sec__body { min-width: 0; text-align: left; border: 0; background: none; padding: 0; cursor: pointer; }
@@ -2251,12 +2257,21 @@ pre.ad-mono,
    compact buttons (.ad-sec__move, section 41); these are the form screens'.
    =========================================================================== */
 
-/* A grip is only ever a drag handle, and the drag is a Pointer Events drag
-   that now works under a finger - so the grip must claim the gesture instead
-   of letting the page scroll away underneath it. (Section 40 once removed
-   this, correctly, from a grip whose HTML5 drag never fired on touch.) */
+/* NOT `touch-action: none`, which this rule used to say.
+   -------------------------------------------------------------------------
+   A grip is only ever a drag handle, so handing it the whole gesture looks
+   harmless - but the grips line up into a tall strip down the left edge of
+   every reorderable list, and `none` made that strip the one place on the
+   page a finger could not scroll. A list longer than the screen became
+   something you had to steer around.
+
+   `manipulation` keeps the useful half (no double-tap zoom, no 300ms click
+   delay) and leaves panning to the browser. Admin.sortable() then arms the
+   touch drag on a short hold and cancels the page's scroll itself, from a
+   non-passive touchmove listener, for as long as the drag lasts. See the
+   HOLD_MS / SLOP block in admin.js. */
 [data-grip] {
-    touch-action: none;
+    touch-action: manipulation;
     -webkit-user-select: none;
     user-select: none;
 }
@@ -2350,6 +2365,17 @@ pre.ad-mono,
 .ad-topbar__title[title],
 .ad-nav__label[title],
 .ad-sec__name[title] { cursor: help; }
+
+/* The same affordance for text shortened on the SERVER by str_limit(), via
+   admin_trunc() in admin/includes/functions.php. Different mechanism, same
+   clause of the brief: nothing may be hidden without a way to see it. The
+   class is only emitted when something really was cut, so `[title]` here is
+   not a second guess - it is the whole condition. */
+.ad-trunc[title] { cursor: help; }
+/* For a value with nothing to wrap at - a URL, an SKU, a hash. `anywhere`
+   rather than `break-word` so it also lowers the cell's intrinsic minimum,
+   which is what stops one long string setting a table's width. */
+.ad-anywhere { overflow-wrap: anywhere; }
 
 /* --- A grid or flex child may never set the page's width -----------------
    `minmax(0, 1fr)` is spelled out on every admin grid, but a child of a plain

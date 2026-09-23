@@ -196,6 +196,11 @@ require ADMIN_PATH . '/includes/header.php';
                                                              font-weight:700;text-align:center;padding:4px;overflow:hidden;
                                                              border:1px solid var(--ad-border);
                                                              background:<?= e_attr($chipBg) ?>;color:<?= e_attr($chipText) ?>">
+                                                    <?php /* Left as a plain cut, deliberately: this is the
+                                                             stand-in for missing artwork, and the untruncated
+                                                             label is the very next cell. A title here would be
+                                                             a tooltip on a decoration and a second reading of
+                                                             the same words for a screen reader. */ ?>
                                                     <?= e(str_limit($rowLabel, 22)) ?>
                                                 </span>
                                             <?php endif; ?>
@@ -220,7 +225,7 @@ require ADMIN_PATH . '/includes/header.php';
                                                     <span class="sik-status sik-status--violet"><?= e($banner['badge']) ?></span>
                                                 <?php endif; ?>
                                                 <?= !empty($banner['subtitle'])
-                                                    ? e(str_limit((string) $banner['subtitle'], 46))
+                                                    ? admin_trunc((string) $banner['subtitle'], 46)
                                                     : '<em>No subtitle</em>' ?>
                                             </span>
                                             <?php if (empty($banner['desktop_image']) && $key === 'hero'): ?>
@@ -232,8 +237,14 @@ require ADMIN_PATH . '/includes/header.php';
                                         <td style="font-size:12.5px">
                                             <?php if (!empty($banner['button_text'])): ?>
                                                 <div><strong><?= e($banner['button_text']) ?></strong></div>
+                                                <?php /* admin_trunc(), not e(str_limit(...)): a button's
+                                                         destination cut at 28 characters was unreadable and
+                                                         unrecoverable - "…/collections/fes…" told you nothing
+                                                         about where the banner actually sends a shopper. The
+                                                         whole URL is now the title. `break` because a URL has
+                                                         no spaces to wrap at. */ ?>
                                                 <div class="ad-cellflex__meta ad-mono">
-                                                    <?= e(str_limit((string) ($banner['button_url'] ?? ''), 28)) ?>
+                                                    <?= admin_trunc((string) ($banner['button_url'] ?? ''), 28, true) ?>
                                                 </div>
                                             <?php else: ?>
                                                 <span class="ad-muted">&mdash;</span>

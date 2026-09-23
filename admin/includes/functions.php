@@ -142,6 +142,7 @@ function admin_menu(): array
             'label' => 'Security', 'icon' => 'lock', 'permission' => 'security',
             'children' => [
                 ['label' => 'Security Settings', 'url' => 'security/settings.php', 'permission' => 'security.view'],
+                ['label' => 'Devices & Tokens',  'url' => 'security/devices.php',  'permission' => 'security.view'],
             ],
         ],
         [
@@ -301,6 +302,52 @@ function admin_menu_active(array $item): bool
 // ===========================================================================
 //  UI BUILDING BLOCKS
 // ===========================================================================
+
+/**
+ * str_limit(), but the full value stays readable.
+ *
+ * Roughly ninety places in the admin print `e(str_limit($x, N))`: a name, a
+ * description, a button's target URL. str_limit() cuts on a word boundary and
+ * adds an ellipsis, and the rest of the string is then simply GONE from the
+ * page - banners' BUTTONS column is the plain case, where a long destination
+ * became "https://shopinnkart.com/collections/fes…" with no way at all to see
+ * where the button actually points.
+ *
+ * So: same shortening, plus a `title` carrying the whole thing, and only when
+ * something really was cut. The "only when cut" half matters. A title that
+ * repeats the visible text is read out twice by a screen reader and puts a
+ * tooltip on text nobody needed one for - which is exactly why
+ * initTruncationTitles() in admin.js MEASURES before it adds one for the CSS
+ * ellipsis cases. Here the measurement is free: str_limit() shortened the
+ * string or it did not.
+ *
+ * Returns escaped HTML, so call it WITHOUT e(): `<?= admin_trunc($x, 28) ?>`.
+ *
+ * @param bool $break true for a value with no spaces to wrap at - a URL, an
+ *                    SKU, a hash - which needs `overflow-wrap: anywhere` as
+ *                    well, or the card view pushes it under its neighbour.
+ */
+function admin_trunc(?string $text, int $limit = 120, bool $break = false): string
+{
+    // trim(strip_tags()) is not a second opinion about the value - it is the
+    // first thing str_limit() itself does (includes/functions.php). Doing it
+    // here too is what makes `$short === $full` below a real test of "was
+    // anything cut": compare against the raw string instead and a value with
+    // so much as an ampersanded tag in it would always look shortened and
+    // grow a tooltip repeating itself.
+    $full  = trim(strip_tags((string) $text));
+    $short = str_limit($full, $limit);
+
+    if ($full === '') {
+        return '';
+    }
+    if ($short === $full) {
+        return $break ? '<span class="ad-anywhere">' . e($full) . '</span>' : e($full);
+    }
+
+    return '<span class="ad-trunc' . ($break ? ' ad-anywhere' : '') . '" title="' . e_attr($full) . '">'
+        . e($short) . '</span>';
+}
 
 /** Coloured pill for an order status. */
 function admin_status_badge(string $status): string

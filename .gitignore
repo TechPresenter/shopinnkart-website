@@ -60,3 +60,6 @@ FRONTEND-AUDIT.md
 # and customer rows - regenerate it with database/export-for-hosting.php
 # rather than committing one.
 database/shopinnkart-import.sql
+
+# Temporary copies of workflow scripts so they can be resumed after a restart.
+.wf/

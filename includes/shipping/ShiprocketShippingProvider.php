@@ -190,6 +190,25 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
     private $transport;
 
     /**
+     * Logins this process has already watched fail, so dead credentials are
+     * tried once and not once per shipment.
+     *
+     * The poller builds a fresh driver per shipment, so an instance property
+     * would memoise nothing: a run of 50 shipments made 50 /auth/login calls
+     * into Shiprocket's own login rate limit, each of them able to wait out a
+     * 20s timeout. Keyed on the credentials rather than the provider id
+     * because an in-memory row has no id, and re-saving the credentials is
+     * meant to be retried at once - new password, new key.
+     *
+     * $force clears it: a forced login is the caller saying it knows something
+     * new (a 401 on a cached token, or an admin pressing Test), which is also
+     * why a bad password can still be reported plainly twice in one process.
+     *
+     * @var array<string, true>
+     */
+    private static array $failedLogins = [];
+
+    /**
      * @param callable|null $transport replaces cURL; tests pass one in so the
      *                                  mapping can be checked without a network
      */
@@ -285,6 +304,15 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
             return null;
         }
 
+        // See $failedLogins: the same credentials are not asked twice in one
+        // process unless the caller forces it.
+        $login = hash('sha256', $email . "\0" . $password);
+        if ($force) {
+            unset(self::$failedLogins[$login]);
+        } elseif (isset(self::$failedLogins[$login])) {
+            return null;
+        }
+
         $res = shipping_http('shiprocket', 'auth', 'POST', self::BASE . '/auth/login', [
             'json'      => ['email' => $email, 'password' => $password],
             'retries'   => 1,
@@ -293,6 +321,7 @@ final class ShiprocketShippingProvider implements ShippingProviderInterface
 
         $token = (string) ($res['body']['token'] ?? '');
         if (!$res['ok'] || $token === '') {
+            self::$failedLogins[$login] = true;
             return null;
         }
 

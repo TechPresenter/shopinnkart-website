@@ -37,9 +37,15 @@
  * candidate set until the order agrees.
  *
  * A courier that is down is abandoned for the rest of the run after a few
- * consecutive failures, rather than being asked once per shipment: a failed
- * Shiprocket login caches nothing, so 50 shipments meant 50 logins into a rate
- * limit, and 20s timeouts made the run outlast its own schedule.
+ * consecutive failures, rather than being asked once per shipment: 50 dead
+ * shipments meant 50 courier calls, and 20s timeouts made the run outlast its
+ * own schedule. A login that fails is now remembered for the process too
+ * (ShiprocketShippingProvider::$failedLogins), so dead credentials cost one
+ * /auth/login per run rather than one per shipment.
+ *
+ * It also prunes shipping_api_logs past shipping_log_retention_days, because
+ * the courier webhook is an unauthenticated endpoint and a cron is the only
+ * thing that visits often enough to keep a ceiling on that table.
  *
  * Schedule it every 30 minutes:
  *

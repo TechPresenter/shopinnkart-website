@@ -1127,6 +1127,35 @@
         let lastY = 0;
         let frame = 0;
 
+        /* Arming a FINGER drag, and why it is not armed on touch immediately.
+           -----------------------------------------------------------------
+           The grip used to carry `touch-action: none`, which hands the whole
+           gesture to this script the moment a finger lands on it. That is
+           right for the drag and wrong for everything else: the grips form a
+           tall strip down the left edge of the list, and inside that strip a
+           flick could not scroll the page at all - on a phone, a list longer
+           than the screen became a trap you had to steer around.
+
+           So the grip now says `touch-action: manipulation` and the drag is
+           armed by a deliberate press instead:
+
+             - finger down, still for HOLD_MS  -> drag (we then preventDefault
+               every touchmove, so the page does not scroll under it);
+             - finger down, moves first        -> the browser scrolls, exactly
+               as it would anywhere else on the page.
+
+           SLOP is what tells the two apart. It has to be small enough that a
+           press is not mistaken for a flick and large enough to survive the
+           wobble of a fingertip; 8px is the usual figure and matches what the
+           platform itself uses to start a scroll.
+
+           A mouse or a pen is armed on press as before: neither has a scroll
+           gesture to protect, and a mouse that waits a quarter of a second
+           before it picks anything up just feels broken. */
+        const HOLD_MS = 260;
+        const SLOP    = 8;
+        let pending = null;
+
         /** Park the drop marker before the first row whose middle is below y. */
         function placeMarker(y) {
             const others = rows().filter(function (r) { return r !== dragRow; });
@@ -1209,24 +1238,28 @@
             onChange(row, 'drag');
         }
 
-        list.addEventListener('pointerdown', function (e) {
-            const handle = e.target.closest('[data-grip]');
-            if (!handle || e.button > 0 || !e.isPrimary || dragRow) return;
-            const row = handle.closest(rowSelector);
-            if (!row || row.parentNode !== list || rows().length < 2) return;
+        /** Stop waiting for a hold; the gesture belongs to the page now. */
+        function disarm() {
+            if (!pending) return;
+            window.clearTimeout(pending.timer);
+            pending = null;
+        }
+
+        /** Actually pick the row up. Shared by the mouse path and the hold. */
+        function begin(handle, row, id, y) {
+            pending = null;
 
             // Capture routes every later move to the grip, wherever the finger
-            // wanders; preventDefault keeps a mouse drag from selecting text.
-            e.preventDefault();
+            // wanders.
             try {
-                handle.setPointerCapture(e.pointerId);
+                handle.setPointerCapture(id);
             } catch (err) {
                 // Only a pointer the browser is not tracking (a scripted
                 // event) is refused; the drag still works uncaptured.
             }
 
             grip = handle;
-            pointerId = e.pointerId;
+            pointerId = id;
             dragRow = row;
             startIndex = rows().indexOf(row);
             row.classList.add('is-dragging');
@@ -1234,12 +1267,45 @@
             marker = document.createElement(/^(UL|OL)$/.test(list.tagName) ? 'li' : 'div');
             marker.className = 'ad-reorder-gap';
             marker.setAttribute('aria-hidden', 'true');
-            lastY = e.clientY;
+            lastY = y;
             placeMarker(lastY);
             say('Dragging ' + nameOf(row) + '. Release to drop it, or press Escape to cancel.');
+        }
+
+        list.addEventListener('pointerdown', function (e) {
+            const handle = e.target.closest('[data-grip]');
+            if (!handle || e.button > 0 || !e.isPrimary || dragRow || pending) return;
+            const row = handle.closest(rowSelector);
+            if (!row || row.parentNode !== list || rows().length < 2) return;
+
+            if (e.pointerType === 'touch') {
+                // Not yet: see HOLD_MS above. Nothing is prevented here, so if
+                // the finger turns out to be scrolling the browser is free to.
+                pending = {
+                    handle: handle,
+                    row: row,
+                    id: e.pointerId,
+                    x: e.clientX,
+                    y: e.clientY,
+                    timer: window.setTimeout(function () {
+                        if (!pending) return;
+                        begin(pending.handle, pending.row, pending.id, pending.y);
+                    }, HOLD_MS),
+                };
+                return;
+            }
+
+            // preventDefault keeps a mouse drag from selecting text.
+            e.preventDefault();
+            begin(handle, row, e.pointerId, e.clientY);
         });
 
         list.addEventListener('pointermove', function (e) {
+            if (pending && e.pointerId === pending.id) {
+                // Moved before the hold finished: this is a scroll, not a drag.
+                if (Math.abs(e.clientY - pending.y) > SLOP || Math.abs(e.clientX - pending.x) > SLOP) disarm();
+                return;
+            }
             if (!dragRow || e.pointerId !== pointerId) return;
             e.preventDefault();
             lastY = e.clientY;
@@ -1247,13 +1313,31 @@
             if (!frame) frame = window.requestAnimationFrame(tick);
         });
 
+        /* preventDefault on a POINTER event does not stop a touch scroll -
+           only touch-action or a cancelled touchmove does, and touch-action
+           has to be decided before the finger lands. So the page is held
+           still here, once the drag is armed and not a moment before. */
+        list.addEventListener('touchmove', function (e) {
+            if (dragRow) {
+                // A scroll already under way makes touchmove uncancellable;
+                // calling preventDefault then only logs a warning.
+                if (e.cancelable) e.preventDefault();
+                return;
+            }
+            // The browser took the gesture over while we were still waiting
+            // for the hold. It owns it; stop waiting.
+            if (pending && !e.cancelable) disarm();
+        }, { passive: false });
+
         list.addEventListener('pointerup', function (e) {
+            if (pending && e.pointerId === pending.id) { disarm(); return; }
             if (e.pointerId === pointerId) finish(true);
         });
         // Cancelled is not dropped: the row goes back where it was. The
         // browser cancels when it takes the gesture over (a system swipe, a
         // palm), and a lost capture means the grip vanished mid-drag.
         list.addEventListener('pointercancel', function (e) {
+            if (pending && e.pointerId === pending.id) { disarm(); return; }
             if (e.pointerId === pointerId) finish(false);
         });
         list.addEventListener('lostpointercapture', function (e) {
@@ -1261,7 +1345,11 @@
         });
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape' && dragRow) finish(false);
+            else if (e.key === 'Escape') disarm();
         });
+        // A page that scrolls away under a waiting finger is scrolling, so the
+        // press was never a drag. (scroll fires on the page, not on the list.)
+        window.addEventListener('scroll', function () { disarm(); }, { passive: true, capture: true });
 
         // ---- the keyboard path -------------------------------------------
         list.addEventListener('click', function (e) {

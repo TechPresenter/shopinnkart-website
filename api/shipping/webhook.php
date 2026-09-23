@@ -36,11 +36,16 @@
  * malformed-request refusals (405, 400, 413) are answered BEFORE the URL is
  * resolved, so they are a property of the request and say nothing either.
  *
- * The throttle counts failures only, per caller AND integration, and a call
- * whose signature verifies is never refused by it (see step 5). Throttling a
- * verified push would let a stranger silence the courier by spending the
- * budget itself, and a lost update does not come back: Shiprocket, for one,
- * does not promise to retry.
+ * The throttle counts failures only, per CALLER, and a call whose signature
+ * verifies is never refused by it (see step 5). Throttling a verified push
+ * would let a stranger silence the courier by spending the budget itself, and
+ * a lost update does not come back: Shiprocket, for one, does not promise to
+ * retry. Per caller and not per integration, because a budget that empties
+ * separately for each one is an enumeration oracle in its own right: a prober
+ * filled the "code did not resolve" bucket and then read a live hook slug off
+ * the reply, 401 against 429. How much of a refusal is written down is still
+ * decided per integration, so one courier's flood cannot hide another's
+ * malformed push.
  *
  * Response contract: 200 whenever the delivery has been dealt with - including
  * a duplicate, and an AWB we do not know - so the courier stops retrying.
@@ -84,13 +89,14 @@ $respond = static function (int $status, string $message, array $context = []): 
  * Refuse, count it against the caller, and write it down sparingly.
  *
  * $status is what the caller is told unless it is already over its failure
- * budget, when every unverified call is 429 instead. Only the first few
- * refusals in a window are logged - to shipping_api_logs ($entry) and to the
- * error log - because a stranger choosing both the body and the rate is
- * otherwise choosing how much of the database to fill.
+ * budget, when every unverified call from that address is 429 instead -
+ * whichever integration it named, and whether or not it named one that exists.
+ * Only the first few refusals in a window are logged - to shipping_api_logs
+ * ($entry) and to the error log - because a stranger choosing both the body
+ * and the rate is otherwise choosing how much of the database to fill.
  */
 $refuse = static function (int $status, string $message, array $context = [], array $entry = []) use ($respond, $ip, &$code): void {
-    $seen = shipping_webhook_note_failure(shipping_webhook_key($ip, $code));
+    $seen = shipping_webhook_note_failure($ip, $code);
 
     if ($seen['over']) {
         $status = 429;
@@ -111,7 +117,8 @@ $refuse = static function (int $status, string $message, array $context = [], ar
         shipping_log($code === '' ? 'unknown' : $code, 'webhook', $entry);
     }
 
-    $respond($status, $message, $seen['quiet'] ? [] : $context + ['ip' => $ip, 'failures' => $seen['count']]);
+    $respond($status, $message, $seen['quiet'] ? []
+        : $context + ['ip' => $ip, 'failures' => $seen['count'], 'failures_from_ip' => $seen['total']]);
 };
 
 // Which integration the URL names: ?hook=<slug>, or the older ?provider=<code>.

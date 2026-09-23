@@ -2,9 +2,10 @@
 /**
  * ShopInnKart Admin - Shipping.
  *
- * Three things an admin treats as one job: the global shipping/COD rules in
- * the settings table, the shipping_methods rows checkout offers, and the
- * pincode serviceability list the delivery estimator reads.
+ * Four things an admin treats as one job: the global shipping/COD rules in
+ * the settings table, how long the courier API log is kept, the
+ * shipping_methods rows checkout offers, and the pincode serviceability list
+ * the delivery estimator reads.
  */
 
 declare(strict_types=1);
@@ -45,11 +46,26 @@ $spec = [
     'cod_charge' => [
         'type' => 'number', 'label' => 'COD handling fee', 'required' => true,
         'min_value' => 0, 'max_value' => 100000, 'step' => '0.01',
+        // The fee charged is the one on the COD row, and policy copy quotes
+        // that row too - so this field only matters where there is no active
+        // COD row to read. Saying so beats two numbers that silently disagree.
+        'help' => 'Only a fallback: the fee actually charged, and the one policy pages quote, '
+            . 'is the COD handling fee on Settings > Payment.',
     ],
     'cod_max_amount' => [
         'type' => 'number', 'label' => 'Max order value for COD', 'required' => true,
         'min_value' => 0, 'max_value' => 10000000, 'step' => '0.01',
-        'help' => 'Orders above this must be prepaid. 0 removes the cap.',
+        'help' => 'Orders above this must be prepaid. 0 removes the cap. A "max order value" '
+            . 'on the COD row in Settings > Payment applies as well; the lower of the two wins.',
+    ],
+    // The counterpart of email_log_retention_days on Settings > Email. The
+    // floor is enforced again in shipping_log_retention_days(): a courier
+    // dispute is argued from these rows, so neither a blank field nor a direct
+    // edit of the settings table may take it below a week.
+    'shipping_log_retention_days' => [
+        'type' => 'number', 'label' => 'Keep courier API log for (days)', 'required' => true,
+        'min_value' => 7, 'max_value' => 3650, 'default' => '30',
+        'help' => 'Every courier call and webhook push is recorded. The polling cron deletes older rows on each run.',
     ],
 ];
 
@@ -527,6 +543,31 @@ require ADMIN_PATH . '/includes/header.php';
                 <p class="ad-muted" style="font-size:12.5px">
                     COD is also refused when the delivery PIN code has it switched off below, or when any
                     product in the cart is marked "no COD".
+                </p>
+            </div>
+        </div>
+
+        <?php // Full width under both cards, so the form keeps one save bar. ?>
+        <div class="ad-card" style="margin:0;grid-column:1/-1">
+            <div class="ad-card__head">
+                <div>
+                    <div class="ad-card__title">Courier API log</div>
+                    <div class="ad-card__sub">
+                        Every call to a courier and every webhook push it sends back, under
+                        Shipping &rsaquo; API log.
+                    </div>
+                </div>
+            </div>
+            <div class="ad-card__body">
+                <div class="ad-row ad-row--2">
+                    <?= settings_field('shipping_log_retention_days', $spec, $values, $errors) ?>
+                </div>
+                <p class="ad-muted" style="font-size:12.5px">
+                    The webhook URL is unauthenticated by nature — a courier cannot hold a login — so
+                    anyone who finds it can add rows here. <code>bin/refresh-shipments.php</code> deletes
+                    what is past this age on every run; without a cron, roughly one log write in 500 does
+                    a smaller pass instead. Seven days is the lowest this goes: a courier dispute is
+                    argued from these rows.
                 </p>
             </div>
             <?= settings_save_bar() ?>

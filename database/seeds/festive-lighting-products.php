@@ -8,11 +8,12 @@
  * rather than copied, so the store is not publishing duplicate marketing copy.
  *
  * Idempotent: re-running updates the existing rows by SKU instead of inserting
- * a second copy, and skips images that are already on disk.
+ * a second copy, skips images that are already on disk, and leaves
+ * `published_at` alone on a row that already has one - it is the date the
+ * catalogue went live and "New arrivals" is sorted by it.
  *
  * There is no --dry here, unlike the other festive seeds: this one always
- * writes. It also re-stamps `published_at` on every product it touches, so a
- * refresh re-dates the whole catalogue and reshuffles "New arrivals".
+ * writes.
  *
  *     php database/seeds/festive-lighting-products.php            import / refresh
  *     php database/seeds/festive-lighting-products.php --images   also re-download images
@@ -566,7 +567,6 @@ function festive_seed_run(bool $refreshImages = false): array
             'cod_available'     => 1,
             'free_shipping'     => 0,
             'status'            => STATUS_ACTIVE,
-            'published_at'      => date('Y-m-d H:i:s'),
             'is_new_arrival'    => 1,
             'rating_avg'        => $item['rating'],
             'rating_count'      => $item['rating_count'],
@@ -575,11 +575,21 @@ function festive_seed_run(bool $refreshImages = false): array
         ];
 
         if ($existingId > 0) {
+            // published_at is deliberately NOT in $row: it is the date the
+            // catalogue went live, and "New arrivals" is sorted by it. Writing
+            // it here re-dated all eleven products to the moment of the last
+            // refresh and shuffled that shelf, so a correction to one
+            // description changed the shop front. A product that somehow has
+            // none still gets one, which is what keeps it visible.
             Database::update('products', $row, '`id` = :id', ['id' => $existingId]);
+            Database::query(
+                'UPDATE `products` SET `published_at` = :now WHERE `id` = :id AND `published_at` IS NULL',
+                ['now' => date('Y-m-d H:i:s'), 'id' => $existingId]
+            );
             $productId = $existingId;
             $report['updated']++;
         } else {
-            $productId = Database::insert('products', $row);
+            $productId = Database::insert('products', ['published_at' => date('Y-m-d H:i:s')] + $row);
             $report['created']++;
         }
 

@@ -19,6 +19,38 @@
  *   - Lazy widgets render their real body (context force), because a preview
  *     of an empty deferred shell tells the admin nothing.
  *
+ * -----------------------------------------------------------------------
+ * @measure-scope storefront-fragment
+ *
+ * This file is NOT an admin screen and must not be measured as one.
+ *
+ * The "no admin page scrolls sideways" sweep kept reporting one last inner
+ * scroller in the whole admin, here: `div.sik-rail__track`, up to 1166px wide,
+ * plus five clipped `sik-*` boxes (the hero frame, the news strip, a promo
+ * card, its own ellipsised tag chip). The decision, taken deliberately rather
+ * than patched away:
+ *
+ *   The canvas is an HONEST storefront preview, so a carousel that swipes is
+ *   correct here, because it is correct on the shop.
+ *
+ * `.sik-rail__track` is the storefront's own product carousel - `overflow-x:
+ * auto` with `scrollbar-width: none` and its own prev/next buttons - and this
+ * file renders the real widgets against app.css precisely so that what an
+ * admin sees is what a shopper gets. Making it stop scrolling here would mean
+ * either editing storefront CSS (a different shop for everyone, to satisfy a
+ * crawler) or drawing the preview with admin rules (a preview that lies).
+ * Neither is worth it. designer.php mounts this in an iframe it sizes to a
+ * phone, a tablet or a desktop (designer.php:126-129), and that iframe - not
+ * the admin viewport - is the width the carousel is answering.
+ *
+ * So the sweep exempts it. The annotation above is what the crawler reads
+ * (admin-overflow/pages.php), and the <meta> in the document below says the
+ * same thing to anything that only has the rendered page. If a future change
+ * ever puts admin CHROME in here - a toolbar, a form, anything drawn with
+ * admin.css - then this stops being a fragment and the exemption must go with
+ * it.
+ * -----------------------------------------------------------------------
+ *
  * GET + permission. Nothing here writes.
  */
 
@@ -53,6 +85,10 @@ $sections = Database::fetchAll(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<?php /* Says to any layout crawler what the docblock says to a reader: the
+         body of this document is storefront, drawn with storefront CSS, and
+         its sideways-scrolling carousel is the shop's, not the admin's. */ ?>
+<meta name="sik-measure-scope" content="storefront-fragment">
 <title>Preview &mdash; <?= e($zones[$zone]['label']) ?></title>
 <link rel="stylesheet" href="<?= e(asset('css/utilities.css')) ?>">
 <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">

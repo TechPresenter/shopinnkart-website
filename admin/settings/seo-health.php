@@ -85,24 +85,80 @@ $redirects = [
     'looping'  => (int) Database::fetchColumn('SELECT COUNT(*) FROM `redirects` WHERE `source_path` = `target_path`'),
 ];
 
-// Technical checks. Each one is answered by looking, not by assuming.
-$sitemapUrls = 0;
-$sitemapOk   = false;
-try {
-    $xml = @file_get_contents(SITE_URL . '/sitemap.xml');
-    $sitemapUrls = $xml ? substr_count($xml, '<url>') : 0;
-    $sitemapOk   = $sitemapUrls > 0;
-} catch (Throwable $e) {
-    $sitemapOk = false;
+/**
+ * Fetch one of the store's OWN addresses, briefly, and say whether it answered.
+ *
+ * This page used to call `@file_get_contents(SITE_URL . '/sitemap.xml')` with
+ * no stream context. Without one, PHP waits `default_socket_timeout` - 60
+ * seconds on a stock install - for the first byte, and it does it twice, once
+ * per URL. Worse, SITE_URL is *this* server: on any single-worker setup (the
+ * PHP built-in server, php-fpm with one child) the request cannot be served
+ * while the worker is still rendering the page that asks for it, so the two
+ * fetches always time out and the page answered in 121s with an HTTP 500.
+ *
+ * A short timeout is the fix, not a longer one. These are local addresses; a
+ * store that cannot answer its own robots.txt in half a second has a problem
+ * this page should REPORT, not sit and wait for.
+ *
+ * `reached` is the fact that matters and is kept separate from `status`:
+ * "we could not look" and "we looked and it is wrong" are different answers
+ * and the checklist prints them differently.
+ *
+ * @return array{reached:bool,status:int,body:string}
+ */
+function seo_health_fetch(string $url, float $timeout): array
+{
+    $context = stream_context_create([
+        'http' => [
+            'method'          => 'GET',
+            'timeout'         => $timeout,   // connect AND read, both
+            'follow_location' => 1,
+            'max_redirects'   => 3,
+            // A 404 body is still an answer: without this, file_get_contents
+            // returns false on any 4xx/5xx and we could not tell it apart
+            // from silence.
+            'ignore_errors'   => true,
+            'header'          => "User-Agent: ShopInnKart SEO health check\r\nConnection: close\r\n",
+        ],
+    ]);
+
+    $http_response_header = [];
+    $body = @file_get_contents($url, false, $context);
+    if (!is_string($body)) {
+        return ['reached' => false, 'status' => 0, 'body' => ''];
+    }
+
+    $status = 0;
+    foreach ($http_response_header as $line) {
+        if (preg_match('~^HTTP/\S+\s+(\d{3})~', $line, $m) === 1) {
+            $status = (int) $m[1];   // last one wins, so a redirect chain reports where it landed
+        }
+    }
+
+    return ['reached' => true, 'status' => $status, 'body' => $body];
 }
 
-$robotsOk = false;
-try {
-    $robotsBody = @file_get_contents(SITE_URL . '/robots.txt');
-    $robotsOk = is_string($robotsBody) && str_contains($robotsBody, 'Sitemap:');
-} catch (Throwable $e) {
-    $robotsOk = false;
-}
+// Technical checks. Each one is answered by looking, not by assuming - but
+// never by waiting. Half a second each, and if the FIRST one gets no answer at
+// all the second is not attempted: the store's own address is not responding,
+// so the only thing a second half-second buys is a slower page saying the same
+// thing. Worst case for the whole section is therefore ONE timeout, which
+// measures 0.63s for the whole page against 120.16s and an HTTP 500 before.
+const SEO_HEALTH_FETCH_TIMEOUT = 0.5;
+
+$sitemap = seo_health_fetch(SITE_URL . '/sitemap.xml', SEO_HEALTH_FETCH_TIMEOUT);
+$sitemapUrls = $sitemap['reached'] ? substr_count($sitemap['body'], '<url>') : 0;
+$sitemapOk   = $sitemap['reached'] && $sitemap['status'] < 400 && $sitemapUrls > 0;
+
+$robots = $sitemap['reached']
+    ? seo_health_fetch(SITE_URL . '/robots.txt', SEO_HEALTH_FETCH_TIMEOUT)
+    : ['reached' => false, 'status' => 0, 'body' => ''];
+$robotsOk = $robots['reached'] && $robots['status'] < 400 && str_contains($robots['body'], 'Sitemap:');
+
+// True only when the address answered. Used to say "could not fetch" instead
+// of accusing the store of a missing sitemap we never actually looked for.
+$sitemapReached = $sitemap['reached'];
+$robotsReached  = $robots['reached'];
 
 $integrations = [
     'Google Analytics'      => trim((string) setting('google_analytics_id', '')),
@@ -152,8 +208,10 @@ $tiles = [
         'Sitemap',
         $sitemapOk ? (string) (int) $sitemapUrls : "\u{2014}",
         'globe',
-        $sitemapOk ? 'blue' : 'red',
-        $sitemapOk ? 'URLs listed' : 'not reachable'
+        // navy, not red, when we never got an answer: a red tile is a verdict
+        // on the store, and "we could not look" is not a verdict.
+        $sitemapOk ? 'blue' : (!$sitemapReached ? 'navy' : 'red'),
+        $sitemapOk ? 'URLs listed' : (!$sitemapReached ? 'could not fetch' : 'lists no URLs')
     ),
     admin_stat_card(
         'Redirects',
@@ -221,11 +279,29 @@ $tiles = [
         <div class="ad-card__head"><h2 class="ad-card__title">Technical checks</h2></div>
         <div class="ad-card__body">
             <ul class="ad-checklist">
-                <li class="<?= $sitemapOk ? 'is-ok' : 'is-bad' ?>">
-                    sitemap.xml <?= $sitemapOk ? 'reachable, ' . (int) $sitemapUrls . ' URLs' : 'not reachable' ?>
+                <?php /* Three states, not two. A check we could not RUN is
+                         reported as unknown rather than as a failure: telling
+                         an admin their sitemap is missing when we simply never
+                         got an answer sends them hunting for a bug that is not
+                         there. `is-unknown` is the "?" marker in admin.css. */ ?>
+                <li class="<?= !$sitemapReached ? 'is-unknown' : ($sitemapOk ? 'is-ok' : 'is-bad') ?>">
+                    <?php if (!$sitemapReached): ?>
+                        sitemap.xml &mdash; could not fetch
+                        <span class="ad-muted">(<?= e(SITE_URL) ?>/sitemap.xml did not answer within
+                        <?= e(rtrim(rtrim(number_format(SEO_HEALTH_FETCH_TIMEOUT, 2), '0'), '.')) ?>s)</span>
+                    <?php else: ?>
+                        sitemap.xml <?= $sitemapOk ? 'reachable, ' . (int) $sitemapUrls . ' URLs' : 'reachable but lists no URLs' ?>
+                    <?php endif; ?>
                 </li>
-                <li class="<?= $robotsOk ? 'is-ok' : 'is-bad' ?>">
-                    robots.txt <?= $robotsOk ? 'served and names the sitemap' : 'missing its Sitemap line' ?>
+                <li class="<?= !$robotsReached ? 'is-unknown' : ($robotsOk ? 'is-ok' : 'is-bad') ?>">
+                    <?php if (!$robotsReached): ?>
+                        robots.txt &mdash; could not fetch
+                        <span class="ad-muted"><?= $sitemapReached
+                            ? '(' . e(SITE_URL) . '/robots.txt did not answer in time)'
+                            : '(not attempted: the store&rsquo;s own address is not answering)' ?></span>
+                    <?php else: ?>
+                        robots.txt <?= $robotsOk ? 'served and names the sitemap' : 'missing its Sitemap line' ?>
+                    <?php endif; ?>
                 </li>
                 <li class="<?= $redirects['looping'] === 0 ? 'is-ok' : 'is-bad' ?>">
                     <?= $redirects['looping'] === 0
@@ -247,7 +323,10 @@ $tiles = [
             <?php if ($dupeTitles !== []): ?>
                 <ul class="sik-help" style="margin-top:12px">
                     <?php foreach ($dupeTitles as $dupe): ?>
-                        <li><?= e(str_limit((string) $dupe['t'], 70)) ?> &mdash; <?= (int) $dupe['n'] ?> products</li>
+                        <?php /* admin_trunc(): a duplicated meta title is the thing you have to
+                                 go and change, so the part that was cut off is exactly the part
+                                 you need. The full string is the title attribute. */ ?>
+                        <li><?= admin_trunc((string) $dupe['t'], 70) ?> &mdash; <?= (int) $dupe['n'] ?> products</li>
                     <?php endforeach; ?>
                 </ul>
             <?php endif; ?>

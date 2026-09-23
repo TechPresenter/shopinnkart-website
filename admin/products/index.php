@@ -4,6 +4,41 @@
  *
  * Filters, sorting and the CSV export all read the same clause from
  * product_list_filters(), so "export" always means "what I am looking at".
+ *
+ * -----------------------------------------------------------------------
+ * Why this list is a CARD and not a table on a laptop - measured, so nobody
+ * has to re-argue it.
+ *
+ * admin.js's fit engine keeps a table a table for as long as it can really be
+ * drawn as one, and stacks it into per-row cards otherwise. On this page,
+ * with 12 columns, it measures (headless Edge, sik_test's 13 products, fonts
+ * loaded):
+ *
+ *     min-content  1234px      the narrowest the table can EVER be laid out,
+ *                              with every column already at its minimum and
+ *                              the four action buttons kept on one line
+ *     max-content  1714px      the width it would like
+ *     available     978px at 1280,  1138px at 1440
+ *
+ * So it is 256px short at 1280 and 96px short at 1440 - short of the MINIMUM,
+ * not of its preferred width. Drawn as a table anyway it does not squeeze, it
+ * cuts: the forced-table screenshot at 1440 loses the Duplicate and Delete
+ * buttons off the right edge, which is precisely the "content hidden with no
+ * way to reach it" the sweep removed. The card shows all twelve fields.
+ *
+ * It is not a permanent verdict, because the engine measures rather than
+ * guesses: collapse the sidebar (which gives the content area 184px more) and
+ * at 1600px this page is a real table again - confirmed at avail 1482px. The
+ * band in between stays a card because of FIT_EASE in admin.js (0.20), which
+ * asks for a fifth of the way from min to natural before it will draw a table
+ * that cramped; at 1440 collapsed the numbers are avail 1322 against a needed
+ * 1330. That constant is the lever if the trade is ever judged differently,
+ * and it belongs in admin.js, not here.
+ *
+ * The other way to make it fit - hiding SKU, Brand, Sold and Added behind a
+ * row expander - is a product decision about which columns matter, not a
+ * layout fix, and nobody has taken it.
+ * -----------------------------------------------------------------------
  */
 
 declare(strict_types=1);
@@ -204,7 +239,11 @@ require ADMIN_PATH . '/includes/header.php';
                                         <div style="min-width:0">
                                             <div class="ad-cellflex__name">
                                                 <a href="<?= e(admin_url('products/view.php?id=' . $productId)) ?>">
-                                                    <?= e(str_limit((string) $product['name'], 60)) ?>
+                                                    <?php /* admin_trunc(): a name over 60 characters was cut
+                                                             here with no way to read the rest. It now carries
+                                                             the full name as a title, and only when it was
+                                                             really shortened. */ ?>
+                                                    <?= admin_trunc((string) $product['name'], 60) ?>
                                                 </a>
                                             </div>
                                             <?php if ($flags !== []): ?>
