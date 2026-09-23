@@ -129,13 +129,16 @@ $isLastSuper    = $isLastSuper ?? false;
                             </label>
                             <input class="sik-input<?= isset($errors['password']) ? ' is-invalid' : '' ?>"
                                    type="password" id="adminPassword" name="password"
-                                   autocomplete="new-password" minlength="<?= (int) PASSWORD_MIN_LENGTH ?>"
+                                   autocomplete="new-password" minlength="<?= (int) password_min_length('admin') ?>"
                                    <?= $isEdit ? '' : 'required' ?>>
                             <?php if (isset($errors['password'])): ?>
                                 <span class="sik-error"><?= e($errors['password']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    At least <?= (int) PASSWORD_MIN_LENGTH ?> characters, including a letter and a number.
+                                    <?php // The admin floor, not the shopper one - the validator holds this
+                                          // field to sec_password_min_admin, so the hint has to say the same
+                                          // number or the form refuses a password it told you to type. ?>
+                                    At least <?= (int) password_min_length('admin') ?> characters, including a letter and a number.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -249,6 +252,16 @@ $isLastSuper    = $isLastSuper ?? false;
                         </span>
                     <?php endif; ?>
                 </div>
+
+                <div class="ad-card__body" style="border-top:1px solid var(--ad-border);display:grid;gap:12px">
+                    <?= admin_reauth_field(
+                        $isEdit
+                            ? 'change a password, email, role, status or lockout'
+                            : 'create an admin account',
+                        (string) ($errors['reauth_password'] ?? '')
+                    ) ?>
+                </div>
+
                 <div class="ad-card__foot">
                     <a class="ad-btn" href="<?= e(admin_url('admins/')) ?>">Cancel</a>
                     <button type="submit" class="ad-btn ad-btn--primary">

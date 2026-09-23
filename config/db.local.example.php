@@ -13,6 +13,10 @@
 declare(strict_types=1);
 
 return [
+    // Leave this out on a live server: the site then runs in production mode.
+    // Only a developer machine should say 'development' (it shows stack traces
+    // and the default admin login on screen).
+    // 'env'  => 'development',
     'host' => 'localhost',
     'port' => '3306',
     'name' => 'shopinnkart',

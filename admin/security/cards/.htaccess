@@ -1,0 +1,18 @@
+# ShopInnKart - this directory holds server-side code only.
+# Nothing in here should ever be requested directly over HTTP.
+#
+# 404 rather than 403 for the same reason as admin/includes/.htaccess: a 403
+# under /admin/ confirms the back office exists. See that file for why the
+# hard deny is only the no-mod_alias fallback.
+<IfModule mod_alias.c>
+    RedirectMatch 404 ".*"
+</IfModule>
+<IfModule !mod_alias.c>
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</IfModule>

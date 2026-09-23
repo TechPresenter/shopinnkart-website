@@ -118,6 +118,13 @@ function api_require_admin(string $permission = ''): array
 {
     $admin = admin_user();
     if ($admin === null) {
+        // With the hidden login address on, a stranger must not be able to
+        // learn that an admin area exists here: "Admin authentication
+        // required" is itself the answer they were fishing for. Same reply as
+        // any missing page, exactly like admin_gate_deny().
+        if (function_exists('admin_gate_passed') && !admin_gate_passed()) {
+            json_error('Not found.', [], 404);
+        }
         json_error('Admin authentication required.', [], 401, 'auth');
     }
     if ($permission !== '' && !admin_can($permission)) {
@@ -127,29 +134,70 @@ function api_require_admin(string $permission = ''): array
 }
 
 /**
- * Very small fixed-window rate limiter backed by the session.
- * Enough to stop accidental double-submits and casual abuse of write
- * endpoints; a reverse proxy should handle anything larger.
+ * Rate limit an endpoint, keyed on the client rather than on the session.
+ *
+ * The counter used to live in $_SESSION, which the caller owns: sending no
+ * cookie, or a fresh one per request, reset every "limit" to zero. Every
+ * public endpoint - forgot-password, contact, newsletter, login - was
+ * therefore uncapped in practice. Counters now live in the shared, atomic
+ * `rate_limits` table, keyed on the client IP (plus $key when the endpoint
+ * knows who it is acting for: an account, an email address, an order).
+ *
+ * The session counter is kept as a second, smaller ceiling: it catches a
+ * double-submitting tab from a client that shares one NAT address with
+ * hundreds of others.
  */
-function api_rate_limit(string $bucket, int $maxAttempts = 20, int $windowSeconds = 60): void
+function api_rate_limit(string $bucket, int $maxAttempts = 20, int $windowSeconds = 60, string $key = ''): void
 {
-    $key = '_rate_' . $bucket;
-    $now = time();
-    $state = $_SESSION[$key] ?? ['count' => 0, 'reset' => $now + $windowSeconds];
+    $limited = !rate_limit_attempt('api.' . $bucket, client_ip() . ($key === '' ? '' : '|' . mb_strtolower($key)), $maxAttempts, $windowSeconds);
 
+    // Per-session smoother: a signed-in customer hammering one endpoint is
+    // stopped even when their address is shared with the rest of the office.
+    $sessionKey = '_rate_' . $bucket;
+    $now = time();
+    $state = $_SESSION[$sessionKey] ?? ['count' => 0, 'reset' => $now + $windowSeconds];
     if ($now > $state['reset']) {
         $state = ['count' => 0, 'reset' => $now + $windowSeconds];
     }
-
     $state['count']++;
-    $_SESSION[$key] = $state;
+    $_SESSION[$sessionKey] = $state;
 
-    if ($state['count'] > $maxAttempts) {
+    if ($limited || $state['count'] > max($maxAttempts, 2) * 3) {
+        security_event('api.rate_limited', 'low', [
+            'bucket' => $bucket,
+            'scope'  => $limited ? 'client' : 'session',
+        ], current_user_id(), current_user_id() === null ? null : 'customer');
+
         if (!headers_sent()) {
-            header('Retry-After: ' . max(1, $state['reset'] - $now));
+            header('Retry-After: ' . rate_limit_retry_after($windowSeconds));
         }
-        json_error('Too many requests. Please slow down and try again shortly.', [], 429);
+        json_error('Too many requests. Please slow down and try again shortly.', [], 429, 'rate_limit');
     }
+}
+
+/**
+ * The same ceiling for a page that posts back to itself (the no-JavaScript
+ * path), which cannot answer with JSON.
+ *
+ * @return bool true when the request may proceed.
+ */
+function form_rate_limit(string $bucket, int $maxAttempts, int $windowSeconds, string $key = ''): bool
+{
+    // The same bucket name as api_rate_limit(): a form that also has an API
+    // endpoint (register, contact, forgot-password) must not hand out two
+    // quotas to somebody who posts to both.
+    $allowed = rate_limit_attempt(
+        'api.' . $bucket,
+        client_ip() . ($key === '' ? '' : '|' . mb_strtolower($key)),
+        $maxAttempts,
+        $windowSeconds
+    );
+
+    if (!$allowed) {
+        security_event('api.rate_limited', 'low', ['bucket' => $bucket, 'scope' => 'form']);
+    }
+
+    return $allowed;
 }
 
 /** Paginated list envelope used by list endpoints. */

@@ -126,10 +126,15 @@ function seo_render(): string
     $schemas = $GLOBALS['_seo_schema'] ?? [];
     array_unshift($schemas, seo_organization_schema());
 
+    // e_json(), not a bare json_encode: this is the project's one hardened
+    // script-context encoder, and it is the only thing between an admin-typed
+    // product name and the page. Without JSON_HEX_TAG a name containing the
+    // literal "</script><script>..." closed this element and ran as script on
+    // every storefront visit - a stored XSS any Product or Content Manager
+    // could plant, and a way to ride the Super Admin's session. < is
+    // still valid JSON, so crawlers read the schema exactly as before.
     foreach ($schemas as $schema) {
-        $out[] = '<script type="application/ld+json">'
-            . json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-            . '</script>';
+        $out[] = '<script type="application/ld+json">' . e_json($schema) . '</script>';
     }
 
     return implode("\n    ", $out);

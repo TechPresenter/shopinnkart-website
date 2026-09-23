@@ -645,11 +645,29 @@ function json_decode_safe(?string $json, array $default = []): array
     return is_array($decoded) ? $decoded : $default;
 }
 
-/** Best-effort client IP, capped to the column width. */
+/**
+ * The client's IP, capped to the column width.
+ *
+ * REMOTE_ADDR on its own is the edge server behind a CDN, which collapsed
+ * every visitor into one rate-limit bucket and wrote Cloudflare's address into
+ * login_history. resolve_client_ip() reads the forwarded headers instead - but
+ * only when the machine that actually connected is a proxy the owner listed in
+ * sec_trusted_proxies, because otherwise the header is attacker-supplied.
+ */
 function client_ip(): string
 {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    return substr((string) $ip, 0, 45);
+    static $ip = null;
+    if ($ip !== null) {
+        return $ip;
+    }
+
+    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
+    return $ip = substr(
+        function_exists('resolve_client_ip') ? resolve_client_ip($remote) : $remote,
+        0,
+        45
+    );
 }
 
 function user_agent(): string
@@ -1012,22 +1030,43 @@ function svg_sanitize(string $svg): ?string
         'result', 'in', 'in2', 'mode', 'type', 'values', 'dx', 'dy', 'href', 'xlink:href',
     ];
 
+    // An uploaded SVG is attacker-controlled XML, so the parser is locked down
+    // before it sees a byte of it:
+    //
+    //   - no LIBXML_NOENT. That flag means "substitute entities", and it was
+    //     doing exactly that: a <!DOCTYPE svg [<!ENTITY x SYSTEM "file:///...">]>
+    //     had the named file read off disk and pasted into the document, where
+    //     the scrub below happily kept it as <text> and the file was then served
+    //     from /uploads. config/db.local.php and config/app.key.php went out
+    //     that way. php://filter gave the source of any PHP file too.
+    //   - a null external-entity loader, so even a libxml build that resolves
+    //     entities on its own gets nothing back.
+    //   - LIBXML_NONET keeps http(s) out, and LIBXML_DTDLOAD/DTDATTR stay off
+    //     so no external DTD is fetched either.
+    //
+    // A document that declares a DOCTYPE at all is then refused outright: a
+    // legitimate icon exported by Illustrator, Figma or Inkscape never needs
+    // one, so there is nothing to lose and one whole class of parser tricks
+    // (entity bombs included) never gets a second chance.
+    // libxml_set_external_entity_loader() returns bool, not the old resolver,
+    // before PHP 8.4 - so restoring means passing null (libxml's own default),
+    // which is what every other parse in this codebase expects anyway.
+    $previousLoader = function_exists('libxml_get_external_entity_loader') ? libxml_get_external_entity_loader() : null;
+    libxml_set_external_entity_loader(static fn () => null);
     $previous = libxml_use_internal_errors(true);
     $doc = new DOMDocument();
-    // LIBXML_NONET blocks network fetches; the DTD/entity loader stays off so an
-    // uploaded file cannot mount an XXE or billion-laughs attack.
-    $loaded = $doc->loadXML($svg, LIBXML_NONET | LIBXML_NOENT | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $loaded = $doc->loadXML($svg, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
     libxml_clear_errors();
     libxml_use_internal_errors($previous);
+    libxml_set_external_entity_loader($previousLoader);
 
     if (!$loaded || $doc->documentElement === null
         || strtolower($doc->documentElement->nodeName) !== 'svg') {
         return null;
     }
 
-    // Any doctype at all is dropped — it is the entity-expansion vector.
     if ($doc->doctype !== null) {
-        $doc->removeChild($doc->doctype);
+        return null;
     }
 
     // Attribute filtering is its own step so it can be applied to the root <svg>

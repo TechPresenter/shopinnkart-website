@@ -9,18 +9,8 @@
 declare(strict_types=1);
 
 // ---------------------------------------------------------------------------
-// Environment
-// ---------------------------------------------------------------------------
-// 'development' shows detailed errors on screen. 'production' hides them.
-define('APP_ENV', getenv('APP_ENV') ?: 'development');
-define('APP_DEBUG', APP_ENV === 'development');
-
-// ---------------------------------------------------------------------------
-// Database
-//
-// Precedence: environment variables > config/db.local.php (written by the
-// installer) > the development defaults below. Keep db.local.php out of
-// version control and out of the web root's reach (see .htaccess).
+// Local overrides: config/db.local.php (written by the installer, git-ignored,
+// blocked from the web by .htaccess). Environment variables still win.
 // ---------------------------------------------------------------------------
 $localDb = [];
 if (is_file(__DIR__ . '/db.local.php')) {
@@ -30,6 +20,24 @@ if (is_file(__DIR__ . '/db.local.php')) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Environment
+// ---------------------------------------------------------------------------
+// 'development' shows detailed errors on screen (and the default admin login
+// hint). 'production' hides them. Production is the default, so a server that
+// is missing its settings fails closed instead of printing stack traces and
+// server paths to visitors; a developer machine opts in with
+// 'env' => 'development' in db.local.php or APP_ENV=development.
+define('APP_ENV', getenv('APP_ENV') ?: (($localDb['env'] ?? '') === 'development' ? 'development' : 'production'));
+define('APP_DEBUG', APP_ENV === 'development');
+
+// ---------------------------------------------------------------------------
+// Database
+//
+// Precedence: environment variables > config/db.local.php > the development
+// defaults below.
+// ---------------------------------------------------------------------------
+
 define('DB_HOST', getenv('DB_HOST') ?: ($localDb['host'] ?? 'localhost'));
 define('DB_PORT', getenv('DB_PORT') ?: ($localDb['port'] ?? '3306'));
 define('DB_NAME', getenv('DB_NAME') ?: ($localDb['name'] ?? 'shopinnkart'));
@@ -37,7 +45,26 @@ define('DB_USER', getenv('DB_USER') ?: ($localDb['user'] ?? 'root'));
 define('DB_PASS', getenv('DB_PASS') !== false ? getenv('DB_PASS') : ($localDb['pass'] ?? ''));
 define('DB_CHARSET', 'utf8mb4');
 
+// Deployment-fixed site address, if the host has one. Set it on production:
+// 'url' => 'https://shopinnkart.com' in config/db.local.php, or APP_URL in the
+// environment. Anything set here is never overridden by the request.
+$localSiteUrl = (string) (getenv('APP_URL') ?: (getenv('SITE_URL') ?: ($localDb['url'] ?? '')));
+
 unset($localDb, $loaded);
+
+// ---------------------------------------------------------------------------
+// Filesystem paths
+//
+// Defined before the site URL: the Host allow-list keeps a small mirror of its
+// database settings under storage/, because this file runs before the database.
+// ---------------------------------------------------------------------------
+define('ROOT_PATH', dirname(__DIR__));
+define('CONFIG_PATH', ROOT_PATH . '/config');
+define('INCLUDES_PATH', ROOT_PATH . '/includes');
+define('ADMIN_PATH', ROOT_PATH . '/admin');
+define('UPLOAD_PATH', ROOT_PATH . '/uploads');
+define('STORAGE_PATH', ROOT_PATH . '/storage');
+define('LOG_PATH', STORAGE_PATH . '/logs');
 
 // ---------------------------------------------------------------------------
 // Site
@@ -47,40 +74,37 @@ define('SITE_TAGLINE', 'Shop Smart. Live Better.');
 define('SITE_DOMAIN', 'shopinnkart.com');
 
 /**
- * Base URL is auto-detected so the project runs from any folder
- * (e.g. http://localhost/ecomweb) without editing config.
+ * Base URL.
+ *
+ * Still auto-detected so the project runs from any folder (e.g.
+ * http://localhost/ecomweb) without editing config - but only from a Host we
+ * recognise. A stranger's "Host: evil.example" used to end up inside the
+ * password-reset link of a genuine store email; now an unknown Host falls back
+ * to the canonical address instead of deciding one.
+ *
+ * See includes/request-trust.php for the allow-list and the resolution order.
  */
+require_once ROOT_PATH . '/includes/request-trust.php';
+
 if (!defined('SITE_URL')) {
-    $scheme = 'http';
-    if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (($_SERVER['SERVER_PORT'] ?? '') === '443')
-        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) {
-        $scheme = 'https';
-    }
-    $host = $_SERVER['HTTP_HOST'] ?? SITE_DOMAIN;
+    $siteUrl = site_url_resolve([
+        'configured' => $localSiteUrl,
+        'server'     => $_SERVER,
+        'app_root'   => dirname(__DIR__),
+        'domain'     => SITE_DOMAIN,
+        'dev'        => APP_DEBUG,
+    ]);
 
-    // Project root = the folder containing this config's parent directory.
-    $docRoot = str_replace('\\', '/', rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/'));
-    $appRoot = str_replace('\\', '/', dirname(__DIR__));
-    $basePath = '';
-    if ($docRoot !== '' && strpos($appRoot, $docRoot) === 0) {
-        $basePath = rtrim(substr($appRoot, strlen($docRoot)), '/');
-    }
+    define('BASE_PATH', $siteUrl['base_path']);
+    define('SITE_URL', $siteUrl['url']);
+    // The address emailed links are built from, '' when none is configured.
+    define('SITE_URL_CANONICAL', $siteUrl['canonical']);
+    // false = this request's Host header is not one of ours.
+    define('SITE_URL_HOST_OK', $siteUrl['host_ok']);
 
-    define('BASE_PATH', $basePath);
-    define('SITE_URL', $scheme . '://' . $host . $basePath);
+    unset($siteUrl);
 }
-
-// ---------------------------------------------------------------------------
-// Filesystem paths
-// ---------------------------------------------------------------------------
-define('ROOT_PATH', dirname(__DIR__));
-define('CONFIG_PATH', ROOT_PATH . '/config');
-define('INCLUDES_PATH', ROOT_PATH . '/includes');
-define('ADMIN_PATH', ROOT_PATH . '/admin');
-define('UPLOAD_PATH', ROOT_PATH . '/uploads');
-define('STORAGE_PATH', ROOT_PATH . '/storage');
-define('LOG_PATH', STORAGE_PATH . '/logs');
+unset($localSiteUrl);
 
 // ---------------------------------------------------------------------------
 // Public URLs
@@ -111,9 +135,19 @@ define('USER_SESSION_KEY', 'sik_user');
 // ---------------------------------------------------------------------------
 define('CSRF_TOKEN_NAME', 'csrf_token');
 define('CSRF_HEADER_NAME', 'X-CSRF-Token');
-define('PASSWORD_MIN_LENGTH', 8);
+// Floor for the password policy. The live minimum is the sec_password_min
+// setting (Admin > Security), which can only be raised above this, never below.
+define('PASSWORD_MIN_LENGTH', 10);
+// A passphrase this long is accepted without the letter+digit rule.
+define('PASSWORD_PASSPHRASE_LENGTH', 16);
+// bcrypt silently ignores everything past 72 bytes, and hashing a megabyte of
+// input is a free CPU sink, so every password form stops well before both.
+define('PASSWORD_MAX_LENGTH', 128);
 define('MAX_LOGIN_ATTEMPTS', 5);
 define('LOGIN_LOCKOUT_MINUTES', 15);
+// Cookie that carries a "keep me signed in" token. Deliberately NOT the
+// session cookie: see auth_remember_issue() in includes/auth.php.
+define('REMEMBER_COOKIE_NAME', 'SIK_REMEMBER');
 
 // ---------------------------------------------------------------------------
 // Uploads

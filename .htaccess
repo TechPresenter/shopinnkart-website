@@ -26,16 +26,21 @@ ErrorDocument 500 /500.php
     # works unchanged at the domain root OR in a sub-folder like /ecomweb.
     # Hard-coding "RewriteBase /" breaks every clean URL in a sub-folder.
 
-    # Force HTTPS in production. Commented out for local XAMPP development;
-    # uncomment on the live server.
-    # RewriteCond %{HTTPS} !=on
-    # RewriteCond %{HTTP_HOST} !^localhost [NC]
-    # RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    # HTTPS is NOT forced here any more. A commented-out block is a security
+    # control that depends on someone reading a deployment doc; this one was
+    # never uncommented. includes/security-headers.php does it instead, driven
+    # by the sec_force_https setting on Admin > Security > Settings, which also
+    # sends HSTS and can be switched off from the same screen if TLS breaks.
 
-    # Strip a trailing slash from non-directory URLs.
+    # Strip a trailing slash from non-directory URLs. The target comes from
+    # REQUEST_URI (already the full URL path, sub-folder included) rather than
+    # the per-directory match: a relative "$1" in a redirect gets the folder's
+    # FILESYSTEM path prefixed when there is no RewriteBase, which sent
+    # /shop/ to http://host/C:/xampp/htdocs/ecomweb/shop.
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !/api/
-    RewriteRule ^(.+)/$ $1 [L,R=301]
+    RewriteCond %{REQUEST_URI} ^(.+)/$
+    RewriteRule ^.+/$ %1 [L,R=301]
 
     # ---------------------------------------------------------------
     #  Clean URLs
@@ -108,32 +113,58 @@ ErrorDocument 500 /500.php
 #  Security
 # ===========================================================================
 
-# --- Block direct access to server-side folders -----------------------------
+# Everything in this section answers 404, not 403. A 403 is an answer: it says
+# "this exists and is protected", which is how a scanner maps an application it
+# cannot see. 404 is what the rest of the site says about a path that is not
+# there, so the internals look like nothing at all. RedirectMatch runs during
+# URL translation, before authorization and before per-directory rewrites, so
+# these win over everything below.
+
+# --- Dot-files AND dot-folders ----------------------------------------------
+# The old <FilesMatch "^\."> matched only the LAST path segment, so /.git/config
+# was served happily: the file is called "config". This matches a dot anywhere
+# in the path, which is what closes /.git/ - the whole source tree and its
+# history, schema.sql and the seeded admin hash included.
+# .well-known stays open: Let's Encrypt and Apple/Google app links need it.
+# Deliberately NOT case-insensitive, unlike the rules below. A dot has no case,
+# so /.GIT/ and /.Env are already caught; leaving the exception lowercase means
+# only the real, lowercase /.well-known/ is let through.
+RedirectMatch 404 "/\.(?!well-known/)"
+
+# Every pattern below is written (?i) - case-insensitive. RedirectMatch is a
+# case-SENSITIVE regex by default (it has no [NC] flag of its own), and the
+# rules are matched against the URL, not against the file the URL resolves to.
+# On any case-insensitive filesystem - Windows here, macOS, and a surprising
+# number of shared hosts - /README.MD and /Config/db.local.PHP resolve to the
+# same files as their lowercase spellings while sailing past a lowercase
+# pattern. So the deny list was one shift key away from being optional.
+# (Linux hosts resolve neither, which is why this never showed up in testing.)
+
+# --- Server-side folders ----------------------------------------------------
 # Not anchored at ^/ so they still match when the app lives in a sub-folder.
 # Each of these directories also carries its own deny-all .htaccess, so the
-# protection survives a host that ignores this file.
-RedirectMatch 403 /config/.*$
-RedirectMatch 403 /storage/.*$
-RedirectMatch 403 /database/.*$
-RedirectMatch 403 /includes/.*$
-RedirectMatch 403 /admin/includes/.*$
+# protection survives a host that ignores this file, and the PHP files inside
+# them refuse a web SAPI in code as a third line.
+RedirectMatch 404 "(?i)/config/.*$"
+RedirectMatch 404 "(?i)/storage/.*$"
+RedirectMatch 404 "(?i)/database/.*$"
+RedirectMatch 404 "(?i)/includes/.*$"
+RedirectMatch 404 "(?i)/vendor/.*$"
+RedirectMatch 404 "(?i)/bin/.*$"
+RedirectMatch 404 "(?i)/docs/.*$"
+RedirectMatch 404 "(?i)/admin/includes/.*$"
+RedirectMatch 404 "(?i)/admin/security/cards/.*$"
 
-# --- Block dotfiles and sensitive extensions --------------------------------
-<FilesMatch "^\.|\.(sql|log|ini|md|json|lock|bak|old|swp|dist|yml|yaml)$">
-    Require all denied
-</FilesMatch>
+# --- Sensitive extensions ---------------------------------------------------
+# Dumps, logs, backups, dependency manifests and editor leftovers. .json covers
+# composer.json and package.json; no public route ends in .json (the API serves
+# JSON from .php endpoints).
+RedirectMatch 404 "(?i)\.(sql|log|ini|md|lock|bak|old|orig|save|swp|swo|dist|tpl|yml|yaml|json|sh|bat|cmd|ps1|sqlite|sqlite3|db|env|pem|key|crt|tar|gz|zip)$"
 
 # --- Include-only partials are never entry points ---------------------------
 # Anything named _something.php is meant to be require()d by a page that has
 # already run its auth checks. Requesting one directly would skip those checks.
-<FilesMatch "^_.*\.php$">
-    Require all denied
-</FilesMatch>
-
-# .htaccess itself must never be served.
-<Files ".htaccess">
-    Require all denied
-</Files>
+RedirectMatch 404 "(?i)/_[^/]*\.php$"
 
 # --- Uploads must never execute --------------------------------------------
 # A PHP file smuggled into /uploads is served as plain text, not run.
@@ -148,23 +179,27 @@ RedirectMatch 403 /admin/includes/.*$
 # is served with no script, plugin or network privileges of its own, so even a
 # sanitiser bypass cannot reach the session cookie.
 <IfModule mod_headers.c>
-    <FilesMatch "\.svg$">
+    <FilesMatch "(?i)\.svg$">
         Header always set Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; sandbox"
         Header always set X-Content-Type-Options "nosniff"
     </FilesMatch>
 </IfModule>
 
-# --- Security headers -------------------------------------------------------
+# --- Security headers for STATIC files only ---------------------------------
+# Every dynamic response gets its headers from includes/security-headers.php.
+# They used to be set in both places, so each one went out twice and the
+# Permissions-Policy here (microphone=()) silently disabled the site's own
+# voice search. Apache only owns what PHP never sees: files served off disk.
+#
+# "Header unset Server" was here too and does nothing - the Server header is
+# added after .htaccess runs. It belongs in httpd.conf as
+# "ServerTokens Prod" + "ServerSignature Off"; on Hostinger, ask support.
 <IfModule mod_headers.c>
-    Header always set X-Content-Type-Options "nosniff"
-    Header always set X-Frame-Options "SAMEORIGIN"
-    Header always set Referrer-Policy "strict-origin-when-cross-origin"
-    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+    <FilesMatch "(?i)\.(css|js|map|svg|webp|jpg|jpeg|png|gif|ico|woff2?|txt|xml|webmanifest)$">
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    </FilesMatch>
     Header always unset X-Powered-By
-    Header unset Server
-
-    # Enable on HTTPS only.
-    # Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
 # --- Hide the PHP version ---------------------------------------------------
@@ -215,9 +250,10 @@ RedirectMatch 403 /admin/includes/.*$
     <FilesMatch "\.(css|js|svg|webp|jpg|jpeg|png|gif|ico|woff2?)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
-    <FilesMatch "\.(php|html)$">
-        Header set Cache-Control "no-cache, must-revalidate"
-    </FilesMatch>
+    # No rule for .php on purpose. "Header set" REPLACES what PHP sent, and the
+    # value here (no-cache, must-revalidate) is weaker than the "no-store" that
+    # json_response() and every account page send - so carts, addresses and API
+    # JSON became disk-cacheable. PHP decides its own caching now.
 </IfModule>
 
 # --- Correct MIME types -----------------------------------------------------

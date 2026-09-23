@@ -46,44 +46,101 @@ function mailer_load_phpmailer(): bool
 // ---------------------------------------------------------------------------
 
 /**
- * A per-installation random key used to encrypt stored secrets.
- * Written once to config/app.key.php, which is gitignored and blocked by
- * config/.htaccess. An env var wins so containers can inject one.
+ * Work out the installation key, without touching any global state.
+ *
+ * Split out from app_key() so the read-only-config path can be tested: it is
+ * the branch nobody exercises until a shared host locks config/ down, and it
+ * used to be the dangerous one.
+ *
+ * @param string      $file where the key is kept (config/app.key.php)
+ * @param string|null $env  the SIK_APP_KEY value, or null
+ * @return array{key:string, source:string} source: env|file|generated|unavailable
  */
-function app_key(): string
+function app_key_resolve(string $file, ?string $env): array
 {
-    static $key = null;
-    if ($key !== null) {
-        return $key;
+    if (is_string($env) && strlen($env) >= 32) {
+        return ['key' => $env, 'source' => 'env'];
     }
 
-    $fromEnv = getenv('SIK_APP_KEY');
-    if (is_string($fromEnv) && strlen($fromEnv) >= 32) {
-        return $key = $fromEnv;
-    }
-
-    $file = CONFIG_PATH . '/app.key.php';
     if (is_file($file)) {
         $stored = require $file;
         if (is_string($stored) && strlen($stored) >= 32) {
-            return $key = $stored;
+            return ['key' => $stored, 'source' => 'file'];
         }
     }
 
     $generated = bin2hex(random_bytes(32));
     $php = "<?php\n// ShopInnKart application key. Generated automatically.\n"
-        . "// Rotating this makes every stored SMTP password unreadable — re-enter them after a change.\n"
+        . "// Rotating this makes every stored SMTP password unreadable - re-enter them after a change.\n"
         . 'return ' . var_export($generated, true) . ";\n";
 
-    if (@file_put_contents($file, $php, LOCK_EX) === false) {
-        // Read-only config dir: fall back to a key derived from constants so
-        // encryption still works for the life of the request rather than
-        // dropping secrets in plaintext.
-        return $key = hash('sha256', DB_NAME . '|' . ROOT_PATH . '|shopinnkart-mail');
+    if (!is_dir(dirname($file)) || @file_put_contents($file, $php, LOCK_EX) === false) {
+        // There used to be a fallback here: sha256(DB_NAME|ROOT_PATH|constant).
+        // On shared hosting both inputs are guessable - the database name is
+        // usually the cPanel user plus the app name, and the document root is
+        // /home/<user>/public_html - so anyone who could guess them could
+        // decrypt every SMTP password and courier API secret, forge the
+        // unsubscribe tokens and forge the admin-gate pass. A secret that the
+        // attacker can compute is not a secret, and the fact that it is silent
+        // is what makes it worse than failing.
+        //
+        // So: no key. Callers refuse to encrypt and the security card says so.
+        return ['key' => '', 'source' => 'unavailable'];
     }
+
     @chmod($file, 0640);
 
-    return $key = $generated;
+    return ['key' => $generated, 'source' => 'generated'];
+}
+
+/**
+ * A per-installation random key used to encrypt stored secrets.
+ * Written once to config/app.key.php, which is gitignored and blocked by
+ * config/.htaccess. An env var wins so containers can inject one.
+ *
+ * Returns '' when no key could be obtained - see app_key_available().
+ */
+function app_key(): string
+{
+    static $resolved = null;
+    if ($resolved !== null) {
+        return $resolved['key'];
+    }
+
+    $fromEnv  = getenv('SIK_APP_KEY');
+    $resolved = app_key_resolve(CONFIG_PATH . '/app.key.php', $fromEnv === false ? null : $fromEnv);
+
+    if ($resolved['source'] === 'unavailable' && function_exists('security_event')) {
+        security_event('platform.app_key_unavailable', 'critical', [
+            'config_path' => CONFIG_PATH,
+            'hint'        => 'config/ is not writable and SIK_APP_KEY is not set',
+        ]);
+    }
+
+    return $resolved['key'];
+}
+
+/** Can secrets be stored at all? False means config/ is not writable. */
+function app_key_available(): bool
+{
+    return app_key() !== '';
+}
+
+/**
+ * A separate key per purpose, derived from the master key.
+ *
+ * One key doing encryption, unsubscribe links and the admin-gate pass at once
+ * means a weakness in any of them is a weakness in all of them. HKDF costs
+ * nothing and keeps them independent.
+ */
+function app_key_derive(string $purpose): string
+{
+    $master = app_key();
+    if ($master === '') {
+        return '';
+    }
+
+    return hash_hkdf('sha256', $master, 32, 'shopinnkart|' . $purpose);
 }
 
 /** Encrypt a secret for storage in the settings table. */
@@ -93,12 +150,22 @@ function secret_encrypt(string $plain): string
         return '';
     }
 
+    // Fail closed. Returning the plaintext, or encrypting under a guessable
+    // key, would look like it worked and quietly put an SMTP password in the
+    // settings table in the clear.
+    if (!app_key_available()) {
+        if (function_exists('security_event')) {
+            security_event('platform.secret_not_stored', 'high', ['reason' => 'no application key']);
+        }
+        return '';
+    }
+
     $iv  = random_bytes(12);
     $tag = '';
     $cipher = openssl_encrypt(
         $plain,
         'aes-256-gcm',
-        hash('sha256', app_key(), true),
+        secret_storage_key('v2'),
         OPENSSL_RAW_DATA,
         $iv,
         $tag
@@ -108,7 +175,22 @@ function secret_encrypt(string $plain): string
         return '';
     }
 
-    return 'enc:v1:' . base64_encode($iv . $tag . $cipher);
+    return 'enc:v2:' . base64_encode($iv . $tag . $cipher);
+}
+
+/**
+ * The AES key for a given ciphertext version.
+ *
+ * v1 hashed the master key directly. v2 runs it through HKDF with a purpose
+ * label, so the storage key, the unsubscribe-link key and the admin-gate key
+ * are independent of each other. v1 is still read - an SMTP password saved
+ * before this change must keep working - but nothing is written as v1 again.
+ */
+function secret_storage_key(string $version): string
+{
+    return $version === 'v1'
+        ? hash('sha256', app_key(), true)
+        : hash('sha256', app_key_derive('secret-storage'), true);
 }
 
 /** Decrypt a secret written by secret_encrypt(). Plaintext passes through. */
@@ -120,8 +202,12 @@ function secret_decrypt(string $stored): string
 
     // Values written before encryption existed (or restored from a SQL dump)
     // are still usable rather than silently breaking mail delivery.
-    if (strpos($stored, 'enc:v1:') !== 0) {
+    if (preg_match('/^enc:(v1|v2):/', $stored, $m) !== 1) {
         return $stored;
+    }
+
+    if (!app_key_available()) {
+        return '';     // no key: an encrypted value is unreadable, not plaintext
     }
 
     $raw = base64_decode(substr($stored, 7), true);
@@ -132,7 +218,7 @@ function secret_decrypt(string $stored): string
     $plain = openssl_decrypt(
         substr($raw, 28),
         'aes-256-gcm',
-        hash('sha256', app_key(), true),
+        secret_storage_key($m[1]),
         OPENSSL_RAW_DATA,
         substr($raw, 0, 12),
         substr($raw, 12, 16)
@@ -595,27 +681,20 @@ function html_to_text(string $html): string
 }
 
 /**
- * Simple sliding-window rate limit, used to stop an admin or a customer
- * hammering "resend invoice". Backed by the session for per-user actions and
- * by the queue table for per-recipient ones.
+ * Sliding-window rate limit for the "send it again" buttons: resend invoice,
+ * resend an order email, re-download an invoice, send a test email.
+ *
+ * It used to count in $_SESSION, which meant the cap was only ever as real as
+ * the caller's cookie - dropping it handed out a fresh quota, and the sender
+ * was the one choosing whether to send the cookie back. The counters live in
+ * the shared `rate_limits` table now, where they survive a new session, a new
+ * browser and a second process.
+ *
+ * $bucket already names what is being capped ("invoice_resend_<order id>",
+ * "test_email_<admin id>"), and each of those is reachable only by the person
+ * or the admin it belongs to, so the resource itself is the key.
  */
 function mail_rate_limit_hit(string $bucket, int $max, int $windowSeconds): bool
 {
-    $key = '_mail_rate_' . md5($bucket);
-    $now = time();
-
-    $hits = array_values(array_filter(
-        (array) ($_SESSION[$key] ?? []),
-        static fn ($ts): bool => is_int($ts) && ($now - $ts) < $windowSeconds
-    ));
-
-    if (count($hits) >= $max) {
-        $_SESSION[$key] = $hits;
-        return false;
-    }
-
-    $hits[] = $now;
-    $_SESSION[$key] = $hits;
-
-    return true;
+    return rate_limit_attempt('mail.action', $bucket, $max, $windowSeconds);
 }

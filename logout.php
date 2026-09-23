@@ -32,11 +32,17 @@ if (is_post()) {
 }
 
 if ($authorised) {
-    logout_user();
+    // "Everywhere" only from a POST: a GET carrying the token could be
+    // prefetched, and ending every session of the account is not something to
+    // do on a link's say-so.
+    $everywhere = is_post() && input_bool('everywhere');
+    logout_user($everywhere);
 
-    flash('success', $name === ''
-        ? 'You have been signed out.'
-        : 'See you soon, ' . $name . '. You have been signed out.');
+    flash('success', $everywhere
+        ? 'Signed out on this device and everywhere else. Sign in again to carry on.'
+        : ($name === ''
+            ? 'You have been signed out.'
+            : 'See you soon, ' . $name . '. You have been signed out.'));
 
     redirect(url());
 }
@@ -58,6 +64,12 @@ auth_layout_start([
             <?= icon('logout', 'w-4 h-4') ?>
             <span class="sik-btn__label">Yes, sign me out</span>
         </button>
+
+        <?php // The way back from a borrowed laptop or a stolen phone. ?>
+        <label class="sik-check" style="margin-top:var(--sp-3);justify-content:center">
+            <input type="checkbox" name="everywhere" value="1">
+            <span>Sign out on all my other devices too</span>
+        </label>
     </form>
 
     <a class="sik-btn sik-btn--outline sik-btn--block" style="margin-top:var(--sp-3)"

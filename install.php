@@ -3,8 +3,10 @@
  * ShopInnKart - Installer
  *
  * Standalone on purpose: it must run before the database exists, so it never
- * loads includes/init.php. Once installation succeeds it writes a lock file
- * and refuses to run again.
+ * loads includes/init.php. The one exception is includes/auth.php, required at
+ * the moment the first admin is created - it is pure function definitions with
+ * no database behind them, and it owns password_hash_app(). Once installation
+ * succeeds the installer writes a lock file and refuses to run again.
  *
  * Steps: requirements -> database -> import schema -> admin account -> done.
  */
@@ -16,15 +18,172 @@ session_start();
 const INSTALL_LOCK = __DIR__ . '/storage/installed.lock';
 const SCHEMA_FILE  = __DIR__ . '/database/schema.sql';
 const CONFIG_FILE  = __DIR__ . '/config/config.php';
+const DB_LOCAL_FILE = __DIR__ . '/config/db.local.php';
+
+/**
+ * Credentials the application itself would use, if it has any.
+ * Same precedence as config/config.php: environment first, then db.local.php.
+ */
+function install_configured_credentials(): ?array
+{
+    $file = [];
+    if (is_file(DB_LOCAL_FILE)) {
+        $loaded = require DB_LOCAL_FILE;
+        if (is_array($loaded)) {
+            $file = $loaded;
+        }
+    }
+
+    $name = getenv('DB_NAME') ?: (string) ($file['name'] ?? '');
+    if ($name === '') {
+        return null;      // nothing is configured: a genuinely fresh copy
+    }
+
+    return [
+        'host' => getenv('DB_HOST') ?: (string) ($file['host'] ?? 'localhost'),
+        'port' => getenv('DB_PORT') ?: (string) ($file['port'] ?? '3306'),
+        'name' => $name,
+        'user' => getenv('DB_USER') ?: (string) ($file['user'] ?? 'root'),
+        'pass' => getenv('DB_PASS') !== false ? (string) getenv('DB_PASS') : (string) ($file['pass'] ?? ''),
+    ];
+}
+
+/**
+ * Is this copy already a working store?
+ *
+ * The lock file alone was never enough. It is written by step 4 and it is
+ * git-ignored, so the documented deployment - import the SQL dump in
+ * phpMyAdmin, hand-write config/db.local.php - never creates it. Every site
+ * deployed that way had a live, anonymous installer sitting at /install.php
+ * that could rewrite the database credentials, reset admin #1 and truncate the
+ * catalogue. So the real question is asked of the database: are there tables?
+ *
+ * Answering "installed" when in doubt is the safe direction - the worst case
+ * is an operator deleting storage/installed.lock to re-run it deliberately.
+ */
+function install_already_installed(): bool
+{
+    static $answer = null;
+    if ($answer !== null) {
+        return $answer;
+    }
+
+    if (is_file(INSTALL_LOCK)) {
+        return $answer = true;
+    }
+
+    $db = install_configured_credentials();
+    if ($db === null) {
+        return $answer = false;
+    }
+
+    try {
+        $pdo = new PDO(
+            "mysql:host={$db['host']};port={$db['port']};dbname={$db['name']};charset=utf8mb4",
+            $db['user'],
+            $db['pass'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]
+        );
+        $statement = $pdo->prepare(
+            'SELECT COUNT(*) FROM `information_schema`.`tables`
+             WHERE `table_schema` = ? AND `table_name` IN (?, ?, ?)'
+        );
+        $statement->execute([$db['name'], 'admins', 'settings', 'products']);
+
+        return $answer = ((int) $statement->fetchColumn() > 0);
+    } catch (PDOException $e) {
+        // Configured but unreachable: could be a wrong password on a live site.
+        // Refusing is still the safe answer - a broken database is not a reason
+        // to open an unauthenticated installer to the internet.
+        return $answer = true;
+    }
+}
+
+/**
+ * Record that someone posted to a disarmed installer.
+ *
+ * Written straight through PDO rather than through includes/init.php: the
+ * installer is deliberately standalone, and a probe must not depend on the
+ * rest of the app booting cleanly.
+ */
+function install_log_probe(string $what): void
+{
+    $db = install_configured_credentials();
+    if ($db === null) {
+        return;
+    }
+
+    try {
+        $pdo = new PDO(
+            "mysql:host={$db['host']};port={$db['port']};dbname={$db['name']};charset=utf8mb4",
+            $db['user'],
+            $db['pass'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5]
+        );
+        $pdo->prepare(
+            'INSERT INTO `security_events` (`type`, `severity`, `ip_address`, `user_agent`, `path`, `context`)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        )->execute([
+            'platform.installer_probe',
+            'critical',
+            substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45),
+            substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255),
+            substr((string) ($_SERVER['REQUEST_URI'] ?? ''), 0, 255),
+            json_encode(['attempted' => $what], JSON_UNESCAPED_SLASHES),
+        ]);
+    } catch (Throwable $ignored) {
+        // No security_events table yet, or the database is down. The refusal
+        // itself is what matters; losing the note must not break the page.
+    }
+}
+
+/** Per-session token for the wizard's POSTs. The installer cannot use csrf.php. */
+function install_csrf_token(): string
+{
+    if (!isset($_SESSION['install_csrf']) || !is_string($_SESSION['install_csrf'])) {
+        $_SESSION['install_csrf'] = bin2hex(random_bytes(32));
+    }
+
+    return $_SESSION['install_csrf'];
+}
+
+/** The hidden field every wizard form carries. */
+function install_csrf_field(): string
+{
+    return '<input type="hidden" name="install_csrf" value="'
+        . htmlspecialchars(install_csrf_token(), ENT_QUOTES) . '">';
+}
+
+/** Constant-time check of the posted token. */
+function install_csrf_valid(): bool
+{
+    $posted = (string) ($_POST['install_csrf'] ?? '');
+
+    return $posted !== '' && isset($_SESSION['install_csrf'])
+        && hash_equals((string) $_SESSION['install_csrf'], $posted);
+}
 
 // ---------------------------------------------------------------------------
-// Already installed? Refuse, unless the lock is deleted deliberately.
+// Already installed? Refuse everything, by state as well as by lock file.
 // ---------------------------------------------------------------------------
-$isLocked = is_file(INSTALL_LOCK);
+$isLocked = install_already_installed();
+
+if ($isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    // A POST to a disarmed installer is never a mistake: the page it would
+    // have come from is not being rendered.
+    install_log_probe('step ' . (int) ($_POST['step'] ?? 0));
+}
 
 $step = max(1, min(5, (int) ($_GET['step'] ?? 1)));
 $errors = [];
 $notices = [];
+
+// A genuine install has just written the lock file it is now being judged by,
+// so the browser that ran it still gets its "done" page instead of being told
+// the site is already installed.
+$justFinished = $isLocked && $step === 5
+    && !empty($_SESSION['install_done'])
+    && $_SERVER['REQUEST_METHOD'] === 'GET';
 
 // ---------------------------------------------------------------------------
 // Requirement checks
@@ -154,7 +313,7 @@ function split_sql(string $sql): array
 // ---------------------------------------------------------------------------
 // Step handlers
 // ---------------------------------------------------------------------------
-if (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_valid()) {
     $postedStep = (int) ($_POST['step'] ?? 1);
 
     // ---- Step 2: test the database connection -----------------------------
@@ -253,7 +412,13 @@ if (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($adminName === '')                              { $errors[] = 'Enter the administrator name.'; }
             if ($adminUser === '')                              { $errors[] = 'Enter a username.'; }
             if (!filter_var($adminEmail, FILTER_VALIDATE_EMAIL)) { $errors[] = 'Enter a valid email address.'; }
-            if (strlen($adminPass) < 8)                         { $errors[] = 'The password must be at least 8 characters.'; }
+            // 12, not 8: this is the account that opens the whole panel, and
+            // the panel itself now refuses an admin password shorter than
+            // sec_password_min_admin. A store whose first admin was allowed a
+            // weaker password than every admin created after it is the wrong
+            // way round. (The policy helper cannot be used here - it reads the
+            // setting out of a database that does not exist yet.)
+            if (mb_strlen($adminPass) < 12)                     { $errors[] = 'The password must be at least 12 characters.'; }
             if ($adminPass !== $adminPass2)                     { $errors[] = 'The passwords do not match.'; }
 
             if ($errors === []) {
@@ -265,6 +430,14 @@ if (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
                     );
 
+                    // The one file this installer does load. includes/auth.php
+                    // is pure function definitions - no database, no settings,
+                    // no init.php - so it can be required here, and it is the
+                    // only place password_hash_app() is defined. Hashing the
+                    // first admin any other way would start a fresh store on
+                    // bcrypt and wait for their first sign-in to upgrade it.
+                    require_once __DIR__ . '/includes/auth.php';
+
                     // Replace the seeded super admin rather than adding a second one.
                     $pdo->prepare(
                         'UPDATE `admins` SET `name` = ?, `username` = ?, `email` = ?, `password` = ?
@@ -273,7 +446,7 @@ if (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $adminName,
                         $adminUser,
                         $adminEmail,
-                        password_hash($adminPass, PASSWORD_DEFAULT),
+                        password_hash_app($adminPass),
                     ]);
 
                     $pdo->prepare('UPDATE `settings` SET `setting_value` = ? WHERE `setting_key` = ?')
@@ -322,6 +495,11 @@ if (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $step = 4;
         }
     }
+} elseif (!$isLocked && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Missing or stale token: the browser sat on the page past a session
+    // expiry, or something posted here from another site.
+    $errors[] = 'Your session expired. Please start again from step 1.';
+    $step = 1;
 }
 
 /**
@@ -347,7 +525,9 @@ function write_db_config(array $db): bool
     return @file_put_contents(__DIR__ . '/config/db.local.php', $contents) !== false;
 }
 
-$requirements = check_requirements();
+// Only probed when the wizard can actually run: check_requirements() creates
+// the runtime folders, which a disarmed installer has no business doing.
+$requirements = $isLocked ? [] : check_requirements();
 $requirementsPassed = !in_array(false, array_map(
     static fn ($check) => $check['required'] ? $check['ok'] : true,
     $requirements
@@ -433,16 +613,25 @@ $steps = [
             <p>Set up your electronics store in a few steps.</p>
         </div>
 
-        <?php if ($isLocked): ?>
+        <?php if ($isLocked && !$justFinished): ?>
             <div class="body">
                 <div class="alert alert--success">
                     <strong>ShopInnKart is already installed.</strong>
-                    The installer is locked to stop anyone re-running it and wiping your data.
+                    The installer will not run again. It cannot change the database credentials,
+                    reset the administrator account or clear your data.
                 </div>
                 <p class="muted">
-                    If you genuinely need to reinstall, delete
-                    <code>storage/installed.lock</code> from the server first. For security, you should
-                    also delete <code>install.php</code> once your store is live.
+                    This is decided by the store itself, not by a file you could lose: the app has
+                    database credentials and the database already holds its tables.
+                </p>
+                <div class="alert alert--error" style="margin-top:14px">
+                    <strong>Delete <code>install.php</code> from the server.</strong>
+                    Nothing on a live store needs it, and Admin &rarr; Security &rarr; Settings will keep
+                    reminding you while it is there.
+                </div>
+                <p class="muted">
+                    Genuinely reinstalling from scratch? Remove <code>config/db.local.php</code> and
+                    <code>storage/installed.lock</code>, and drop the database first.
                 </p>
                 <div class="actions">
                     <a class="btn btn--ghost" href="index.php">View Storefront</a>
@@ -498,7 +687,7 @@ $steps = [
                         The database is created automatically if it does not exist yet.
                     </p>
                     <form method="post" action="install.php?step=2">
-                        <input type="hidden" name="step" value="2">
+                        <?= install_csrf_field() ?><input type="hidden" name="step" value="2">
                         <div class="row row-2">
                             <div class="field">
                                 <label for="db_host">Host</label>
@@ -541,7 +730,7 @@ $steps = [
                         Make sure you picked an empty or disposable database.
                     </div>
                     <form method="post" action="install.php?step=3">
-                        <input type="hidden" name="step" value="3">
+                        <?= install_csrf_field() ?><input type="hidden" name="step" value="3">
                         <div class="actions">
                             <a class="btn btn--ghost" href="install.php?step=2">&larr; Back</a>
                             <button class="btn" type="submit">Import Schema &rarr;</button>
@@ -555,7 +744,7 @@ $steps = [
                         Now set up the account you will sign in with.
                     </p>
                     <form method="post" action="install.php?step=4">
-                        <input type="hidden" name="step" value="4">
+                        <?= install_csrf_field() ?><input type="hidden" name="step" value="4">
                         <div class="field">
                             <label for="store_name">Store name</label>
                             <input type="text" id="store_name" name="store_name" value="<?= htmlspecialchars((string) ($_POST['store_name'] ?? 'ShopInnKart'), ENT_QUOTES) ?>" required>
@@ -577,11 +766,11 @@ $steps = [
                         <div class="row row-2">
                             <div class="field">
                                 <label for="admin_password">Password</label>
-                                <input type="password" id="admin_password" name="admin_password" minlength="8" required autocomplete="new-password">
+                                <input type="password" id="admin_password" name="admin_password" minlength="12" required autocomplete="new-password">
                             </div>
                             <div class="field">
                                 <label for="admin_password_confirm">Confirm password</label>
-                                <input type="password" id="admin_password_confirm" name="admin_password_confirm" minlength="8" required autocomplete="new-password">
+                                <input type="password" id="admin_password_confirm" name="admin_password_confirm" minlength="12" required autocomplete="new-password">
                             </div>
                         </div>
 

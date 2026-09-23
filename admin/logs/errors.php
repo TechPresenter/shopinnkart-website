@@ -2,9 +2,14 @@
 /**
  * ShopInnKart Admin - Error log.
  *
- * Mirrors what ErrorHandler::log() wrote to /storage/logs. There is no
- * "resolved" column in the schema, so resolving is an explicit act: tick the
- * entries you have dealt with and clear them.
+ * Mirrors what ErrorHandler::log() wrote to /storage/logs. Resolving is an
+ * explicit act: tick the entries you have dealt with and mark them resolved.
+ *
+ * Marking used to DELETE the rows, which made "tidy up the error log" and
+ * "destroy the evidence" the same button — an attacker's stack traces are
+ * often the only trace of a failed attempt. The rows now stay, stamped with
+ * who resolved them and when; only the retention prune in _shared.php ever
+ * removes anything, and never inside the retention window.
  */
 
 declare(strict_types=1);
@@ -21,7 +26,7 @@ if (is_post() && input('op', '') === 'clear') {
     logs_handle_clear('error_logs', $selfUrl);
 }
 
-// "Clear resolved": drop exactly the rows the admin ticked.
+// "Mark resolved": stamp exactly the rows the admin ticked. Nothing is deleted.
 if (is_post() && input('op', '') === 'clear_selected') {
     admin_require_action('logs.delete');   // POST + CSRF + permission
 
@@ -33,13 +38,19 @@ if (is_post() && input('op', '') === 'clear_selected') {
     }
 
     [$placeholders, $params] = Database::inPlaceholders($ids, 'id');
-    $removed = Database::delete('error_logs', "`id` IN ({$placeholders})", $params);
+    $marked = Database::update(
+        'error_logs',
+        ['resolved_at' => date('Y-m-d H:i:s'), 'resolved_by' => (string) $admin['name']],
+        "`id` IN ({$placeholders}) AND `resolved_at` IS NULL",
+        $params
+    );
 
-    log_activity('logs.cleared', 'error_logs', null,
-        'Marked ' . $removed . ' error log entr' . ($removed === 1 ? 'y' : 'ies') . ' resolved and removed them');
+    log_activity('logs.resolved', 'error_logs', null,
+        'Marked ' . $marked . ' error log entr' . ($marked === 1 ? 'y' : 'ies') . ' resolved');
     admin_after_write();
 
-    flash('success', number_format($removed) . ' entr' . ($removed === 1 ? 'y' : 'ies') . ' cleared as resolved.');
+    flash('success', number_format($marked) . ' entr' . ($marked === 1 ? 'y' : 'ies')
+        . ' marked resolved. They stay in the log until they age past the retention window.');
     redirect($selfUrl);
 }
 
@@ -83,7 +94,8 @@ $limit  = (int) $pagination['per_page'];
 $offset = (int) $pagination['offset'];
 
 $entries = Database::fetchAll(
-    "SELECT `id`, `level`, `message`, `file`, `line`, `url`, `trace`, `ip_address`, `created_at`
+    "SELECT `id`, `level`, `message`, `file`, `line`, `url`, `trace`, `ip_address`, `created_at`,
+            `resolved_at`, `resolved_by`
      FROM `error_logs`
      WHERE {$whereSql}
      ORDER BY `id` DESC
@@ -180,11 +192,11 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-bulk" data-bulk-bar>
                     <strong><span data-bulk-count>0</span> selected</strong>
                     <span class="ad-muted" style="font-size:12.5px">
-                        Clearing removes them permanently — do it once the cause is fixed.
+                        Marking keeps the entry and stamps it with your name &mdash; do it once the cause is fixed.
                     </span>
-                    <button type="submit" class="ad-btn ad-btn--danger ad-btn--sm" style="margin-left:auto"
-                            data-confirm="Clear the selected entries as resolved? This cannot be undone.">
-                        <?= icon('check', 'w-4 h-4') ?> Clear resolved
+                    <button type="submit" class="ad-btn ad-btn--sm" style="margin-left:auto"
+                            data-confirm="Mark the selected entries as resolved?">
+                        <?= icon('check', 'w-4 h-4') ?> Mark resolved
                     </button>
                 </div>
             <?php endif; ?>
@@ -225,8 +237,20 @@ require ADMIN_PATH . '/includes/header.php';
                                         <span class="sik-status sik-status--<?= e($levelTone((string) $entry['level'])) ?>">
                                             <?= e(ucfirst((string) $entry['level'])) ?>
                                         </span>
+                                        <?php if (!empty($entry['resolved_at'])): ?>
+                                            <div class="ad-cellflex__meta" style="margin-top:4px"
+                                                 title="<?= e_attr('Resolved ' . format_datetime($entry['resolved_at'], 'd M Y, g:i A')
+                                                     . (!empty($entry['resolved_by']) ? ' by ' . $entry['resolved_by'] : '')) ?>">
+                                                <?= icon('check', 'w-3 h-3') ?> Resolved
+                                            </div>
+                                        <?php endif; ?>
                                     </td>
-                                    <td style="min-width:320px">
+                                    <?php // Was min-width:320px. An inline floor outranks every rule in
+                                          // admin.css, so this one cell kept the log table 320px wide
+                                          // whatever the screen: 91px of sideways scroll at 768px and 3px
+                                          // at 360px, inside a table that otherwise now fits or stacks.
+                                          // A preferred width asks for the same room and gives it up. ?>
+                                    <td style="width:45%">
                                         <div style="font-weight:600;line-height:1.45"><?= e($entry['message']) ?></div>
                                         <?php if (!empty($entry['url'])): ?>
                                             <div class="ad-cellflex__meta ad-mono"><?= e(str_limit((string) $entry['url'], 110)) ?></div>
@@ -236,9 +260,12 @@ require ADMIN_PATH . '/includes/header.php';
                                                 <summary style="cursor:pointer;font-size:12px;color:var(--ad-primary)">
                                                     Stack trace
                                                 </summary>
+                                                <?php // `overflow-x:auto; white-space:pre` made a stack trace scroll 1387px
+                                                      // sideways inside this <details> on a phone. admin.css now wraps
+                                                      // pre.ad-mono; the inline pair outranked it, so it is gone. ?>
                                                 <pre class="ad-mono" style="margin-top:6px;padding:10px;background:#F9FAFB;
-                                                     border:1px solid var(--ad-border);border-radius:8px;overflow-x:auto;
-                                                     white-space:pre;font-size:11.5px;line-height:1.6;max-height:320px"><?= e($entry['trace']) ?></pre>
+                                                     border:1px solid var(--ad-border);border-radius:8px;
+                                                     font-size:11.5px;line-height:1.6;max-height:320px;overflow-y:auto"><?= e($entry['trace']) ?></pre>
                                             </details>
                                         <?php endif; ?>
                                     </td>

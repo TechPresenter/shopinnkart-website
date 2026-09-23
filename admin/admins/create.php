@@ -26,6 +26,11 @@ $errors = [];
 $roleOptions    = admins_role_options();
 $canAssignSuper = admin_is_super();
 
+if ($roleOptions === []) {
+    flash('error', 'There is no role you can grant. Ask a Super Admin to create one within your own permissions first.');
+    redirect(admin_url('admins/'));
+}
+
 if (is_post()) {
     csrf_require();
 
@@ -65,13 +70,31 @@ if (is_post()) {
       ->phone('phone')
       ->required('role_id')->integer('role_id')->exists('role_id', 'admin_roles')
       ->required('status')->in('status', array_keys(ADMIN_ACCOUNT_STATUSES))
-      ->required('password')->password('password')
+      // 'admin' holds the new password to sec_password_min_admin (12) rather
+      // than the shopper floor: this hash opens the whole panel.
+      ->required('password')->password('password', null, 'admin', $submitted['email'])
       ->matches('password_confirmation', 'password', 'The two passwords do not match.');
 
     // Handing out the wildcard role is an escalation, so it stays with the
     // people who already hold it.
     if ($submitted['role_id'] > 0 && !$canAssignSuper && admins_role_is_super($submitted['role_id'])) {
         $v->rule('role_id', false, 'Only a Super Admin can grant a role with unrestricted access.');
+    }
+
+    // Refusing only the wildcard was not enough: creating an account on any
+    // role that outranks you, then signing in as it, is the same escalation
+    // with one extra step.
+    if ($submitted['role_id'] > 0 && !admin_can_manage_role($submitted['role_id'])) {
+        $beyond = admin_permissions_beyond(admin_role_permissions($submitted['role_id']));
+        $v->rule('role_id', false, 'That role grants permissions you do not hold yourself ('
+            . implode(', ', array_slice($beyond, 0, 4)) . (count($beyond) > 4 ? '…' : '')
+            . '), so you cannot create an account on it.');
+    }
+
+    // A new sign-in is a privilege change, so it carries the same step-up as
+    // resetting an existing one.
+    if (!admin_reauth_ok()) {
+        $v->rule('reauth_password', false, admin_reauth_error('create an admin account'));
     }
 
     if ($v->fails()) {
@@ -86,7 +109,7 @@ if (is_post()) {
             'name'     => $submitted['name'],
             'username' => $submitted['username'],
             'email'    => $submitted['email'],
-            'password' => password_hash($password, PASSWORD_DEFAULT),
+            'password' => password_hash_app($password),
             'phone'    => $phone,
             'avatar'   => $avatar,
             'status'   => $submitted['status'],
@@ -103,6 +126,12 @@ if (is_post()) {
             $newId,
             'Created admin "' . $submitted['name'] . '" (@' . $submitted['username'] . ') as ' . $roleName
         );
+        security_event('admin.created', 'high', [
+            'target_admin_id' => $newId,
+            'target_username' => $submitted['username'],
+            'role'            => $roleName,
+            'role_id'         => $submitted['role_id'],
+        ], (int) $admin['id'], 'admin');
         admin_after_write();
 
         flash('success', 'Admin "' . $submitted['name'] . '" created. Share the password securely and ask them to change it.');

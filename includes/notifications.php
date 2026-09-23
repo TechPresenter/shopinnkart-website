@@ -181,7 +181,7 @@ function notification_default_vars(): array
 {
     return [
         'store_name'    => (string) setting('store_name', SITE_NAME),
-        'store_url'     => SITE_URL,
+        'store_url'     => canonical_url(),
         'store_email'   => (string) setting('store_email', 'support@' . SITE_DOMAIN),
         'store_phone'   => (string) setting('store_phone', ''),
         'store_address' => (string) setting('store_address', ''),
@@ -321,7 +321,7 @@ function notify_payment_result(?array $order, string $event, string $reason = ''
     $orderId = (int) $order['id'];
     $vars = order_notification_vars($order);
     $vars['failure_reason'] = $reason !== '' ? $reason : 'The payment could not be completed.';
-    $vars['retry_url'] = url('order-details.php?order=' . urlencode((string) $order['order_number']));
+    $vars['retry_url'] = canonical_url('order-details.php?order=' . urlencode((string) $order['order_number']));
 
     notify($templateKey, (string) $order['customer_email'], $vars, 'order', $orderId, 'email', [
         'email_type'     => 'payment_' . $event,
@@ -486,13 +486,18 @@ function order_notification_vars(array $order, ?array $invoice = null): array
         'shipped_date'    => $order['shipped_at'] ? format_date($order['shipped_at'], 'd M Y') : '',
         'tracking_number' => (string) ($order['tracking_number'] ?? 'will be shared shortly'),
         'courier_name'    => (string) ($order['courier_name'] ?? 'our delivery partner'),
-        'tracking_url'    => url('track-order.php?order=' . urlencode($orderNumber)),
-        'order_url'       => url('order-details.php?order=' . urlencode($orderNumber)),
-        'review_url'      => url('my-reviews.php'),
+        'tracking_url'    => canonical_url('track-order.php?order=' . urlencode($orderNumber)),
+        'order_url'       => canonical_url('order-details.php?order=' . urlencode($orderNumber)),
+        'review_url'      => canonical_url('my-reviews.php'),
 
         'cancel_reason'   => (string) ($order['cancel_reason'] ?? 'as requested'),
         'return_reason'   => (string) ($order['return_reason'] ?? ''),
-        'refund_note'     => (float) $order['total_amount'] > 0 && (string) $order['payment_status'] !== PAYMENT_STATUS_PENDING
+        // A refund is promised only where money was taken. "Anything but
+        // pending" also covered 'failed' - which is what a COD parcel that
+        // came back (RTO) is left at - and promised a refund of cash the
+        // courier never collected.
+        'refund_note'     => (float) $order['total_amount'] > 0
+            && in_array((string) $order['payment_status'], [PAYMENT_STATUS_PAID, PAYMENT_STATUS_REFUNDED], true)
             ? 'Any amount already paid is refunded to the original payment method within 5-7 working days.'
             : 'No amount was charged for this order.',
         'support_email'   => $storeEmail,
@@ -500,8 +505,8 @@ function order_notification_vars(array $order, ?array $invoice = null): array
 
         'invoice_number'  => $invoice === null ? '' : (string) $invoice['invoice_number'],
         'invoice_date'    => $invoice === null ? '' : format_date((string) $invoice['invoice_date'], 'd M Y'),
-        'invoice_url'     => url('invoice.php?order=' . urlencode($orderNumber)),
-        'invoice_download_url' => url('invoice-download.php?order=' . urlencode($orderNumber)),
+        'invoice_url'     => canonical_url('invoice.php?order=' . urlencode($orderNumber)),
+        'invoice_download_url' => canonical_url('invoice-download.php?order=' . urlencode($orderNumber)),
         'amount_paid'     => $invoice === null ? money(0) : money((float) $invoice['amount_paid']),
         'balance_due'     => $invoice === null ? money(0) : money((float) $invoice['balance_due']),
     ];
@@ -543,9 +548,9 @@ function notify_welcome(array $user): void
     notify('welcome', (string) $user['email'], array_merge(notification_welcome_coupon(), [
         'customer_name'  => $name !== '' ? $name : 'there',
         'customer_email' => (string) $user['email'],
-        'login_url'      => url('login.php'),
-        'shop_url'       => url('shop.php'),
-        'account_url'    => url('account.php'),
+        'login_url'      => canonical_url('login.php'),
+        'shop_url'       => canonical_url('shop.php'),
+        'account_url'    => canonical_url('account.php'),
     ]), 'user', (int) $user['id'], 'email', [
         'email_type'     => 'welcome',
         'recipient_name' => $name,
@@ -594,7 +599,7 @@ function email_verification_url(string $token, string $email): string
 {
     // Both halves travel together: a token on its own must not be replayable
     // against another account if it leaks from a shared inbox or a log.
-    return url('verify-email.php') . '?token=' . urlencode($token) . '&email=' . urlencode($email);
+    return canonical_url('verify-email.php') . '?token=' . urlencode($token) . '&email=' . urlencode($email);
 }
 
 /**
@@ -648,20 +653,160 @@ function notify_newsletter_welcome(string $email): void
     notify('newsletter_welcome', $email, array_merge(notification_welcome_coupon(), [
         'subscriber_email' => $email,
         'customer_email'   => $email,
-        'shop_url'         => url('shop.php'),
+        'shop_url'         => canonical_url('shop.php'),
         'unsubscribe_url'  => newsletter_unsubscribe_url($email),
     ]), null, null, 'email', ['email_type' => 'newsletter_welcome']);
 }
 
 /**
- * A signed unsubscribe link. The token is derived from the address and the app
- * key, so no column is needed and the link cannot be forged for someone else.
+ * A signed unsubscribe link. The token is derived from the address and a key
+ * of its own, so no column is needed and the link cannot be forged for someone
+ * else - nor can knowing it tell you anything about the stored secrets.
  */
 function newsletter_unsubscribe_url(string $email): string
 {
-    $token = hash_hmac('sha256', strtolower(trim($email)), app_key());
+    return canonical_url('newsletter-unsubscribe.php?email=' . rawurlencode($email)
+        . '&token=' . newsletter_unsubscribe_token($email));
+}
 
-    return url('newsletter-unsubscribe.php?email=' . rawurlencode($email) . '&token=' . substr($token, 0, 32));
+/** The token half of the link above. '' when no application key is available. */
+function newsletter_unsubscribe_token(string $email): string
+{
+    $key = app_key_derive('newsletter-unsubscribe');
+    if ($key === '') {
+        return '';
+    }
+
+    return substr(hash_hmac('sha256', mb_strtolower(trim($email)), $key), 0, 32);
+}
+
+/** Constant-time check of a token from an unsubscribe link. */
+function newsletter_unsubscribe_token_valid(string $email, string $token): bool
+{
+    $expected = newsletter_unsubscribe_token($email);
+
+    return $expected !== '' && $token !== '' && hash_equals($expected, $token);
+}
+
+// ---------------------------------------------------------------------------
+//  Secrets in the queue
+//
+//  password_resets stores only a SHA-256 of the token, which is the right
+//  thing - but the rendered email, with the working link in it, was kept in
+//  notification_queue.body forever. The database, every nightly backup and the
+//  hosting export therefore carried live password-reset links, which undid the
+//  hashing completely. Failed rows were never even cleaned up.
+//
+//  So the body is scrubbed as soon as it can no longer be needed: on a
+//  successful send, on a permanent failure, and in any case once the token
+//  behind it has expired.
+// ---------------------------------------------------------------------------
+
+/** Template keys whose body contains a working, account-taking-over secret. */
+const NOTIFICATION_SECRET_TEMPLATES = [
+    'password_reset', 'admin_password_reset', 'email_verify', 'email_verification',
+];
+
+/** Replace secret query parameters in a rendered mail body. */
+function notification_strip_tokens(?string $body): string
+{
+    $body = (string) $body;
+    if ($body === '') {
+        return '';
+    }
+
+    return (string) preg_replace(
+        '/([?&](?:token|selector|verifier|code|otp|key|signature)=)[^"\'&\s<>]+/i',
+        '$1[redacted]',
+        $body
+    );
+}
+
+/**
+ * Scrub one queued row, if it is one of the token-bearing kinds.
+ * Safe to call on anything; a row without a secret is left untouched.
+ */
+function notification_redact_secrets(int $id): void
+{
+    try {
+        $row = Database::fetch(
+            'SELECT `id`, `template_key`, `email_type`, `body`, `body_text`
+             FROM `notification_queue` WHERE `id` = :id',
+            ['id' => $id]
+        );
+        if ($row === null) {
+            return;
+        }
+        if (!in_array((string) $row['template_key'], NOTIFICATION_SECRET_TEMPLATES, true)
+            && !in_array((string) ($row['email_type'] ?? ''), NOTIFICATION_SECRET_TEMPLATES, true)) {
+            return;
+        }
+
+        $body = notification_strip_tokens((string) $row['body']);
+        $text = notification_strip_tokens((string) $row['body_text']);
+        if ($body === (string) $row['body'] && $text === (string) $row['body_text']) {
+            return;   // already scrubbed
+        }
+
+        Database::update('notification_queue', ['body' => $body, 'body_text' => $text], '`id` = :id', ['id' => $id]);
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Could not redact notification #' . $id . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * Sweep: scrub every token-bearing row whose token has expired anyway, and
+ * delete the .eml files the "log" mail driver leaves behind.
+ *
+ * Reset tokens live for an hour, so anything older than a day is certainly
+ * dead - including the rows that failed three times and would otherwise sit
+ * there with a working link in them until the end of time.
+ *
+ * @return int rows scrubbed
+ */
+function notification_prune_secrets(int $olderThanSeconds = 86400): int
+{
+    $scrubbed = 0;
+
+    try {
+        // Two placeholder sets, not one reused twice: a named parameter that
+        // appears more than once in a statement is not portable.
+        [$byTemplate, $templateParams] = Database::inPlaceholders(NOTIFICATION_SECRET_TEMPLATES, 'tpl');
+        [$byType, $typeParams]         = Database::inPlaceholders(NOTIFICATION_SECRET_TEMPLATES, 'typ');
+        $params = $templateParams + $typeParams + ['cutoff' => date('Y-m-d H:i:s', time() - max(3600, $olderThanSeconds))];
+
+        $ids = Database::fetchColumnAll(
+            'SELECT `id` FROM `notification_queue`
+             WHERE (`template_key` IN (' . $byTemplate . ') OR `email_type` IN (' . $byType . '))
+               AND `created_at` < :cutoff
+               AND (
+                    (`body` LIKE \'%token=%\' AND `body` NOT LIKE \'%token=[redacted]%\')
+                 OR (`body_text` LIKE \'%token=%\' AND `body_text` NOT LIKE \'%token=[redacted]%\')
+               )
+             LIMIT 500',
+            $params
+        );
+        foreach ($ids as $id) {
+            notification_redact_secrets((int) $id);
+            $scrubbed++;
+        }
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Notification secret sweep failed: ' . $e->getMessage());
+    }
+
+    // The "log" mail driver writes the whole message, links included, to
+    // storage/logs/mail/*.eml. Useful while developing, a folder of working
+    // reset links after a week.
+    $mailLog = LOG_PATH . '/mail';
+    if (is_dir($mailLog)) {
+        foreach (glob($mailLog . '/*.eml') ?: [] as $file) {
+            if (filemtime($file) < time() - 7 * 86400) {
+                @unlink($file);
+            }
+        }
+    }
+
+    return $scrubbed;
 }
 
 function notify_review_approved(array $review): void
@@ -844,6 +989,11 @@ function process_notification_queue(int $limit = 20): array
                 'smtp_response'   => $smtpResponse === null ? null : mb_substr($smtpResponse, 0, 500),
                 'attachment_name' => $attachmentName,
             ], '`id` = :id', ['id' => (int) $row['id']]);
+
+            // The mail is gone; the working reset link in its body is of no
+            // further use to us and of a great deal of use to anyone who can
+            // read the database or a backup of it.
+            notification_redact_secrets((int) $row['id']);
             $sent++;
         } else {
             $attempts = (int) $row['attempts'] + 1;
@@ -856,6 +1006,13 @@ function process_notification_queue(int $limit = 20): array
                 'smtp_response'   => $smtpResponse === null ? null : mb_substr($smtpResponse, 0, 500),
                 'last_attempt_at' => $now,
             ], '`id` = :id', ['id' => (int) $row['id']]);
+
+            if ($attempts >= 3) {
+                // Given up on: nobody will ever send this body, so nothing is
+                // lost by scrubbing it - and a "failed" row used to keep its
+                // link for the lifetime of the database.
+                notification_redact_secrets((int) $row['id']);
+            }
 
             // The old code swallowed this entirely; a failing mail transport
             // left nothing behind but the literal string 'Send failed.'
@@ -872,6 +1029,11 @@ function process_notification_queue(int $limit = 20): array
             $failed++;
         }
     }
+
+    // Once per drain, at the cost of one indexed SELECT: catch the rows that
+    // never got a send attempt at all (queued while SMTP was down, then
+    // abandoned) and the .eml files the log driver leaves behind.
+    notification_prune_secrets();
 
     return ['sent' => $sent, 'failed' => $failed];
 }

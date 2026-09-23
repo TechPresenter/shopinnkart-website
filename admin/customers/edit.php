@@ -4,6 +4,14 @@
  *
  * The stored password hash is never read into this page. The only thing an
  * admin can do with a password here is replace it.
+ *
+ * Replacing it, or changing the sign-in address, is account takeover with a
+ * friendly face: a support agent could set the email to one they control and
+ * then sign in as the shopper, with their addresses, order history and saved
+ * payment options. So both sit behind customers.credentials (held by nobody by
+ * default), need the agent's own password, and always tell the customer at the
+ * address that was on file BEFORE the change. customers.edit on its own edits
+ * the profile, and view.php's "send a reset link" stays the normal route.
  */
 
 declare(strict_types=1);
@@ -12,7 +20,11 @@ require_once __DIR__ . '/../includes/auth.php';
 
 $admin = admin_require('customers.edit');
 
+require_once ADMIN_PATH . '/includes/rbac.php';
 require_once __DIR__ . '/_filters.php';
+
+/** May this admin set a shopper's password or sign-in address? */
+$canCredentials = admin_can('customers.credentials');
 
 $customerId = (int) input_int('id');
 
@@ -76,6 +88,33 @@ if (is_post()) {
             ->matches('password_confirmation', 'password', 'The two passwords do not match.');
     }
 
+    $newEmail    = mb_strtolower(trim((string) ($_POST['email'] ?? '')));
+    $emailChange = $newEmail !== mb_strtolower((string) $customer['email']);
+
+    // Neither of the two takeover routes is available without the dedicated
+    // permission. A save that leaves both alone is an ordinary profile edit.
+    if (($password !== '' || $emailChange) && !$canCredentials) {
+        $what = $password !== '' && $emailChange
+            ? 'a password or email address'
+            : ($password !== '' ? 'a password' : 'an email address');
+
+        security_event('rbac.denied', 'high', [
+            'reason'      => 'customers.credentials required',
+            'customer_id' => $customerId,
+            'attempted'   => $password !== '' ? 'password' : 'email',
+        ], (int) $admin['id'], 'admin');
+
+        $validator->rule(
+            $password !== '' ? 'password' : 'email',
+            false,
+            'Setting ' . $what . ' for a customer needs the customers.credentials permission. '
+                . 'Send a password reset link from their record instead.'
+        );
+    } elseif (($password !== '' || $emailChange) && !admin_reauth_ok()) {
+        $validator->rule('reauth_password', false,
+            admin_reauth_error($password !== '' ? 'set a customer password' : 'change a customer email address'));
+    }
+
     if ($validator->fails()) {
         flash_errors($validator->errors());
         // flash_old() drops both password fields, so nothing plaintext is
@@ -99,7 +138,7 @@ if (is_post()) {
     ];
 
     if ($password !== '') {
-        $data['password'] = password_hash($password, PASSWORD_DEFAULT);
+        $data['password'] = password_hash_app($password);
         // A freshly set password with a live lockout still cannot be used, so
         // clear the counter at the same time.
         $data['failed_logins'] = 0;
@@ -108,13 +147,83 @@ if (is_post()) {
 
     Database::update('users', $data, '`id` = :id', ['id' => $customerId]);
 
+    // Writing a new hash is only half of a password reset. Support sets a
+    // shopper's password precisely because somebody else is in the account,
+    // and that somebody keeps their session and their remembered device until
+    // a timeout unless the account moves to a new session generation.
+    //
+    // auth_after_password_change() re-stamps the ACTING storefront session so
+    // that a shopper changing their own password stays signed in. Here the
+    // actor is an admin; if they happen to be shopping in the same browser,
+    // that re-stamp would sign them out, so it is put back.
+    if ($password !== '') {
+        $shopperId    = (int) ($_SESSION[USER_SESSION_KEY]['id'] ?? 0);
+        $shopperStamp = $_SESSION[USER_SESSION_KEY]['auth_version'] ?? null;
+
+        // Always the support wording here: this screen is only ever reached by
+        // an administrator setting a password for somebody else.
+        auth_after_password_change('customer', $customer, 'admin');
+
+        if ($shopperId !== 0 && $shopperId !== $customerId && is_int($shopperStamp)) {
+            $_SESSION[USER_SESSION_KEY]['auth_version'] = $shopperStamp;
+        }
+
+        security_event('auth.sessions_revoked', 'high', [
+            'reason'      => 'password set by an administrator',
+            'customer_id' => $customerId,
+            'by_admin_id' => (int) $admin['id'],
+        ], $customerId, 'customer');
+    } elseif ($data['status'] !== 'active' && $data['status'] !== (string) $customer['status']) {
+        // current_user() already refuses a blocked account on its next
+        // request, but a remembered device is a credential of its own: the
+        // row outlives the block and would walk straight back in the moment
+        // the account is set to active again. The bump drops those tokens.
+        auth_bump_version('customer', $customerId);
+
+        security_event('auth.sessions_revoked', 'high', [
+            'reason'      => 'account set to ' . $data['status'] . ' by an administrator',
+            'customer_id' => $customerId,
+            'by_admin_id' => (int) $admin['id'],
+        ], $customerId, 'customer');
+    }
+
     $name = trim($data['first_name'] . ' ' . (string) $data['last_name']);
     log_activity(
         'customer.updated',
         'user',
         $customerId,
         'Updated customer "' . $name . '"' . ($password !== '' ? ' and set a new password' : '')
+            . ($emailChange ? ' and changed the sign-in email' : '')
     );
+
+    if ($password !== '' || $emailChange) {
+        $changes = [];
+        if ($password !== '') { $changes[] = 'password'; }
+        if ($emailChange)     { $changes[] = 'email address'; }
+
+        // Old and new addresses are both recorded: a takeover shows up as a
+        // redirect, which is only visible if the previous value is kept.
+        security_event('customer.credentials_changed', 'high', [
+            'customer_id' => $customerId,
+            'changes'     => $changes,
+            'email_from'  => $emailChange ? mask_email((string) $customer['email']) : null,
+            'email_to'    => $emailChange ? mask_email($data['email']) : null,
+        ], (int) $admin['id'], 'admin');
+
+        // Sent to the address on file BEFORE the change, so a hijack lands in
+        // the real owner's inbox rather than the attacker's.
+        admin_notify_customer_change($customer, 'your ' . implode(' and ', $changes)
+            . ' ' . (count($changes) === 1 ? 'was' : 'were') . ' changed by our support team');
+
+        if ($emailChange) {
+            admin_notify_customer_change(
+                ['id' => $customerId, 'first_name' => $data['first_name'], 'last_name' => $data['last_name'],
+                 'email' => $data['email']],
+                'this address was set as the sign-in email for your account'
+            );
+        }
+    }
+
     admin_after_write();
 
     old_clear();
@@ -185,8 +294,15 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-field">
                     <label class="sik-label" for="email">Email address <span aria-hidden="true">*</span></label>
                     <input class="sik-input" type="email" id="email" name="email" maxlength="190" required
-                           value="<?= e($value('email')) ?>">
-                    <p class="sik-help">This is the customer's sign-in identifier, so it must stay unique.</p>
+                           value="<?= e($value('email')) ?>"
+                           <?= $canCredentials ? '' : 'readonly' ?>>
+                    <p class="sik-help">
+                        This is the customer's sign-in identifier, so it must stay unique.
+                        <?php if (!$canCredentials): ?>
+                            Changing it means signing in as them, so it needs the
+                            <code>customers.credentials</code> permission.
+                        <?php endif; ?>
+                    </p>
                     <?php if (error_for($errors, 'email') !== ''): ?>
                         <p class="sik-error"><?= e(error_for($errors, 'email')) ?></p>
                     <?php endif; ?>
@@ -244,7 +360,11 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <div class="ad-card__title">Password</div>
-                <div class="ad-card__sub">Leave both fields empty to keep the current password.</div>
+                <div class="ad-card__sub">
+                    <?= $canCredentials
+                        ? 'Leave both fields empty to keep the current password.'
+                        : 'Send the customer a reset link instead of choosing a password for them.' ?>
+                </div>
             </div>
         </div>
         <div class="ad-card__body ad-form">
@@ -256,28 +376,41 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
             </div>
 
-            <div class="ad-row ad-row--2">
-                <div class="ad-field">
-                    <label class="sik-label" for="password">New password</label>
-                    <input class="sik-input" type="password" id="password" name="password"
-                           autocomplete="new-password" minlength="<?= (int) PASSWORD_MIN_LENGTH ?>">
-                    <p class="sik-help">
-                        At least <?= (int) PASSWORD_MIN_LENGTH ?> characters, with a letter and a number.
-                    </p>
-                    <?php if (error_for($errors, 'password') !== ''): ?>
-                        <p class="sik-error"><?= e(error_for($errors, 'password')) ?></p>
-                    <?php endif; ?>
+            <?php if ($canCredentials): ?>
+                <div class="ad-row ad-row--2">
+                    <div class="ad-field">
+                        <label class="sik-label" for="password">New password</label>
+                        <input class="sik-input" type="password" id="password" name="password"
+                               autocomplete="new-password" minlength="<?= (int) password_min_length('customer') ?>">
+                        <p class="sik-help">
+                            <?php // password_min_length(), not the constant: sec_password_min can raise the
+                                  // floor, and a hint below what the validator accepts is worse than none. ?>
+                            At least <?= (int) password_min_length('customer') ?> characters, with a letter and a number.
+                            Using this signs the customer out everywhere and emails them.
+                        </p>
+                        <?php if (error_for($errors, 'password') !== ''): ?>
+                            <p class="sik-error"><?= e(error_for($errors, 'password')) ?></p>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="ad-field">
+                        <label class="sik-label" for="passwordConfirm">Confirm new password</label>
+                        <input class="sik-input" type="password" id="passwordConfirm" name="password_confirmation"
+                               autocomplete="new-password">
+                        <?php if (error_for($errors, 'password_confirmation') !== ''): ?>
+                            <p class="sik-error"><?= e(error_for($errors, 'password_confirmation')) ?></p>
+                        <?php endif; ?>
+                    </div>
                 </div>
 
-                <div class="ad-field">
-                    <label class="sik-label" for="passwordConfirm">Confirm new password</label>
-                    <input class="sik-input" type="password" id="passwordConfirm" name="password_confirmation"
-                           autocomplete="new-password">
-                    <?php if (error_for($errors, 'password_confirmation') !== ''): ?>
-                        <p class="sik-error"><?= e(error_for($errors, 'password_confirmation')) ?></p>
-                    <?php endif; ?>
-                </div>
-            </div>
+                <?= admin_reauth_field('set a password or change the sign-in address',
+                    error_for($errors, 'reauth_password')) ?>
+            <?php else: ?>
+                <p class="ad-muted" style="font-size:13px;margin:0">
+                    Setting a password directly would let you sign in as this customer, so it needs the
+                    <code>customers.credentials</code> permission. Ask a Super Admin if your job needs it.
+                </p>
+            <?php endif; ?>
         </div>
         <div class="ad-card__foot">
             <a class="ad-btn" href="<?= e($viewUrl) ?>">Cancel</a>

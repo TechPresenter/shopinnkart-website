@@ -10,9 +10,19 @@ require_once __DIR__ . '/../../includes/init.php';
 
 api_require_method(['POST']);
 api_require_csrf();
-api_rate_limit('register', 5, 900);
+// Per client address: a session-keyed counter reset itself whenever the caller
+// dropped the cookie, which left "an account already exists with this email"
+// as an unlimited yes/no oracle over every address an attacker cared to try
+// (and unlimited welcome mail from our domain).
+api_rate_limit('register', 5, 3600);
 
 $input = request_all();
+
+// Honeypot: a field no human sees and every form-filling bot completes.
+if (trim((string) request_input('website', '')) !== '') {
+    security_event('api.honeypot', 'low', ['endpoint' => 'register']);
+    json_success('Thanks! Please check your inbox to finish setting up your account.');
+}
 
 $validator = new Validator($input, [
     'first_name'            => 'First name',
@@ -28,7 +38,7 @@ $validator->required('first_name')->max('first_name', 100)
     ->required('email')->email('email')->max('email', 190)
     ->unique('email', 'users', 'email', null, 'An account already exists with this email. Try signing in instead.')
     ->required('phone')->phone('phone')
-    ->required('password')->password('password')
+    ->required('password')->password('password', null, 'customer', (string) ($input['email'] ?? ''))
     ->required('password_confirmation')
     ->matches('password_confirmation', 'password', 'Passwords do not match.')
     ->rule('accepts_terms', request_bool('accepts_terms'), 'Please accept the Terms & Conditions to continue.');
@@ -47,7 +57,7 @@ try {
         'last_name'  => $lastName === '' ? null : $lastName,
         'email'      => $email,
         'phone'      => normalize_phone((string) $clean['phone']),
-        'password'   => password_hash((string) $clean['password'], PASSWORD_DEFAULT),
+        'password'   => password_hash_app((string) $clean['password']),
         'status'     => 'active',
     ]);
 } catch (PDOException $e) {

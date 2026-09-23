@@ -18,10 +18,43 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/init.php';
 require_once INCLUDES_PATH . '/auth-layout.php';
 
+// Same rule as reset-password.php: while a token is in the address bar, no
+// third-party tag runs on the page and no Referer leaves it. A tag container
+// reports document.location to somebody else's server, token and all.
+$GLOBALS['SIK_NO_THIRD_PARTY'] = true;
+if (!headers_sent()) {
+    header('Referrer-Policy: no-referrer');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+}
+
 // input() reads POST before GET, so this covers the emailed link and the round
 // trip through the confirm button.
 $token = (string) input('token', '');
 $email = mb_strtolower((string) input('email', ''));
+
+// Same treatment reset-password.php gives its link: a GET carrying the token
+// parks it in the session and bounces to a clean address, so the token is not
+// left in the history, in a bookmark, in a pasted "can you help me" message or
+// in the server's access log. It still travels in the POST that consumes it,
+// so the "never consume on GET" rule above is untouched - a link scanner that
+// follows the redirect stashes a token in its own throwaway session and burns
+// nothing.
+if (!is_post() && $token !== '') {
+    $_SESSION['_verify_link'] = ['token' => $token, 'email' => $email, 'at' => time()];
+    redirect(url('verify-email.php'), 303);
+}
+
+// Picked up again on the clean URL, briefly: a stash left behind in a shared
+// browser is a working confirmation link for as long as it lasts.
+if (!is_post() && is_array($_SESSION['_verify_link'] ?? null)) {
+    $stash = $_SESSION['_verify_link'];
+    if (time() - (int) ($stash['at'] ?? 0) <= 1800) {
+        $token = (string) ($stash['token'] ?? '');
+        $email = mb_strtolower((string) ($stash['email'] ?? ''));
+    } else {
+        unset($_SESSION['_verify_link']);
+    }
+}
 
 $linkProblem = '';
 $verified    = false;
@@ -52,6 +85,7 @@ if (is_post() && $user !== null && !$verified) {
 
     if (consume_email_verification($record)) {
         $verified = true;
+        unset($_SESSION['_verify_link']);
         log_activity('customer.email_verified', 'user', (int) $user['id'],
             'Confirmed the address ' . $user['email']);
 

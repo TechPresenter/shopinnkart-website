@@ -21,6 +21,13 @@ if (admin_is_logged_in()) {
     redirect(admin_url('dashboard.php'));
 }
 
+// With a hidden login address configured, this screen only exists for a browser
+// that came in through it - GET and POST alike, so the form cannot be
+// brute-forced by anyone who merely guessed /admin/login.php.
+if (!admin_gate_passed()) {
+    admin_gate_deny();
+}
+
 $errors = [];
 $identifier = '';
 
@@ -39,11 +46,16 @@ if (is_post()) {
     if ($validator->fails()) {
         $errors = $validator->errors();
     } else {
+        // Throttling (per IP, per IP+account, atomic) lives inside
+        // attempt_admin_login, so the form and any other caller share it.
         $attempt = attempt_admin_login($identifier, $password);
 
         if ($attempt['ok']) {
             login_admin($attempt['admin']);
             log_activity('admin.login', 'admin', (int) $attempt['admin']['id'], $attempt['admin']['name'] . ' signed in');
+            // An admin signing in is worth a line in the security log too:
+            // activity_logs record what admins did, this records who got in.
+            security_event('auth.admin_login', 'info', [], (int) $attempt['admin']['id'], 'admin');
             flash('success', 'Welcome back, ' . $attempt['admin']['name'] . '.');
             redirect(admin_intended_url());
         }
@@ -123,17 +135,6 @@ $storeName = (string) setting('store_name', SITE_NAME);
         <p style="text-align:center;font-size:12.5px;color:var(--ad-muted);margin-top:22px">
             <a href="<?= e(url()) ?>" style="color:var(--ad-primary);font-weight:600">&larr; Back to storefront</a>
         </p>
-
-        <?php if (APP_DEBUG): ?>
-            <div class="sik-alert sik-alert--info" style="margin-top:20px;font-size:12.5px">
-                <?= icon('info', 'w-4 h-4') ?>
-                <div>
-                    <strong>Development mode.</strong> Default credentials are
-                    <code>admin@shopinnkart.com</code> / <code>Admin@123</code>.
-                    Change them before going live.
-                </div>
-            </div>
-        <?php endif; ?>
     </div>
 
     <script>

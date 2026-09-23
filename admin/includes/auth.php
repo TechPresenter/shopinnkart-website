@@ -30,6 +30,11 @@ function admin_require(string $permission = ''): array
     $admin = admin_user();
 
     if ($admin === null) {
+        // Hidden login address: to a stranger the admin area does not exist.
+        // Redirecting to login.php would name it in the Location header.
+        if (!admin_gate_passed()) {
+            admin_gate_deny();
+        }
         if (is_ajax()) {
             json_error('Admin authentication required.', [], 401);
         }
@@ -97,9 +102,16 @@ function admin_intended_url(string $fallback = 'dashboard.php'): string
     $intended = $_SESSION['_admin_intended'] ?? null;
     unset($_SESSION['_admin_intended']);
 
-    if (is_string($intended) && $intended !== '' && strpos($intended, '//') !== 0
-        && strpos($intended, 'login.php') === false) {
-        return $intended;
+    // V32: refusing a leading "//" let a backslash form, a control character
+    // and encoded traversal all through. auth_safe_intended_path() applies the
+    // same rules admin_safe_return() applies to a request-supplied target, and
+    // the prefix makes it "a page inside this admin", not merely inside the
+    // site - a storefront path is not where an admin sign-in lands.
+    $within = rtrim((string) parse_url(ADMIN_URL, PHP_URL_PATH), '/');
+    $safe   = is_string($intended) ? auth_safe_intended_path($intended, $within) : null;
+
+    if ($safe !== null && strpos($safe, 'login.php') === false) {
+        return $safe;
     }
     return admin_url($fallback);
 }

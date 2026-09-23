@@ -12,6 +12,11 @@ require_once dirname(__DIR__) . '/includes/init.php';
 require_once __DIR__ . '/includes/functions.php';
 
 if (!is_post()) {
+    // A stranger probing /admin/logout.php must not be bounced to a named admin
+    // page when the login address is hidden.
+    if (!admin_is_logged_in() && !admin_gate_passed()) {
+        admin_gate_deny();
+    }
     redirect(admin_url('dashboard.php'));
 }
 

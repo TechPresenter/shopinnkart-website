@@ -90,10 +90,14 @@ auth_layout_start([
         'aside'        => ['label' => 'Forgot password?', 'url' => url('forgot-password.php')],
     ]); ?>
 
-    <label class="sik-check" style="margin-bottom:var(--sp-5)">
-        <input type="checkbox" name="remember" value="1"<?= $remember ? ' checked' : '' ?>>
-        <span>Keep me signed in on this device</span>
-    </label>
+    <?php if (setting_bool('sec_remember_enabled', true)): ?>
+        <?php // A real remembered device: a rotated token of its own, good for
+              // sec_remember_days. Unticked, the sign-in ends with the browser. ?>
+        <label class="sik-check" style="margin-bottom:var(--sp-5)">
+            <input type="checkbox" name="remember" value="1"<?= $remember ? ' checked' : '' ?>>
+            <span>Keep me signed in on this device</span>
+        </label>
+    <?php endif; ?>
 
     <button type="submit" class="sik-btn sik-btn--primary sik-btn--block sik-btn--lg">
         <span class="sik-btn__label">Sign In</span>

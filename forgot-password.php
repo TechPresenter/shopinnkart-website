@@ -32,16 +32,17 @@ if (is_post()) {
         $errors = $validator->errors();
     } else {
         // This form sends mail to an address a stranger typed, so the no-JS
-        // path needs the same ceiling the API endpoint applies.
-        $window = $_SESSION['_rate_forgot_password_form'] ?? ['count' => 0, 'reset' => time() + 900];
-        if (time() > $window['reset']) {
-            $window = ['count' => 0, 'reset' => time() + 900];
-        }
-        $window['count']++;
-        $_SESSION['_rate_forgot_password_form'] = $window;
-        $throttled = $window['count'] > 3;
+        // path needs the same ceiling the API endpoint applies - and the same
+        // kind of ceiling: counted per client address in the shared table, not
+        // in $_SESSION, which the sender could reset by dropping the cookie.
+        $throttled = !form_rate_limit('forgot_password', 5, 3600);
 
         if (!$throttled) {
+            // The same cap on the receiving end, so a sender coming from many
+            // addresses still cannot fill one inbox. Silent on purpose:
+            // "you have asked too often" would confirm the address is ours.
+            $mayEmail = rate_limit_attempt('forgot.email', $email, 3, 3600);
+
             $user = Database::fetch(
                 'SELECT `id`, `email`, `first_name`, `status` FROM `users` WHERE `email` = :email LIMIT 1',
                 ['email' => $email]
@@ -49,14 +50,17 @@ if (is_post()) {
 
             // Blocked and deactivated accounts get nothing - they cannot sign
             // in even with a fresh password.
-            if ($user !== null && $user['status'] === 'active') {
+            if ($mayEmail && $user !== null && $user['status'] === 'active') {
                 $token = create_password_reset((string) $user['email'], 'customer');
 
-                $resetUrl = url('reset-password.php')
+                // canonical_url(), never url(): the link in the email must not
+                // follow whatever Host header this request carried.
+                $resetUrl = canonical_url('reset-password.php')
                     . '?token=' . urlencode($token)
                     . '&email=' . urlencode((string) $user['email']);
 
                 notify_password_reset((string) $user['email'], (string) $user['first_name'], $resetUrl);
+                security_event('auth.password_reset_requested', 'info', [], (int) $user['id'], 'customer');
             }
 
             $sent = true;

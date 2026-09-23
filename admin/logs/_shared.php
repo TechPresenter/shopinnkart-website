@@ -28,12 +28,26 @@ const LOG_RANGE_PRESETS = [
     'custom'     => 'Custom range…',
 ];
 
-/** How much of a log an admin may drop in one go. */
+/**
+ * The audit trail has a floor.
+ *
+ * "Everything in this log" used to be an option, so a malicious admin could
+ * run it twice — once to erase what they did, once to erase the record of the
+ * erasing — and leave a single harmless-looking line behind. Clearing is now
+ * only ever pruning: nothing inside the retention window can be dropped from
+ * the UI at all, whatever is posted.
+ *
+ * security_events is deliberately absent from LOG_TABLES and has no clear
+ * screen: privilege changes, refusals and lockouts are append-only and outlive
+ * anyone with logs.delete.
+ */
+const LOG_RETENTION_DAYS = 180;
+
+/** How much of a log an admin may drop in one go. Never less than the floor above. */
 const LOG_CLEAR_SCOPES = [
-    '30'  => 'Older than 30 days',
-    '90'  => 'Older than 90 days',
+    '180' => 'Older than 180 days',
     '365' => 'Older than 1 year',
-    'all' => 'Everything in this log',
+    '730' => 'Older than 2 years',
 ];
 
 /** Only these tables can be targeted by the clear action. */
@@ -73,29 +87,48 @@ function logs_handle_clear(string $table, string $redirectUrl): void
         throw new InvalidArgumentException('logs_handle_clear: unsupported table ' . $table);
     }
 
-    admin_require_action('logs.delete');
+    $admin = admin_require_action('logs.delete');
+
+    require_once ADMIN_PATH . '/includes/rbac.php';
 
     $label = LOG_TABLES[$table];
     $scope = (string) input('scope', '');
     if (!isset(LOG_CLEAR_SCOPES[$scope])) {
-        flash('error', 'Choose how much of the ' . $label . ' to clear.');
-        redirect($redirectUrl);
+        admin_deny_back(
+            'The ' . $label . ' can only be pruned of entries older than ' . LOG_RETENTION_DAYS
+                . ' days. Anything more recent is evidence and stays.',
+            $redirectUrl,
+            ['table' => $table, 'scope' => $scope]
+        );
     }
 
-    if ($scope === 'all') {
-        // Database::delete() refuses an empty WHERE, so "everything" is spelled out.
-        $removed = Database::delete($table, '1 = 1');
-        $what = 'every entry';
-    } else {
-        // The scope comes from LOG_CLEAR_SCOPES, and the cast makes that
-        // explicit — MariaDB will not take a bound parameter inside INTERVAL.
-        $days = (int) $scope;
-        $removed = Database::delete($table, "`created_at` < DATE_SUB(NOW(), INTERVAL {$days} DAY)");
-        $what = 'entries older than ' . $days . ' day(s)';
+    // Checked again against the floor rather than trusted to the list above,
+    // so a future edit to LOG_CLEAR_SCOPES cannot quietly lower it.
+    $days = (int) $scope;
+    if ($days < LOG_RETENTION_DAYS) {
+        admin_deny_back(
+            'The ' . $label . ' keeps at least ' . LOG_RETENTION_DAYS . ' days.',
+            $redirectUrl,
+            ['table' => $table, 'scope' => $scope]
+        );
     }
+
+    // The days value is an int cast of a key from LOG_CLEAR_SCOPES — MariaDB
+    // will not take a bound parameter inside INTERVAL.
+    $removed = Database::delete($table, "`created_at` < DATE_SUB(NOW(), INTERVAL {$days} DAY)");
+    $what    = 'entries older than ' . $days . ' day(s)';
 
     log_activity('logs.cleared', $table, null,
         'Cleared ' . $what . ' from the ' . $label . ' (' . $removed . ' row(s))');
+
+    // Written where logs.delete cannot reach it: clearing the trail is itself
+    // part of the trail.
+    security_event('logs.cleared', 'high', [
+        'table'        => $table,
+        'older_than'   => $days,
+        'rows_removed' => $removed,
+    ], (int) $admin['id'], 'admin');
+
     admin_after_write();
 
     flash('success', $removed > 0
@@ -114,7 +147,9 @@ function logs_clear_card(string $table, string $actionUrl, int $total): string
         . '<div class="ad-card__title">Clear the ' . e($label) . '</div>'
         . '<div class="ad-card__sub">'
         . number_format($total) . ' entr' . ($total === 1 ? 'y' : 'ies') . ' stored. '
-        . 'Deleting is permanent — nothing here can be recovered afterwards.'
+        . 'Deleting is permanent — nothing here can be recovered afterwards. '
+        . 'The last ' . LOG_RETENTION_DAYS . ' days are kept whatever is chosen, '
+        . 'and the clearing itself is recorded where this screen cannot reach it.'
         . '</div></div></div>'
         . '<form method="post" action="' . e($actionUrl) . '" class="ad-card__body ad-filters" style="border:0"'
         . ' onsubmit="return confirm(' . e_attr((string) json_encode(
@@ -124,7 +159,7 @@ function logs_clear_card(string $table, string $actionUrl, int $total): string
         . '<input type="hidden" name="op" value="clear">'
         . '<label class="sik-sr" for="logClearScope">How much to clear</label>'
         . '<select class="sik-select" id="logClearScope" name="scope" required>'
-        . admin_options(LOG_CLEAR_SCOPES, '30')
+        . admin_options(LOG_CLEAR_SCOPES, (string) LOG_RETENTION_DAYS)
         . '</select>'
         . '<button type="submit" class="ad-btn ad-btn--danger ad-btn--sm">'
         . icon('trash', 'w-4 h-4') . ' Clear log</button>'

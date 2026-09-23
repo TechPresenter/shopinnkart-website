@@ -17,7 +17,7 @@ require_once __DIR__ . '/../../includes/init.php';
 
 api_require_method(['POST']);
 api_require_csrf();
-api_rate_limit('resend_verification', 3, 900);
+api_rate_limit('resend_verification', 5, 3600);
 
 $user = api_require_login();
 
@@ -30,8 +30,9 @@ if (user_email_verified($user)) {
 }
 
 // A second limiter on the account itself, so the same person cannot bypass the
-// per-session cap by signing in from somewhere else.
-if (!mail_rate_limit_hit('email_verify_' . (int) $user['id'], 3, 900)) {
+// per-address cap by signing in from somewhere else. In the shared table, not
+// the session: a session-backed counter is reset by dropping the cookie.
+if (!rate_limit_attempt('verify.resend', (string) $user['id'], 3, 3600)) {
     json_error('We have already sent a few confirmation emails. Please check your inbox and spam folder, then try again in a few minutes.', [], 429);
 }
 

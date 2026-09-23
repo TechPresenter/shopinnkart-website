@@ -14,7 +14,7 @@ declare(strict_types=1);
  */
 function build_menu(string $location): array
 {
-    return cache_remember('menu.' . $location, 600, static function () use ($location) {
+    return cache_remember(menu_cache_key($location), 600, static function () use ($location) {
         $menu = Database::fetch(
             "SELECT * FROM `menus` WHERE `location` = :loc AND `status` = 'active' LIMIT 1",
             ['loc' => $location]
@@ -50,6 +50,33 @@ function build_menu(string $location): array
 
         return attach_menu_children($byParent, 0);
     });
+}
+
+/**
+ * The cache key a location's menu is stored under, host and all.
+ *
+ * menu_item_url() resolves every item to an ABSOLUTE url, so what goes into
+ * the cache is only correct for the host that built it. One key for all of
+ * them meant whichever host asked first decided what every other host served:
+ * the apex serving www's links, a staging domain serving the live one's, and
+ * - the way it actually showed up here - the local site serving the built-in
+ * server's http://127.0.0.1:8099/... links to a browser on http://localhost/.
+ * A request carrying a Host we accept could therefore decide what the next
+ * visitor's navigation points at. One key per resolved host, so it cannot.
+ *
+ * Hashed and shortened because the key is only ever an identity: the file
+ * cache names the file after a sha1 of it anyway.
+ */
+function menu_cache_key(string $location): string
+{
+    static $scope = null;
+    if ($scope === null) {
+        $host  = strtolower((string) parse_url(SITE_URL, PHP_URL_HOST));
+        $port  = (string) parse_url(SITE_URL, PHP_URL_PORT);
+        $scope = substr(sha1($host . ($port === '' ? '' : ':' . $port)), 0, 12);
+    }
+
+    return 'menu.' . $location . '.' . $scope;
 }
 
 /**

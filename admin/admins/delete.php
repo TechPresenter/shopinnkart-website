@@ -30,7 +30,7 @@ if ($targetId === (int) $admin['id']) {
 }
 
 $account = Database::fetch(
-    'SELECT a.`id`, a.`name`, a.`username`, a.`avatar`, a.`role_id`, r.`name` AS role_name
+    'SELECT a.`id`, a.`name`, a.`username`, a.`email`, a.`avatar`, a.`role_id`, r.`name` AS role_name
      FROM `admins` a
      INNER JOIN `admin_roles` r ON r.`id` = a.`role_id`
      WHERE a.`id` = :id LIMIT 1',
@@ -42,7 +42,19 @@ if ($account === null) {
     redirect(admin_url('admins/'));
 }
 
-// Refusal 2: the wildcard role is the only way back into settings, roles and
+// Refusal 2: nobody manages up. "All but the last Super Admin" left every
+// other Super Admin deletable by a lower admin, which is both an escalation
+// and the tidiest way to remove the people who would notice one.
+if (!admin_can_manage_admin($account)) {
+    admin_deny_back(
+        'You cannot delete "' . $account['name'] . '". That account holds the ' . $account['role_name']
+            . ' role, which grants permissions yours does not.',
+        admin_url('admins/'),
+        ['target_admin_id' => $targetId, 'target_role_id' => (int) $account['role_id']]
+    );
+}
+
+// Refusal 3: the wildcard role is the only way back into settings, roles and
 // admin users. Removing the last holder locks the panel for everyone.
 if (admins_is_last_active_super($targetId)) {
     flash(
@@ -53,6 +65,12 @@ if (admins_is_last_active_super($targetId)) {
     );
     redirect(admin_url('admins/'));
 }
+
+// Told before the row is gone, because afterwards there is no address to use.
+admin_notify_account_change(
+    ['id' => $targetId, 'name' => (string) $account['name'], 'email' => (string) $account['email']],
+    'your admin account was deleted'
+);
 
 delete_upload($account['avatar']);
 
@@ -66,6 +84,11 @@ log_activity(
     $targetId,
     'Deleted admin "' . $account['name'] . '" (@' . $account['username'] . ', ' . $account['role_name'] . ')'
 );
+security_event('admin.deleted', 'high', [
+    'target_admin_id' => $targetId,
+    'target_username' => (string) $account['username'],
+    'role'            => (string) $account['role_name'],
+], (int) $admin['id'], 'admin');
 admin_after_write();
 
 flash('success', 'Admin "' . $account['name'] . '" deleted. Their entries in the activity log were kept.');

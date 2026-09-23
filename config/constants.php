@@ -146,6 +146,21 @@ const STOCK_OUT      = 'out_of_stock';
 
 // ---------------------------------------------------------------------------
 // Admin permission modules -> available actions
+//
+// This is the registry the role editor is built from. A permission that a
+// migration inserts into admin_permissions but that is missing here cannot be
+// ticked, and array_intersect() in roles.php would strip it from any role that
+// already held it - so the two must never drift. admins_all_permissions()
+// unions this list with the table for exactly that reason.
+//
+// Beyond the usual view/create/edit/delete, four actions name a capability
+// rather than a CRUD verb, because each one is a route back to everything
+// else and must be grantable on its own:
+//
+//   security.view/edit      the security screens and the hidden login address
+//   settings.scripts        JavaScript and CSS injected into every storefront page
+//   system.backup           create and download a full database dump
+//   customers.credentials   set a shopper's password or email address
 // ---------------------------------------------------------------------------
 const PERMISSION_MODULES = [
     'dashboard'   => ['view'],
@@ -154,7 +169,7 @@ const PERMISSION_MODULES = [
     'brands'      => ['view', 'create', 'edit', 'delete'],
     'attributes'  => ['view', 'create', 'edit', 'delete'],
     'orders'      => ['view', 'edit', 'delete'],
-    'customers'   => ['view', 'create', 'edit', 'delete'],
+    'customers'   => ['view', 'create', 'edit', 'delete', 'credentials'],
     'coupons'     => ['view', 'create', 'edit', 'delete'],
     'deals'       => ['view', 'create', 'edit', 'delete'],
     'flash_sales' => ['view', 'create', 'edit', 'delete'],
@@ -166,10 +181,18 @@ const PERMISSION_MODULES = [
     'faq'         => ['view', 'create', 'edit', 'delete'],
     'blog'        => ['view', 'create', 'edit', 'delete'],
     'reports'     => ['view'],
-    'settings'    => ['view', 'edit'],
+    'settings'    => ['view', 'edit', 'scripts'],
+    'system'      => ['backup'],
+    'security'    => ['view', 'edit'],
     'admins'      => ['view', 'create', 'edit', 'delete'],
     'logs'        => ['view', 'delete'],
 ];
+
+/**
+ * Column order of the role matrix. Actions outside this list still render,
+ * appended in the order the registry declares them.
+ */
+const PERMISSION_ACTION_ORDER = ['view', 'create', 'edit', 'delete'];
 
 // ---------------------------------------------------------------------------
 // Indian states (checkout address dropdown)

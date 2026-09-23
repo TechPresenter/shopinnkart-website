@@ -37,7 +37,13 @@ $lines = [
     '# Server-side and private folders',
 ];
 
-foreach (['/admin/', '/api/', '/config/', '/includes/', '/storage/', '/uploads/', '/database/'] as $path) {
+// With a hidden admin login address, naming /admin/ here would tell every
+// visitor where the panel lives; it answers 404 to crawlers anyway.
+$private = ['/admin/', '/api/', '/config/', '/includes/', '/storage/', '/uploads/', '/database/'];
+if (admin_gate_enabled()) {
+    $private = array_values(array_diff($private, ['/admin/']));
+}
+foreach ($private as $path) {
     $lines[] = 'Disallow: ' . $path;
 }
 

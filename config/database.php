@@ -12,6 +12,9 @@ final class Database
 {
     private static ?PDO $connection = null;
 
+    /** How many transaction() calls are open on the stack; >1 means nested. */
+    private static int $txDepth = 0;
+
     private function __construct() {}
 
     /** Lazily open (and reuse) the single PDO connection. */
@@ -120,13 +123,35 @@ final class Database
         return self::query($sql, $params)->fetchAll(PDO::FETCH_KEY_PAIR);
     }
 
+    /**
+     * A table or column name that is safe to put between backticks.
+     *
+     * Every other value in this layer goes through a bound parameter; an
+     * identifier cannot, so it is checked instead. A backtick in a key would
+     * close the quoting and turn an array key into SQL. No caller passes
+     * request-controlled keys today - this is what keeps that true.
+     */
+    private static function identifier(string $name, string $what): string
+    {
+        if (preg_match('/^[A-Za-z0-9_]{1,64}$/', $name) !== 1) {
+            throw new InvalidArgumentException(
+                sprintf('Refusing to build SQL from an unsafe %s name: %s', $what, $name)
+            );
+        }
+
+        return $name;
+    }
+
     /** INSERT from an associative array. Returns the new id. */
     public static function insert(string $table, array $data): int
     {
-        $columns = array_keys($data);
+        $columns = array_map(
+            static fn ($c): string => self::identifier((string) $c, 'column'),
+            array_keys($data)
+        );
         $sql = sprintf(
             'INSERT INTO `%s` (`%s`) VALUES (%s)',
-            $table,
+            self::identifier($table, 'table'),
             implode('`, `', $columns),
             implode(', ', array_map(static fn ($c) => ':' . $c, $columns))
         );
@@ -140,10 +165,11 @@ final class Database
         $sets = [];
         $params = [];
         foreach ($data as $column => $value) {
+            $column = self::identifier((string) $column, 'column');
             $sets[] = sprintf('`%s` = :set_%s', $column, $column);
             $params['set_' . $column] = $value;
         }
-        $sql = sprintf('UPDATE `%s` SET %s WHERE %s', $table, implode(', ', $sets), $where);
+        $sql = sprintf('UPDATE `%s` SET %s WHERE %s', self::identifier($table, 'table'), implode(', ', $sets), $where);
         return self::query($sql, array_merge($params, $whereParams))->rowCount();
     }
 
@@ -153,13 +179,13 @@ final class Database
         if (trim($where) === '') {
             throw new InvalidArgumentException('Refusing to DELETE without a WHERE clause.');
         }
-        return self::query(sprintf('DELETE FROM `%s` WHERE %s', $table, $where), $params)->rowCount();
+        return self::query(sprintf('DELETE FROM `%s` WHERE %s', self::identifier($table, 'table'), $where), $params)->rowCount();
     }
 
     /** COUNT(*) helper. */
     public static function count(string $table, string $where = '1', array $params = []): int
     {
-        return (int) self::fetchColumn(sprintf('SELECT COUNT(*) FROM `%s` WHERE %s', $table, $where), $params);
+        return (int) self::fetchColumn(sprintf('SELECT COUNT(*) FROM `%s` WHERE %s', self::identifier($table, 'table'), $where), $params);
     }
 
     public static function exists(string $table, string $where, array $params = []): bool
@@ -201,15 +227,50 @@ final class Database
      */
     public static function transaction(callable $callback)
     {
+        $pdo = self::connect();
+
+        // Nested call (update_order_status() inside a shipment update, say): a
+        // savepoint. Without it the inner commit() committed the OUTER work
+        // half-way through, and an inner rollback took the outer work with it
+        // while the outer code carried on as if nothing had happened.
+        if (self::$txDepth > 0 && $pdo->inTransaction()) {
+            $savepoint = 'sik_sp_' . self::$txDepth;
+            $pdo->exec('SAVEPOINT ' . $savepoint);
+            self::$txDepth++;
+            try {
+                $result = $callback($pdo);
+            } catch (Throwable $e) {
+                self::$txDepth--;
+                try {
+                    $pdo->exec('ROLLBACK TO SAVEPOINT ' . $savepoint);
+                } catch (Throwable $ignored) {
+                    // The outer rollback will undo it anyway.
+                }
+                throw $e;
+            }
+            self::$txDepth--;
+            $pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
+            return $result;
+        }
+
         self::beginTransaction();
+        self::$txDepth = 1;
         try {
-            $result = $callback(self::connect());
+            $result = $callback($pdo);
+            self::$txDepth = 0;
             self::commit();
             return $result;
         } catch (Throwable $e) {
+            self::$txDepth = 0;
             self::rollBack();
             throw $e;
         }
+    }
+
+    /** True while a transaction() callback is running. */
+    public static function inTransaction(): bool
+    {
+        return self::$txDepth > 0;
     }
 
     /** Build "IN (?, ?, ?)" placeholders safely for a list of values. */

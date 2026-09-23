@@ -10,7 +10,10 @@ require_once __DIR__ . '/../../includes/init.php';
 
 api_require_method(['POST']);
 api_require_csrf();
-api_rate_limit('login', 8, 300);
+// A coarse ceiling on this endpoint only. The real brake is inside
+// attempt_login(): per IP, per IP+account, atomic, and shared with the
+// no-JavaScript form so the two paths cannot be used to double the quota.
+api_rate_limit('login', 30, 300);
 
 $validator = new Validator(request_all(), [
     'email'    => 'Email address',

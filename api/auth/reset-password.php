@@ -10,7 +10,9 @@ require_once __DIR__ . '/../../includes/init.php';
 
 api_require_method(['POST']);
 api_require_csrf();
-api_rate_limit('reset_password', 8, 900);
+// Per client address, not per session: the old counter reset itself whenever
+// the caller dropped the cookie.
+api_rate_limit('reset_password', 15, 3600);
 
 $validator = new Validator(request_all(), [
     'email'                 => 'Email address',
@@ -47,16 +49,39 @@ if ($user === null || $user['status'] !== 'active') {
     json_error('This account is no longer active. Please contact support.', [], 403);
 }
 
-Database::update('users', [
-    'password'      => password_hash((string) $clean['password'], PASSWORD_DEFAULT),
-    // A successful reset clears any lockout left behind by the failed attempts
-    // that sent the customer here in the first place.
-    'failed_logins' => 0,
-    'locked_until'  => null,
-], '`id` = :id', ['id' => (int) $user['id']]);
+// Claim the token before writing the password, and only continue if this
+// request is the one that claimed it: find-then-update let two submissions of
+// the same leaked link both set a password, so "single use" was not true.
+$claimed = false;
+$password = (string) $clean['password'];
 
-consume_password_reset((int) $reset['id']);
+Database::transaction(static function () use ($reset, $user, $password, &$claimed): void {
+    if (!claim_password_reset((int) $reset['id'])) {
+        return;
+    }
+    $claimed = true;
 
-login_user($user);
+    Database::update('users', [
+        'password'      => password_hash_app($password),
+        // A successful reset clears the counters left behind by the failed
+        // attempts that sent the customer here in the first place.
+        'failed_logins' => 0,
+        'locked_until'  => null,
+    ], '`id` = :id', ['id' => (int) $user['id']]);
+});
 
-json_success('Your password has been updated.', ['redirect' => url('account.php')]);
+if (!$claimed) {
+    json_error($expired, [], 410);
+}
+
+// Ends every other session and remembered device of this account, and tells
+// the owner by email that their password changed.
+auth_after_password_change('customer', $user, 'reset');
+
+// The copy reset-password.php parked when the emailed link was opened (V56)
+// is spent with the token: it must not draw the form again afterwards.
+unset($_SESSION['_reset_link']);
+
+// Deliberately not signed in: an emailed link must not be worth a live
+// session on its own.
+json_success('Your password has been updated. Please sign in with it.', ['redirect' => url('login.php')]);

@@ -11,7 +11,9 @@ require_once __DIR__ . '/../../includes/init.php';
 api_require_method(['POST']);
 api_require_csrf();
 
-logout_user();
+// "Sign out everywhere" moves the account's session generation on, so every
+// other browser holding a session - and every remembered device - is done too.
+logout_user(request_bool('everywhere'));
 
 // Answer the same way whether or not a session was live, so a stale tab
 // posting twice still gets sent home instead of an error.

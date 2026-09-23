@@ -30,7 +30,19 @@ $form = [
 
 if (is_post()) {
     csrf_require();
+}
 
+// The no-JavaScript path needs the same ceiling the API endpoint applies: per
+// client address, in the shared table. Without it, "an account already exists
+// with this email" is an unlimited yes/no oracle over any address somebody
+// cares to try, and an unlimited source of welcome mail from our domain.
+if (is_post() && !form_rate_limit('register', 5, 3600)) {
+    $formError = 'Too many sign-up attempts from this device. Please try again in a little while.';
+} elseif (is_post() && trim((string) input('website', '')) !== '') {
+    // Honeypot: a field no human sees and every form-filling bot completes.
+    security_event('api.honeypot', 'low', ['endpoint' => 'register']);
+    $formError = 'We could not complete this sign-up. Please try again.';
+} elseif (is_post()) {
     $form['first_name']    = (string) input('first_name', '');
     $form['last_name']     = (string) input('last_name', '');
     $form['email']         = mb_strtolower((string) input('email', ''));
@@ -59,7 +71,7 @@ if (is_post()) {
         ->required('email')->email('email')->max('email', 190)
         ->unique('email', 'users', 'email', null, 'An account already exists with this email. Try signing in instead.')
         ->required('phone')->phone('phone')
-        ->required('password')->password('password')
+        ->required('password')->password('password', null, 'customer', $form['email'])
         ->required('password_confirmation')
         ->matches('password_confirmation', 'password', 'Passwords do not match.')
         ->rule('accepts_terms', $form['accepts_terms'], 'Please accept the Terms & Conditions to continue.');
@@ -76,7 +88,7 @@ if (is_post()) {
                 'last_name'  => $lastName === '' ? null : $lastName,
                 'email'      => $form['email'],
                 'phone'      => normalize_phone($form['phone']),
-                'password'   => password_hash($password, PASSWORD_DEFAULT),
+                'password'   => password_hash_app($password),
                 'status'     => 'active',
             ]);
         } catch (PDOException $e) {
@@ -157,6 +169,11 @@ auth_layout_start([
 
 <form method="post" action="<?= e(url('register.php')) ?>" data-ajax-form="auth/register.php" novalidate>
     <?= csrf_field() ?>
+
+    <?php // Honeypot. Hidden from people and from screen readers; bots fill it in. ?>
+    <div aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden">
+        <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4">
         <div class="sik-field">

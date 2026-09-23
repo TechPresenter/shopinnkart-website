@@ -14,8 +14,20 @@ final class ErrorHandler
     /** Guards against a logging failure re-entering the handler. */
     private static bool $logging = false;
 
+    /** Severities that are worth recording but must never take a page down. */
+    private const NON_FATAL = [E_WARNING, E_NOTICE, E_DEPRECATED, E_STRICT, E_USER_WARNING, E_USER_NOTICE, E_USER_DEPRECATED];
+
     public static function register(): void
     {
+        // Keep function arguments out of every stack trace this process builds.
+        // PHP records the first 15 characters of each argument, so a DB timeout
+        // inside attempt_login() used to write the customer's password into
+        // storage/logs AND into the error_logs table that any admin with
+        // logs.view can read. It is set here rather than in php.ini because a
+        // shared host will not change php.ini for us.
+        ini_set('zend.exception_ignore_args', '1');
+        ini_set('zend.exception_string_param_max_len', '0');
+
         set_error_handler([self::class, 'handleError']);
         set_exception_handler([self::class, 'handleException']);
         register_shutdown_function([self::class, 'handleShutdown']);
@@ -26,8 +38,34 @@ final class ErrorHandler
         if (!(error_reporting() & $severity)) {
             return false; // suppressed with @
         }
-        // Convert to an exception so warnings/notices surface during development.
+
+        // Development: turn everything into an exception so a notice is
+        // impossible to ignore while the code is being written.
+        //
+        // Production: a warning or a deprecation is a thing to fix, not a
+        // reason to show a customer a 500 page. Turning "Undefined array key"
+        // or the next release's deprecation into a fatal meant one PHP upgrade
+        // could take down checkout. Log it and let the request finish; real
+        // errors (E_ERROR, TypeError, division by zero) never come through
+        // this handler and still stop the request.
+        if (!APP_DEBUG && in_array($severity, self::NON_FATAL, true)) {
+            self::log('warning', self::severityName($severity) . ': ' . $message, $file, $line, null);
+            return true;
+        }
+
         throw new ErrorException($message, 0, $severity, $file, $line);
+    }
+
+    /** Readable name for an E_* constant, for the log line. */
+    private static function severityName(int $severity): string
+    {
+        static $names = [
+            E_WARNING => 'Warning', E_NOTICE => 'Notice', E_DEPRECATED => 'Deprecated',
+            E_STRICT => 'Strict', E_USER_WARNING => 'User warning',
+            E_USER_NOTICE => 'User notice', E_USER_DEPRECATED => 'User deprecated',
+        ];
+
+        return $names[$severity] ?? ('Error ' . $severity);
     }
 
     public static function handleException(Throwable $e): void
@@ -72,7 +110,8 @@ final class ErrorHandler
         }
         self::$logging = true;
 
-        $url = self::currentUrl();
+        $url   = self::sanitizeUrl(self::currentUrl());
+        $trace = $trace === null ? null : self::sanitizeTrace($trace);
         $entry = sprintf(
             "[%s] %s: %s in %s:%d%s%s%s",
             date('Y-m-d H:i:s'),
@@ -175,6 +214,57 @@ final class ErrorHandler
             return 'cli:' . implode(' ', $_SERVER['argv'] ?? []);
         }
         return ($_SERVER['REQUEST_METHOD'] ?? 'GET') . ' ' . ($_SERVER['REQUEST_URI'] ?? '');
+    }
+
+    /**
+     * Drop the query string on the pages whose query string IS the secret.
+     *
+     * A reset or verification link carries a working token in the URL. Logging
+     * it - to a file an admin can download, and to a table an admin with
+     * logs.view can read - hands out account takeover to anyone who can read
+     * the logs, which is the whole point of storing only the token's hash.
+     * Ordinary pages keep their query string; ?page=2 is what makes a log
+     * entry useful.
+     */
+    public static function sanitizeUrl(string $url): string
+    {
+        static $sensitive = [
+            'reset-password', 'forgot-password', 'verify-email', 'set-password',
+            'resend-verification', 'newsletter-unsubscribe', 'unsubscribe',
+        ];
+
+        foreach ($sensitive as $needle) {
+            if (stripos($url, $needle) !== false) {
+                return (string) strtok($url, '?');
+            }
+        }
+
+        // Anything that looks like a secret in a query string goes too, whatever
+        // page it is on: a signed webhook callback, a share link, an API key
+        // pasted into a URL by an integration.
+        return (string) preg_replace(
+            '/\b(token|code|secret|signature|sig|key|password|otp|auth|access_token)=[^&\s]*/i',
+            '$1=[redacted]',
+            $url
+        );
+    }
+
+    /**
+     * Strip quoted argument values out of a stack trace.
+     *
+     * zend.exception_ignore_args is set in register() so new traces carry no
+     * arguments at all. This is the belt to that pair of braces: traces that
+     * arrive from somewhere else (a caught exception re-logged by hand, a
+     * trace captured before the ini_set on an unusual SAPI) still must not
+     * carry the password that was passed to the function that failed.
+     */
+    public static function sanitizeTrace(string $trace): string
+    {
+        return (string) preg_replace(
+            ["/'(?:[^'\\\\]|\\\\.)*'/", '/\bArray\s*\(\s*\.\.\.\s*\)/'],
+            ["'...'", 'Array'],
+            $trace
+        );
     }
 
     private static function clientIp(): string

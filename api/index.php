@@ -12,6 +12,26 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../includes/init.php';
 
+/**
+ * Developers only.
+ *
+ * This page reads every endpoint's source and publishes its methods, required
+ * and optional parameters, whether it needs CSRF, login or admin, and the exact
+ * rate-limit window. On a live store that is a finished attack plan handed to
+ * anyone who types /api/ - including the webhook endpoints and the admin APIs,
+ * whose existence the hidden admin login is otherwise trying to keep quiet.
+ *
+ * In development it stays exactly as it was. In production it is visible only
+ * to a signed-in admin who may see the security screens; everyone else gets the
+ * store's ordinary "page not found", the same answer as any missing URL.
+ */
+if (!security_dev_tools_visible()) {
+    security_event('platform.api_explorer_blocked', 'low');
+    http_response_code(404);
+    require ROOT_PATH . '/404.php';
+    exit;
+}
+
 /** Human window for a rate limit, e.g. 900 -> "15 min". */
 function api_index_window(int $seconds): string
 {

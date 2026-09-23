@@ -183,6 +183,10 @@ require ADMIN_PATH . '/includes/header.php';
                             $isLast   = count($activeSupers) === 1 && in_array($rowId, $activeSupers, true);
                             $isLocked = !empty($row['locked_until']) && strtotime((string) $row['locked_until']) > time();
                             $editUrl  = admin_url('admins/edit.php?id=' . $rowId);
+                            // Nobody manages up. edit.php and delete.php refuse it
+                            // anyway; not offering the buttons is what stops an
+                            // operator filling in a form that was never going to save.
+                            $canManage = admin_can_manage_admin($row);
                             ?>
                             <tr>
                                 <td>
@@ -195,7 +199,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <?php endif; ?>
                                         <span style="min-width:0">
                                             <span class="ad-cellflex__name" style="display:block">
-                                                <?php if ($canEdit): ?>
+                                                <?php if ($canEdit && $canManage): ?>
                                                     <a href="<?= e($editUrl) ?>"><?= e($row['name']) ?></a>
                                                 <?php else: ?>
                                                     <?= e($row['name']) ?>
@@ -242,14 +246,14 @@ require ADMIN_PATH . '/includes/header.php';
                                     ? e($row['last_login_ip'])
                                     : '<span class="ad-muted">&mdash;</span>' ?></td>
                                 <td class="ad-table__actions">
-                                    <?php if ($canEdit): ?>
+                                    <?php if ($canEdit && $canManage): ?>
                                         <a class="ad-btn ad-btn--icon" title="Edit"
                                            aria-label="Edit <?= e_attr($row['name']) ?>" href="<?= e($editUrl) ?>">
                                             <?= icon('edit', 'w-4 h-4') ?>
                                         </a>
                                     <?php endif; ?>
 
-                                    <?php if ($canDelete && !$isSelf && !$isLast): ?>
+                                    <?php if ($canDelete && $canManage && !$isSelf && !$isLast): ?>
                                         <?= admin_delete_form(
                                             admin_url('admins/delete.php'),
                                             $rowId,
@@ -259,8 +263,10 @@ require ADMIN_PATH . '/includes/header.php';
                                         <span class="ad-muted" style="font-size:11.5px"
                                               title="<?= e_attr($isSelf
                                                   ? 'You cannot delete the account you are signed in with.'
-                                                  : 'This is the last Super Admin who can sign in.') ?>">
-                                            <?= $isSelf ? 'Your account' : 'Last Super Admin' ?>
+                                                  : (!$canManage
+                                                      ? 'Their role holds permissions yours does not.'
+                                                      : 'This is the last Super Admin who can sign in.')) ?>">
+                                            <?= $isSelf ? 'Your account' : (!$canManage ? 'Outranks you' : 'Last Super Admin') ?>
                                         </span>
                                     <?php endif; ?>
                                 </td>

@@ -23,7 +23,7 @@ $validator = new Validator(request_all(), [
 ]);
 
 $validator->required('current_password')
-    ->required('password')->password('password')
+    ->required('password')->password('password', null, 'customer', (string) $user['email'])
     ->required('password_confirmation')
     ->matches('password_confirmation', 'password', 'Passwords do not match.');
 
@@ -33,7 +33,8 @@ if ($validator->fails()) {
 
 $clean = $validator->validated(['current_password', 'password']);
 
-if (!password_verify((string) $clean['current_password'], (string) $user['password'])) {
+if (!password_verify_app((string) $clean['current_password'], (string) $user['password'])) {
+    security_event('auth.password_change_failed', 'medium', [], (int) $user['id'], 'customer');
     json_validation_error(['current_password' => 'That is not your current password.']);
 }
 
@@ -42,13 +43,15 @@ if (hash_equals((string) $clean['current_password'], (string) $clean['password']
 }
 
 Database::update('users', [
-    'password'      => password_hash((string) $clean['password'], PASSWORD_DEFAULT),
+    'password'      => password_hash_app((string) $clean['password']),
     'failed_logins' => 0,
     'locked_until'  => null,
 ], '`id` = :id', ['id' => (int) $user['id']]);
 
-// New credential, new session id - anything that captured the old one is dead.
-session_regenerate_id(true);
-$_SESSION['_regenerated_at'] = time();
+// New credential, new generation: every OTHER session of this account and
+// every remembered device is over, which is the point of changing a password
+// you think somebody else has. Regenerating this session id alone (what used
+// to happen here) left the intruder's own session untouched for a week.
+auth_after_password_change('customer', $user, 'changed');
 
-json_success('Your password has been changed.');
+json_success('Your password has been changed. Any other devices have been signed out.');

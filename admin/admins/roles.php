@@ -8,6 +8,13 @@
  *
  * The Super Admin role is the exception: its list is the wildcard ["*"] and
  * stays that way, because it is what admin_can() short-circuits on.
+ *
+ * "Grant only what you hold" used to be checked against the SUBMITTED list
+ * only, which left the role being edited unguarded: a lower admin could open a
+ * role full of permissions they lacked, post a smaller list plus
+ * status=inactive, and lock out everyone holding it. So the stored role has to
+ * be within reach too, on save and on delete, and the editor is not offered at
+ * all for a role that outranks the viewer.
  */
 
 declare(strict_types=1);
@@ -18,8 +25,9 @@ $admin = admin_require('admins.view');
 
 require_once __DIR__ . '/_helpers.php';
 
-/** Column order of the matrix. Modules only render the actions they declare. */
-const ROLE_ACTION_COLUMNS = ['view', 'create', 'edit', 'delete'];
+/** Column order of the matrix, widened by whatever the registry declares. */
+$actionColumns = admins_action_columns();
+$allModules    = admins_permission_modules();
 
 $rolesUrl = admin_url('admins/roles.php');
 
@@ -41,6 +49,17 @@ if (is_post() && $op === 'delete') {
         flash('error', 'That role no longer exists.');
         redirect($rolesUrl);
     }
+
+    // Deleting a role you could not have created is the same escalation as
+    // editing one, read backwards.
+    if (!admin_can_manage_role($roleId)) {
+        admin_deny_back(
+            '"' . $role['name'] . '" grants permissions you do not hold yourself, so you cannot delete it.',
+            $rolesUrl,
+            ['role_id' => $roleId, 'beyond' => admin_permissions_beyond(admin_role_permissions($roleId))]
+        );
+    }
+
     if ((int) $role['is_system'] === 1) {
         flash('error', '"' . $role['name'] . '" is a built-in role and cannot be deleted. You can deactivate it instead.');
         redirect($rolesUrl);
@@ -58,6 +77,9 @@ if (is_post() && $op === 'delete') {
     Database::delete('admin_roles', '`id` = :id', ['id' => $roleId]);
 
     log_activity('role.deleted', 'admin_role', $roleId, 'Deleted role "' . $role['name'] . '"');
+    security_event('rbac.role_changed', 'high',
+        ['action' => 'deleted', 'role_id' => $roleId, 'role' => (string) $role['name']],
+        (int) $admin['id'], 'admin');
     admin_after_write();
 
     flash('success', 'Role "' . $role['name'] . '" deleted.');
@@ -77,6 +99,18 @@ if (is_post() && $op === 'save') {
     if (!$isNew && $current === null) {
         flash('error', 'That role no longer exists.');
         redirect($rolesUrl);
+    }
+
+    // The role as it stands has to be within reach before a single field of it
+    // is touched - otherwise "submit a smaller list" is a way to strip powers
+    // you were never able to grant.
+    if (!$isNew && !admin_can_manage_role($roleId)) {
+        admin_deny_back(
+            '"' . $current['name'] . '" grants permissions you do not hold yourself, so you cannot change it. '
+                . 'Ask an admin with at least that access.',
+            $rolesUrl,
+            ['role_id' => $roleId, 'beyond' => admin_permissions_beyond(admin_role_permissions($roleId))]
+        );
     }
 
     $submitted = [
@@ -101,14 +135,20 @@ if (is_post() && $op === 'save') {
         $v->rule('permissions', false, 'Pick at least one permission — a role with none cannot open a single screen.');
     }
 
-    // An operator cannot grant what they do not hold themselves; otherwise the
-    // roles editor becomes a one-click privilege escalation.
-    if (!admin_is_super()) {
-        $beyond = array_values(array_filter($permissions, static fn (string $p): bool => !admin_can($p)));
-        if ($beyond !== []) {
-            $v->rule('permissions', false, 'You can only grant permissions you hold yourself. Remove: '
-                . implode(', ', array_slice($beyond, 0, 6)) . (count($beyond) > 6 ? '…' : '') . '.');
-        }
+    // An operator cannot grant what they do not hold themselves, and the four
+    // permissions in ADMIN_SUPER_ONLY_PERMISSIONS stay with the owner however
+    // they are held; otherwise the roles editor is a one-click escalation.
+    $beyond = admin_permissions_beyond($permissions);
+    if ($beyond !== []) {
+        $v->rule('permissions', false, 'You can only grant permissions you hold yourself, and '
+            . implode(', ', ADMIN_SUPER_ONLY_PERMISSIONS) . ' are Super Admin only. Remove: '
+            . implode(', ', array_slice($beyond, 0, 6)) . (count($beyond) > 6 ? '…' : '') . '.');
+    }
+
+    // Rewriting who can do what is a privilege change, so it carries the same
+    // step-up as resetting a password.
+    if (!admin_reauth_ok()) {
+        $v->rule('reauth_password', false, admin_reauth_error('change a role'));
     }
 
     // Deactivating the role that carries the wildcard blocks every Super Admin
@@ -154,6 +194,17 @@ if (is_post() && $op === 'save') {
         flash('success', 'Role "' . $data['name'] . '" updated.');
     }
 
+    // Who can do what just moved. The permission lists go in verbatim so the
+    // trail shows the shape of the change, not only that one happened.
+    security_event('rbac.role_changed', 'high', [
+        'action'      => $isNew ? 'created' : 'updated',
+        'role_id'     => $roleId,
+        'role'        => $data['name'],
+        'status'      => $data['status'],
+        'before'      => $isNew ? [] : json_decode_safe((string) $current['permissions'], []),
+        'after'       => $isSuperRole ? ['*'] : $permissions,
+    ], (int) $admin['id'], 'admin');
+
     admin_after_write();
     redirect($rolesUrl . '?id=' . $roleId);
 }
@@ -180,6 +231,13 @@ if ($editId > 0 && $canEditRow) {
     }
     if ($editing === null) {
         flash('error', 'That role no longer exists.');
+        redirect($rolesUrl);
+    }
+    // The save refuses it anyway; not rendering the form is what stops an
+    // operator filling one in and only then being told no.
+    if (!admin_can_manage_role($editId)) {
+        flash('error', '"' . $editing['name'] . '" grants permissions you do not hold yourself, '
+            . 'so it is read-only for you.');
         redirect($rolesUrl);
     }
 } elseif ($wantNew) {
@@ -436,7 +494,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__title">Permission matrix</div>
                 <div class="ad-card__sub">
                     <?= count($checkedPerms) ?> selected ·
-                    <?= count(admins_all_permissions()) ?> available across <?= count(PERMISSION_MODULES) ?> modules
+                    <?= count(admins_all_permissions()) ?> available across <?= count($allModules) ?> modules
                 </div>
             </div>
             <?php if (!$isSuperEdit): ?>
@@ -454,31 +512,38 @@ require ADMIN_PATH . '/includes/header.php';
                     <thead>
                         <tr>
                             <th>Module</th>
-                            <?php foreach (ROLE_ACTION_COLUMNS as $action): ?>
+                            <?php foreach ($actionColumns as $action): ?>
                                 <th style="text-align:center"><?= e(ucfirst($action)) ?></th>
                             <?php endforeach; ?>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach (PERMISSION_MODULES as $module => $actions): ?>
+                        <?php foreach ($allModules as $module => $actions): ?>
                             <tr>
                                 <td>
                                     <span class="ad-cellflex__name"><?= e(admins_module_label($module)) ?></span>
                                     <span class="ad-cellflex__meta ad-mono"><?= e($module) ?></span>
                                 </td>
-                                <?php foreach (ROLE_ACTION_COLUMNS as $action): ?>
+                                <?php foreach ($actionColumns as $action): ?>
                                     <td style="text-align:center">
                                         <?php if (!in_array($action, $actions, true)): ?>
                                             <span class="ad-muted">&mdash;</span>
                                         <?php else: ?>
-                                            <?php $key = $module . '.' . $action; ?>
+                                            <?php
+                                            $key = $module . '.' . $action;
+                                            // Out of the operator's own reach: shown so the matrix stays
+                                            // readable, but not tickable - the save refuses it too.
+                                            $locked = $isSuperEdit || admin_permissions_beyond([$key]) !== [];
+                                            ?>
                                             <label class="sik-sr" for="perm_<?= e_attr($key) ?>">
                                                 <?= e($key) ?>
                                             </label>
                                             <input type="checkbox" id="perm_<?= e_attr($key) ?>"
                                                    name="permissions[]" value="<?= e_attr($key) ?>"
-                                                   <?= $isSuperEdit ? 'checked disabled' : 'data-check-row' ?>
-                                                   <?= !$isSuperEdit && in_array($key, $checkedPerms, true) ? 'checked' : '' ?>>
+                                                   <?= $locked ? 'disabled' : 'data-check-row' ?>
+                                                   <?= $isSuperEdit || in_array($key, $checkedPerms, true) ? 'checked' : '' ?>
+                                                   <?= $locked && !$isSuperEdit
+                                                       ? 'title="Only an admin who holds this permission can grant it."' : '' ?>>
                                         <?php endif; ?>
                                     </td>
                                 <?php endforeach; ?>
@@ -487,6 +552,10 @@ require ADMIN_PATH . '/includes/header.php';
                     </tbody>
                 </table>
             </div>
+        </div>
+
+        <div class="ad-card__body" style="border-top:1px solid var(--ad-border)">
+            <?= admin_reauth_field('change who can do what', (string) ($errors['reauth_password'] ?? '')) ?>
         </div>
 
         <div class="ad-card__foot">

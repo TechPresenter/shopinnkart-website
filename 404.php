@@ -8,6 +8,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/includes/init.php';
 require_once INCLUDES_PATH . '/widgets.php';
 
+// The hidden admin login address is deliberately not a file, so it lands here.
+// Exits with a redirect to the login screen when the path matches.
+admin_gate_try_enter();
+
 // A moved URL lands here, because routing has already failed to match a file, a
 // rewrite or a record. Checking admin-managed redirects at this boundary keeps
 // the lookup off every successful request while still catching every stale

@@ -181,19 +181,38 @@ final class Validator
     }
 
     /**
-     * Password strength: minimum length plus at least one letter and one digit.
+     * Password policy.
+     *
+     * Length, a letter-and-digit rule that a long passphrase is excused from,
+     * a maximum (bcrypt ignores everything past 72 bytes, so a 200-character
+     * passphrase was quietly weaker than the customer believed), the bundled
+     * list of passwords every stuffing attack starts with, and a check that
+     * the password is not simply the address or the store name.
+     *
+     * The rules themselves live in password_policy_error() so that the API,
+     * the page handlers and the admin screens cannot drift apart.
+     *
+     * @param string $userType 'customer' or 'admin' - admins get a longer minimum
+     * @param string $context  text the password must not repeat, e.g. the email
      */
-    public function password(string $field, ?string $message = null): self
+    public function password(string $field, ?string $message = null, string $userType = 'customer', string $context = ''): self
     {
         $value = (string) $this->value($field);
         if ($value === '') {
             return $this;
         }
-        if (mb_strlen($value) < PASSWORD_MIN_LENGTH) {
-            $this->addError($field, 'Password must be at least ' . PASSWORD_MIN_LENGTH . ' characters.');
-        } elseif (preg_match('/[A-Za-z]/', $value) !== 1 || preg_match('/\d/', $value) !== 1) {
-            $this->addError($field, $message ?? 'Password must include at least one letter and one number.');
+
+        if ($context === '') {
+            // Default to the address being registered, which is the term
+            // people reach for most often.
+            $context = (string) ($this->value('email') ?? '');
         }
+
+        $error = password_policy_error($value, $userType, $context);
+        if ($error !== null) {
+            $this->addError($field, $message ?? $error);
+        }
+
         return $this;
     }
 
@@ -405,6 +424,14 @@ function sanitize_html(?string $html): string
         'noscript', 'template', 'form', 'input', 'button', 'select', 'textarea',
         'link', 'meta', 'base', 'svg', 'math'];
 
+    // Same lock-down as svg_sanitize(): this parses admin-supplied markup, and
+    // a null entity loader plus LIBXML_NONET means a DOCTYPE smuggled into the
+    // fragment cannot pull a local file (file://, php://filter) or a remote one
+    // into the output. LIBXML_NOENT is deliberately absent.
+    // See svg_sanitize(): the setter returns bool before PHP 8.4, so the only
+    // portable restore is null, libxml's own default loader.
+    $previousLoader = function_exists('libxml_get_external_entity_loader') ? libxml_get_external_entity_loader() : null;
+    libxml_set_external_entity_loader(static fn () => null);
     $previous = libxml_use_internal_errors(true);
     $doc = new DOMDocument();
     // The meta charset is what makes libxml read the fragment as UTF-8; without
@@ -417,6 +444,7 @@ function sanitize_html(?string $html): string
     );
     libxml_clear_errors();
     libxml_use_internal_errors($previous);
+    libxml_set_external_entity_loader($previousLoader);
 
     if (!$loaded) {
         return '';

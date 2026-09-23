@@ -9,6 +9,13 @@
  * Money is written as a plain number a spreadsheet can add up, and the larger
  * exports are streamed straight off the statement so they never have to fit in
  * memory at once.
+ *
+ * reports.view is not a licence to read everything. Two of the five reports are
+ * personal data wearing a chart's clothes - the customer export is a mailing
+ * list with phone numbers and lifetime spend, and the order export carries a
+ * name, email and city per row - so each one asks for the permission that
+ * guards the same data on its own screen. Without that, a role meant for
+ * product performance was a one-URL PII dump.
  */
 
 declare(strict_types=1);
@@ -17,10 +24,26 @@ require_once __DIR__ . '/../includes/auth.php';
 
 $admin = admin_require('reports.view');
 
+require_once ADMIN_PATH . '/includes/rbac.php';
 require_once __DIR__ . '/_shared.php';
 require_once __DIR__ . '/_filters.php';
 
 $report     = admin_filter('report', array_keys(report_pages()), 'sales');
+
+/** The permission each report's data needs beyond reports.view. */
+const REPORT_EXPORT_PERMISSIONS = [
+    'customers' => 'customers.view',
+    'orders'    => 'orders.view',
+];
+
+if (isset(REPORT_EXPORT_PERMISSIONS[$report]) && !admin_can(REPORT_EXPORT_PERMISSIONS[$report])) {
+    admin_deny(
+        'The ' . $report . ' export contains customer contact details, so it needs the '
+            . REPORT_EXPORT_PERMISSIONS[$report] . ' permission as well as reports.view.',
+        ['report' => $report, 'needs' => REPORT_EXPORT_PERMISSIONS[$report]]
+    );
+}
+
 $filters    = report_filter_state();
 $dateParams = ['from' => $filters['from_dt'], 'to' => $filters['to_dt']];
 $revenueSql = report_revenue_sql();
