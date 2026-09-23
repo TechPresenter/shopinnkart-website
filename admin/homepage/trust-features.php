@@ -177,7 +177,11 @@ require ADMIN_PATH . '/includes/header.php';
         color: var(--ad-muted);
         text-align: center;
     }
-    .ad-iconpick__box em { font-style: normal; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* The key wraps instead of clipping: "shield-check" is wider than an 84px
+       tile at 11.5px, and an ellipsis would hide which icon you are picking
+       with nothing to reveal the rest. The names break at their own hyphens;
+       `anywhere` covers a long one with no hyphen in it. */
+    .ad-iconpick__box em { font-style: normal; max-width: 100%; line-height: 1.3; overflow-wrap: anywhere; }
     .ad-iconpick input:checked + .ad-iconpick__box {
         border-color: var(--ad-primary);
         color: var(--ad-primary);

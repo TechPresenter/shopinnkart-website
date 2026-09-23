@@ -21,6 +21,14 @@
 
 declare(strict_types=1);
 
+// Include-only: the parent page already ran authentication and permissions.
+// The .htaccess rule refuses /_*.php outright; this is the backstop for a
+// host that does not read .htaccess at all.
+if (!defined('SIK_BOOTSTRAPPED')) {
+    http_response_code(404);
+    exit;
+}
+
 require_once INCLUDES_PATH . '/header-settings.php';
 
 /** Human labels for the enum values, keyed exactly as HEADER_ENUMS is. */

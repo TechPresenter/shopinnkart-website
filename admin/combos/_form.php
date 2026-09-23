@@ -10,6 +10,14 @@
 
 declare(strict_types=1);
 
+// Include-only: the parent page already ran authentication and permissions.
+// The .htaccess rule refuses /_*.php outright; this is the backstop for a
+// host that does not read .htaccess at all.
+if (!defined('SIK_BOOTSTRAPPED')) {
+    http_response_code(404);
+    exit;
+}
+
 /** @var array $combo @var array $errors @var bool $isEdit */
 $isEdit  = $isEdit ?? false;
 $errors  = $errors ?? [];
@@ -87,6 +95,8 @@ $formConfig = [
     'icons'    => [
         'grip'   => icon('dots', 'w-4 h-4'),
         'remove' => icon('close', 'w-4 h-4'),
+        'up'     => icon('chevron-up', 'w-4 h-4'),
+        'down'   => icon('chevron-down', 'w-4 h-4'),
     ],
 ];
 ?>
@@ -114,16 +124,45 @@ $formConfig = [
     .ad-picker__info { flex: 1; min-width: 150px; display: grid; }
     .ad-picker__field { display: grid; gap: 3px; font-size: 11px; color: var(--ad-muted); }
     .ad-picker__field .sik-input { padding: 7px 10px; font-size: 12.5px; width: 78px; }
-    @media (max-width: 767px) { .ad-picker__field .sik-input { font-size: 16px; width: 88px; } }
+    @media (max-width: 767px) { .ad-picker__field .sik-input { font-size: 16px; width: 64px; } }
     .ad-picker__empty { font-size: 13px; padding: 14px; text-align: center; border: 1px dashed var(--ad-border); border-radius: 10px; }
     .ad-picker__empty[hidden] { display: none; }
     .ad-picker__warn { color: #B45309; font-weight: 600; }
 
-    /* Drag affordances, shared by the component list and the gallery. */
-    .ad-grip { cursor: grab; color: var(--ad-muted); flex: none; }
+    /* Drag affordances, shared by the component list and the gallery. The
+       grip is a full-height strip rather than a bare 16px glyph, so a finger
+       can find it; touch-action comes from admin.css. The row being carried
+       stays in place, faded, while Admin.sortable() draws where it will land. */
+    .ad-grip {
+        display: flex; align-items: center; justify-content: center; align-self: stretch;
+        width: 28px; flex: none; border-radius: 7px;
+        cursor: grab; color: var(--ad-muted);
+    }
+    .ad-grip:hover { background: #fff; color: var(--ad-text); }
     .ad-grip:active { cursor: grabbing; }
     .is-dragging { opacity: .4; }
-    .is-over { border-style: dashed; }
+    /* With a mouse the arrows stack into one 30px column, so the product name
+       keeps the width it had before they existed; 24px each is still the
+       WCAG 2.2 minimum target. A finger gets admin.css's 44px pair. */
+    @media (min-width: 768px) and (pointer: fine) {
+        .ad-picker__row > .ad-movebtns,
+        .ad-gallery__row > .ad-movebtns { flex-direction: column; gap: 2px; }
+        .ad-picker__row > .ad-movebtns button,
+        .ad-gallery__row > .ad-movebtns button { width: 30px; height: 24px; }
+    }
+
+    /* Phones: the remove button takes the card's top-right corner, where a
+       dismiss control is looked for, so the second line has the whole width
+       for Qty, Order and the arrows. Left in the flow it wrapped onto a third
+       line of its own at 360px. The name keeps clear of it. */
+    @media (max-width: 767px) {
+        .ad-picker__row { position: relative; }
+        .ad-picker__row > [data-combo-remove] { position: absolute; top: 4px; right: 4px; }
+        .ad-picker__row > .ad-picker__info { padding-right: 40px; }
+        /* Level with the Qty/Order inputs on that second line, not with
+           their labels. */
+        .ad-picker__row > .ad-movebtns { align-self: flex-end; }
+    }
 
     /* The live summary. `regular` is the struck-through number everywhere on
        this screen - never `mrp` - because most of this catalogue is already
@@ -169,7 +208,7 @@ $formConfig = [
     .ad-gallery__row .ad-picker__field { flex: 1; min-width: 160px; }
     .ad-gallery__row .ad-picker__field .sik-input { width: 100%; }
     .ad-gallery__order.sik-input { width: 66px; padding: 7px 10px; font-size: 12.5px; }
-    @media (max-width: 767px) { .ad-gallery__order.sik-input { font-size: 16px; width: 76px; } }
+    @media (max-width: 767px) { .ad-gallery__order.sik-input { font-size: 16px; width: 64px; } }
 </style>
 
 <form class="ad-form" id="comboForm" method="post" enctype="multipart/form-data" data-guard-unsaved>
@@ -238,7 +277,8 @@ $formConfig = [
                 <div class="ad-card__head">
                     <div class="ad-card__title">What is in the set</div>
                     <div class="ad-card__sub">
-                        Search, add, set how many of each, and drag to put them in the order a shopper reads them.
+                        Search, add, set how many of each, and drag the handle or use the arrows to put them in
+                        the order a shopper reads them.
                     </div>
                 </div>
                 <div class="ad-card__body">
@@ -297,7 +337,8 @@ $formConfig = [
                                 }
                                 $isProblem = $product === null || (string) $product['status'] !== STATUS_ACTIVE;
                                 ?>
-                                <div class="ad-picker__row" data-combo-row="<?= $productId ?>" draggable="true"
+                                <div class="ad-picker__row" data-combo-row="<?= $productId ?>"
+                                     data-name="<?= e_attr($name) ?>"
                                      data-unit-price="<?= e_attr((string) $unit['price']) ?>"
                                      data-stock="<?= (int) ($product['stock'] ?? 0) ?>">
                                     <span class="ad-grip" data-grip aria-hidden="true" title="Drag to reorder">
@@ -321,6 +362,16 @@ $formConfig = [
                                                min="1" max="99" step="1" value="<?= $index + 1 ?>"
                                                aria-label="Position of <?= e_attr($name) ?>">
                                     </label>
+                                    <?php // Unnamed, so they post nothing: item_sort[] stays the
+                                          // only order the save reads. ?>
+                                    <span class="ad-movebtns">
+                                        <button type="button" data-move="up" aria-label="Move <?= e_attr($name) ?> up">
+                                            <?= icon('chevron-up', 'w-4 h-4') ?>
+                                        </button>
+                                        <button type="button" data-move="down" aria-label="Move <?= e_attr($name) ?> down">
+                                            <?= icon('chevron-down', 'w-4 h-4') ?>
+                                        </button>
+                                    </span>
                                     <input type="hidden" name="product_id[]" value="<?= $productId ?>">
                                     <button type="button" class="ad-btn ad-btn--icon ad-btn--danger-ghost"
                                             data-combo-remove aria-label="Remove <?= e_attr($name) ?> from the set">
@@ -474,20 +525,37 @@ $formConfig = [
 
                         <?php if ($gallery !== []): ?>
                             <p class="sik-help" style="margin-top:14px">
-                                Saved gallery images. Drag a row or type its position to reorder; tick "Remove" to
-                                delete the file on save. The gallery is separate from the card image above.
+                                Saved gallery images. Drag a row by its handle, use the arrows or type its position
+                                to reorder; tick "Remove" to delete the file on save. The gallery is separate from
+                                the card image above.
                             </p>
                             <div class="ad-gallery" data-gallery-list>
                                 <?php foreach ($gallery as $index => $image): ?>
-                                    <?php $imageId = (int) $image['id']; ?>
-                                    <div class="ad-gallery__row" data-gallery-row draggable="true">
+                                    <?php
+                                    $imageId = (int) $image['id'];
+                                    // What the arrows and announcements call this row. Its
+                                    // alt text if it has one, else the file name - not
+                                    // "image 3", which stops being true after one move.
+                                    $imageName = trim((string) ($image['alt_text'] ?? '')) !== ''
+                                        ? trim((string) $image['alt_text'])
+                                        : basename((string) $image['image']);
+                                    ?>
+                                    <div class="ad-gallery__row" data-gallery-row data-name="<?= e_attr($imageName) ?>">
                                         <span class="ad-grip" data-grip aria-hidden="true" title="Drag to reorder">
                                             <?= icon('dots', 'w-4 h-4') ?>
                                         </span>
                                         <input class="sik-input ad-gallery__order" type="number" data-order
                                                min="1" max="999" step="1" name="image_order[<?= $imageId ?>]"
                                                value="<?= $index + 1 ?>"
-                                               aria-label="Position of gallery image <?= $index + 1 ?>">
+                                               aria-label="Position of <?= e_attr($imageName) ?>">
+                                        <span class="ad-movebtns">
+                                            <button type="button" data-move="up" aria-label="Move <?= e_attr($imageName) ?> up">
+                                                <?= icon('chevron-up', 'w-4 h-4') ?>
+                                            </button>
+                                            <button type="button" data-move="down" aria-label="Move <?= e_attr($imageName) ?> down">
+                                                <?= icon('chevron-down', 'w-4 h-4') ?>
+                                            </button>
+                                        </span>
                                         <img src="<?= e(img_url((string) $image['image'])) ?>" alt="">
                                         <label class="ad-picker__field">
                                             <span>Alt text</span>
@@ -792,7 +860,8 @@ window.SIK_COMBO_FORM = <?= e_json($formConfig) ?>;
         // deal prices lower on the server, which is why the help text says the
         // server recomputes on save.
         function rowHtml(data) {
-            return '<div class="ad-picker__row" data-combo-row="' + esc(data.id) + '" draggable="true"'
+            return '<div class="ad-picker__row" data-combo-row="' + esc(data.id) + '"'
+                + ' data-name="' + esc(data.name) + '"'
                 + ' data-unit-price="' + esc(data.price) + '" data-stock="' + esc(data.stock) + '">'
                 + '<span class="ad-grip" data-grip aria-hidden="true" title="Drag to reorder">'
                 + glyph('grip') + '</span>'
@@ -807,6 +876,12 @@ window.SIK_COMBO_FORM = <?= e_json($formConfig) ?>;
                 + '<label class="ad-picker__field"><span>Order</span>'
                 + '<input class="sik-input" type="number" name="item_sort[]" data-order min="1" max="99" step="1"'
                 + ' value="1" aria-label="Position of ' + esc(data.name) + '"></label>'
+                + '<span class="ad-movebtns">'
+                + '<button type="button" data-move="up" aria-label="Move ' + esc(data.name) + ' up">'
+                + glyph('up') + '</button>'
+                + '<button type="button" data-move="down" aria-label="Move ' + esc(data.name) + ' down">'
+                + glyph('down') + '</button>'
+                + '</span>'
                 + '<input type="hidden" name="product_id[]" value="' + esc(data.id) + '">'
                 + '<button type="button" class="ad-btn ad-btn--icon ad-btn--danger-ghost" data-combo-remove'
                 + ' aria-label="Remove ' + esc(data.name) + ' from the set">' + glyph('remove') + '</button>'
@@ -879,11 +954,15 @@ window.SIK_COMBO_FORM = <?= e_json($formConfig) ?>;
         /* ------------------------------------------------------------------
            Reordering, for the component list and the saved gallery alike.
 
-           The number inputs are the control; dragging is a shortcut that
-           rewrites them. That order matters - HTML5 drag events do not fire
-           from touch, so on a tablet the numbers are the only way to reorder,
-           and they have to be the thing that is actually posted rather than a
-           mirror of a drag state.
+           The number inputs are the control; dragging and the arrows are
+           shortcuts that rewrite them. They are what is posted, so a drag or
+           an arrow press changes exactly the item_sort[] / image_order[]
+           values a typed number would, and the save cannot tell them apart.
+
+           The drag is Admin.sortable() in admin.js - Pointer Events, so it
+           works under a finger. The HTML5 drag-and-drop it replaces never
+           fired from a touch screen, which left typing numbers as the only
+           way to reorder a set on a phone or tablet.
            ------------------------------------------------------------------ */
         function renumber(container) {
             Array.prototype.forEach.call(container.querySelectorAll('[data-order]'), function (input, index) {
@@ -892,41 +971,16 @@ window.SIK_COMBO_FORM = <?= e_json($formConfig) ?>;
         }
 
         function bindReorder(container, rowSelector) {
-            var dragged = null;
-
-            container.addEventListener('dragstart', function (e) {
-                var row = e.target.closest(rowSelector);
-                if (!row) { return; }
-                dragged = row;
-                row.classList.add('is-dragging');
-                e.dataTransfer.effectAllowed = 'move';
-                // Firefox will not start a drag without data on the transfer.
-                e.dataTransfer.setData('text/plain', '');
+            SIK.admin.sortable(container, {
+                row: rowSelector,
+                onChange: function () {
+                    renumber(container);
+                    // Values set from script fire no event, so without this
+                    // the unsaved-changes guard would let a reordered set be
+                    // walked away from without a word.
+                    container.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             });
-
-            container.addEventListener('dragend', function () {
-                if (dragged) { dragged.classList.remove('is-dragging'); }
-                Array.prototype.forEach.call(container.querySelectorAll('.is-over'), function (row) {
-                    row.classList.remove('is-over');
-                });
-                dragged = null;
-            });
-
-            container.addEventListener('dragover', function (e) {
-                if (!dragged) { return; }
-                e.preventDefault();
-                var over = e.target.closest(rowSelector);
-                if (!over || over === dragged) { return; }
-
-                // Insert before or after depending on which half of the target
-                // the pointer is in, so a row can be dropped at the end.
-                var box = over.getBoundingClientRect();
-                var after = (e.clientY - box.top) > box.height / 2;
-                container.insertBefore(dragged, after ? over.nextSibling : over);
-                renumber(container);
-            });
-
-            container.addEventListener('drop', function (e) { e.preventDefault(); });
 
             // Typing a number is the other half of the same control: sorting
             // the DOM to match keeps the list and the values telling one story.

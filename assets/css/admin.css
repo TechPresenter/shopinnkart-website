@@ -280,8 +280,15 @@ body.ad-body {
    (0,1,0) and would shrink the drawer to 72px of unlabelled icons — the
    collapse cookie is set path=/ for a year, so one desktop click would follow
    the admin onto every phone and tablet.
+
+   `hover: hover` for the same cookie's sake on a wide touch screen. The rail
+   is readable only through hover (a tooltip, then "The collapsed rail
+   expands to be read" near the end of this file), so on a touch tablet it
+   was thirty anonymous glyphs with no way to read them. There the class is
+   simply inert and the full labelled sidebar stays; section 40 hides the
+   toggle, which would do nothing.
    -------------------------------------------------------------------------- */
-@media (min-width: 1024px) {
+@media (min-width: 1024px) and (hover: hover) {
     body.ad-collapsed .ad-main { margin-left: var(--ad-sidebar-w-min); }
     body.ad-collapsed .ad-sidebar { width: var(--ad-sidebar-w-min); }
 
@@ -314,6 +321,12 @@ body.ad-body {
     body.ad-collapsed .ad-nav__badge { position: absolute; top: 4px; right: 6px; min-width: 15px; height: 15px; font-size: 9px; }
     body.ad-collapsed .ad-nav__link::after {
         content: attr(data-tip);
+        /* Generated text is part of an element's accessible name, so the
+           tooltip made every rail link announce itself twice ("Dashboard
+           Dashboard", "Orders 1 Orders") beside the clipped label. The empty
+           alternative after the slash keeps it visual only; the first
+           declaration is the fallback for a browser without that syntax. */
+        content: attr(data-tip) / "";
         position: absolute;
         left: calc(100% + 10px);
         top: 50%;
@@ -521,16 +534,67 @@ body.ad-body {
    295px over, homepage 469px, popups 635px. */
 .ad-grid { display: grid; gap: 18px; }
 .ad-grid--2 { grid-template-columns: minmax(0, 1fr); }
-.ad-grid--3 { grid-template-columns: minmax(0, 1fr); }
-.ad-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ad-grid--sidebar { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 768px) {
     .ad-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .ad-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .ad-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* The KPI grids fit their tiles instead of counting them.
+   -------------------------------------------------------------------------
+   `repeat(4, 1fr)` from 768px up gave each tile 167-172px between 641px and
+   ~1100px, and a lakh-scale figure at 28px needs ~200px: the numeral spilled
+   out of the tile and became the PAGE's horizontal scrollbar on ten screens
+   (customers 67px over, reports/customers 71px, orders/returns 48px, the
+   dashboard 33px). A fixed count cannot express "four across if four fit" -
+   auto-fit can, so the row drops to three, then two, then one on its own and
+   every tile keeps a width the figure can live in. auto-fit (not auto-fill)
+   collapses the tracks it does not use, so four tiles still fill the row.
+
+   min() in the track floor so a container narrower than the floor shrinks the
+   track rather than overflowing; the tile itself then shrinks the numeral
+   through its own container queries (see .ad-stat below). */
+.ad-grid--3,
+.ad-grid--4 { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
+
+/* --- a row of four does not end in one orphan tile -----------------------
+   auto-fit picks the count from the width, which is right for fitting but
+   leaves a hole when the count does not divide the tiles: a KPI row of FOUR
+   at three across is 3 + 1, with a tile-and-a-half of white space beside the
+   last one. Two across is the same information with no hole.
+
+   The window where that happens is arithmetic, not taste: the track floor is
+   190px and the gap 18px, so three columns need 606px of grid and four need
+   814px. The shell leaves the grid vw - 44 with the sidebar off-canvas
+   (below 1024px) and vw - 300 with it open, so three columns land between
+   650-857px and, with the sidebar, 1024-1113px. A collapsed 72px rail leaves
+   vw - 116, which is already past 814px at 1024px, hence :not(.ad-collapsed)
+   on the second range only.
+
+   :has() keeps it to grids of exactly four. .ad-grid--4 is also used for
+   9-tile rows (the dashboard's order pipeline), where three across divides
+   perfectly and two across would be the thing introducing an orphan. */
+@media (min-width: 650px) and (max-width: 857.98px) {
+    .ad-grid--4:has(> :nth-child(4)):not(:has(> :nth-child(5))) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (min-width: 1024px) and (max-width: 1113.98px) {
+    body:not(.ad-collapsed) .ad-grid--4:has(> :nth-child(4)):not(:has(> :nth-child(5))) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 @media (min-width: 1100px) {
     .ad-grid--sidebar { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; }
+}
+
+/* A narrower aside that earns its place from the space, not the viewport.
+   --sidebar is keyed to the window and is right for a page whose aside is a
+   summary rail. This one is for a form with a panel beside it, where what
+   matters is whether BOTH columns still have room - the form needs ~320px of
+   its own before a 340px aside is worth keeping. Used by shipping/configure. */
+.ad-grid--aside { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 720px) {
+    .ad-grid--aside { grid-template-columns: minmax(0, 1fr) minmax(0, 340px); align-items: start; }
 }
 
 /* --------------------------------------------------------------------------
@@ -544,8 +608,22 @@ body.ad-body {
     padding: 16px;
     display: flex;
     align-items: center;
+    /* Wrappable so the body can take a line of its own in a narrow tile - see
+       the @container steps below, where that is how the tile changes shape. */
+    flex-wrap: wrap;
     gap: 13px;
     transition: transform .16s ease, box-shadow .16s ease;
+    /* The tile sizes its own contents.
+       A KPI numeral has to answer to the width of the TILE, not the width of
+       the window: the same 4-up row is 280px per tile on a 1440px laptop and
+       190px on a 1024px one, and no media query can see that difference from
+       the viewport. `inline-size` containment only fixes the inline axis, so
+       the tile still grows as tall as its label needs. */
+    container-type: inline-size;
+    container-name: adstat;
+    /* min-width: 0 so a grid/flex track can squeeze the tile instead of the
+       tile setting the track's floor (and, through it, the page's). */
+    min-width: 0;
 }
 a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); }
 .ad-stat__icon {
@@ -565,7 +643,13 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-stat__icon--red     { background: var(--ad-danger-soft);   color: var(--ad-danger-ink); }
 .ad-stat__icon--violet  { background: #F5F3FF;                 color: #6D28D9; }
 .ad-stat__icon--navy    { background: #EEF2F9;                 color: var(--ad-navy); }
-.ad-stat__body { min-width: 0; }
+/* flex-basis 0, not auto. The tile is a wrap-flex (the @container steps below
+   move the body onto its own line that way), and with an `auto` basis the body
+   asked for its own max-content width - so a tile whose sub-line happened to be
+   long, like Orders' "Excludes cancelled, returned and refunded", wrapped
+   itself at 1440px while the three tiles beside it did not. A zero basis means
+   only the container query decides when the shape changes. */
+.ad-stat__body { min-width: 0; flex: 1 1 0; }
 .ad-stat__value {
     display: block;
     font-size: var(--ad-fs-display);
@@ -575,9 +659,58 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     color: var(--ad-text);
     /* Figures line up column-to-column when several KPIs sit in a row. */
     font-variant-numeric: tabular-nums;
+    /* Last resort. Everything below keeps the figure on one line; if a tile is
+       narrower than any of these steps anticipated, the figure wraps inside
+       the tile rather than hanging out of it and scrolling the page. */
+    overflow-wrap: anywhere;
 }
 .ad-stat__label { display: block; font-size: var(--ad-fs-body); color: var(--ad-muted); margin-top: var(--ad-1); }
 .ad-stat__sub { display: block; font-size: var(--ad-fs-caption); color: var(--ad-muted); margin-top: 3px; }
+
+/* The steps.
+   -------------------------------------------------------------------------
+   Measured against the widest figure the admin actually prints,
+   `₹6,47,81,039.50` - 15 glyphs, tabular, which comes out at 7.5x its own font
+   size. The query width is the tile's CONTENT box, so a 229px tile answers
+   `max-width: 195px`.
+
+   Beside the icon chip the figure only has the container less 42px of glyph
+   and 13px of gap:
+
+     28px needs 209 + 55 = 264     21px needs 157 + 55 = 212
+     24px needs 180 + 55 = 235
+
+   so at 218 the tile changes SHAPE rather than shrinking the figure further:
+   the body takes a whole line of its own and the icon sits above it, which
+   buys those 55px back at a stroke. That is a deliberate second form of the
+   tile, not a squeeze, and it is what makes a 4-up KPI row legible at 1024px,
+   where each tile has 190px of content and the figure needs 157px of it. Only
+   below 162px does the figure itself start to give way.
+
+   Every selector here is a DESCENDANT of the tile, never `.ad-stat` itself: a
+   container query cannot style the container it is asking about (the answer
+   would change the question), so a `.ad-stat { flex-direction: column }` here
+   is silently dropped. The shape change is therefore done by the body claiming
+   a full flex line, which is the same layout arrived at from the inside. */
+@container adstat (max-width: 272px) {
+    .ad-stat__value { font-size: 24px; }
+}
+@container adstat (max-width: 240px) {
+    .ad-stat__value { font-size: 21px; }
+}
+@container adstat (max-width: 218px) {
+    .ad-stat__body { flex: 1 1 100%; }
+    .ad-stat__icon { width: 34px; height: 34px; border-radius: 9px; }
+    .ad-stat__icon svg { width: 17px; height: 17px; }
+}
+@container adstat (max-width: 162px) {
+    .ad-stat__value { font-size: 18px; letter-spacing: -.01em; }
+    .ad-stat__icon { width: 30px; height: 30px; border-radius: 8px; }
+    .ad-stat__icon svg { width: 15px; height: 15px; }
+}
+@container adstat (max-width: 140px) {
+    .ad-stat__value { font-size: 16px; }
+}
 
 .ad-delta {
     display: inline-flex;
@@ -620,7 +753,16 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-tablewrap::-webkit-scrollbar-thumb { background: var(--ad-border-strong); border-radius: var(--ad-radius-pill); }
 .ad-tablewrap::-webkit-scrollbar-thumb:hover { background: var(--ad-faint); }
 
-.ad-table { width: 100%; border-collapse: collapse; font-size: var(--ad-fs-body); min-width: 640px; }
+/* No min-width floor.
+   -------------------------------------------------------------------------
+   `min-width: 640px` was a blanket floor that ignored how wide the columns
+   actually were, so a three-column Key/Value table in a sidebar card demanded
+   640px inside a 290px column and scrolled sideways at EVERY viewport width -
+   settings/widgets was still 348px over at 1440px, and every reports page was
+   296px over at 1024px, 168px at 1280px and 88px at 1440px. A table that is
+   genuinely too wide now stacks into cards instead (initResponsiveTables() in
+   admin.js measures it); a table that fits simply fits. */
+.ad-table { width: 100%; border-collapse: collapse; font-size: var(--ad-fs-body); }
 .ad-table th {
     text-align: left;
     font-size: 11px;
@@ -631,89 +773,245 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     padding: 11px 14px;
     background: var(--ad-bg);
     border-bottom: 1px solid var(--ad-border);
-    white-space: nowrap;
+    /* Headers wrap. `nowrap` made every header its column's unbreakable
+       minimum, which is why `th.ad-table__actions` was the element sticking
+       out of 29 list tables and a bare `th` out of 17 more. A header only
+       wraps when its column is squeezed, so a wide screen looks unchanged. */
+    white-space: normal;
+    overflow-wrap: break-word;
+    vertical-align: bottom;
 }
 .ad-table td {
     padding: 12px 14px;
     border-bottom: 1px solid var(--ad-border);
     vertical-align: middle;
+    /* An address, an email or a URL breaks rather than widening its column.
+       `break-word`, not `anywhere`: `anywhere` would also drop the cell's
+       intrinsic minimum to one character, which would tell the fit test in
+       admin.js that a 12-column table fits a phone. It does not. */
+    overflow-wrap: break-word;
 }
 .ad-table tbody tr:last-child td { border-bottom: 0; }
 .ad-table tbody tr:hover { background: var(--ad-surface-alt); }
 
-/* --- opt-in mobile card view ---------------------------------------------
-   A data table cannot be read 640px wide on a 360px phone. Adding
-   .ad-table--stack plus data-label="…" on each <td> turns every row into a
-   labelled card below 768px. Rows without a data-label keep their cell as a
-   full-width block, so a partially-migrated table degrades sanely rather than
-   losing its headers.
+/* --- the card view, entered by measurement not by breakpoint --------------
+   initResponsiveTables() in admin.js derives the data-labels from the table's
+   own <thead>, then measures: if the table's minimum width does not fit the
+   space its wrapper has, it adds `is-stacked` and every row becomes a labelled
+   card. That is a per-table question, not a per-viewport one — a 3-column
+   Key/Value table fits a 320px phone and a 12-column products list does not
+   fit a 1024px laptop — so the old `@media (max-width: 767px)` gate was wrong
+   at both ends: it stacked tables that fitted and it left 35 list tables
+   scrolling sideways at 768-1440px.
+
+   Rows without a data-label keep their cell as a full-width block, so a
+   partially-migrated table degrades sanely rather than losing its headers.
    ------------------------------------------------------------------------- */
-@media (max-width: 767px) {
+.ad-table--stack.is-stacked {
     /* !important because two tables carry an inline style="min-width:1180px"
-       (popups) and 940px (one other). An inline declaration outranks any
-       selector, so without this they keep their desktop width and drag the card
-       view sideways — the exact thing this block exists to stop. The inline
-       value is left in place so those tables still get their intended width on
-       a desktop, where the media query does not apply. */
-    .ad-table--stack { min-width: 0 !important; }
-    /* display:none, not the visually-hidden clip() trick.
-       `position:absolute; width:1px; overflow:hidden` does not reliably clip
-       table-internal boxes: the <th> cells kept laying out at their full width
-       and pushed the scroller 15px past its container on coupons, with header
-       cells measuring up to 314px beyond the right edge.
-       Nothing is lost by removing it outright — the rule below already sets
-       display:block on the table, tbody, tr and td, which drops the table
-       semantics a screen reader would have used the header row for, and every
-       cell now carries its own label via data-label + ::before. */
-    .ad-table--stack thead { display: none; }
-    .ad-table--stack, .ad-table--stack tbody, .ad-table--stack tr, .ad-table--stack td { display: block; width: auto; }
-    .ad-table--stack tr {
-        border: 1px solid var(--ad-border);
-        border-radius: var(--ad-radius);
-        padding: var(--ad-2) var(--ad-3);
-        margin-bottom: var(--ad-3);
-        background: var(--ad-surface);
-    }
-    .ad-table--stack tr:hover { background: var(--ad-surface); }
-    .ad-table--stack td {
-        border-bottom: 0;
-        padding: var(--ad-2) 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--ad-3);
-        text-align: right;
-        /* The label below is flex:none so it stays legible, which means it will
-           not give up a pixel when the value beside it is long — the row then
-           overflowed the card by a little rather than a lot: measured 15px on
-           coupons, 20px on deals, 23px on flash sales. Wrapping lets the value
-           drop to a second line instead, and min-width:0 lets a long value
-           shrink rather than setting the row's floor. */
-        flex-wrap: wrap;
-        min-width: 0;
-    }
-    /* Order numbers, coupon codes, slugs and e-mail addresses are single
-       unbreakable tokens; without this they set an unshrinkable minimum. */
-    .ad-table--stack td > * { min-width: 0; overflow-wrap: anywhere; }
-    .ad-table--stack td + td { border-top: 1px dashed var(--ad-border); }
-    .ad-table--stack td[data-label]::before {
-        content: attr(data-label);
-        flex: none;
-        text-align: left;
-        font-size: var(--ad-fs-caption);
-        font-weight: 800;
-        letter-spacing: .06em;
-        text-transform: uppercase;
-        color: var(--ad-muted);
-    }
-    /* Actions and the row checkbox read better full width at the card's foot. */
-    .ad-table--stack .ad-table__actions { justify-content: flex-end; }
-    .ad-table--stack .ad-table__check { justify-content: flex-start; }
-    .ad-table--stack .ad-table__num { text-align: right; }
+       (popups) and 940px (products/inventory). An inline declaration outranks
+       any selector, so without this they keep their desktop width and drag the
+       card view sideways - the exact thing this block exists to stop. */
+    min-width: 0 !important;
+    display: block;
+    width: auto;
 }
+/* display:none, not the visually-hidden clip() trick.
+   `position:absolute; width:1px; overflow:hidden` does not reliably clip
+   table-internal boxes: the <th> cells kept laying out at their full width and
+   pushed the scroller 15px past its container on coupons, with header cells
+   measuring up to 314px beyond the right edge.
+   Nothing is lost by removing it outright - the rules below set display:block
+   on the tbody, tr and td, which drops the table semantics a screen reader
+   would have used the header row for, and every cell now carries its own label
+   via data-label + ::before. The sort control and the select-all box that lived
+   in the <thead> are rebuilt above the table by addStackControls(); see
+   .ad-stackbar. */
+.ad-table--stack.is-stacked thead { display: none; }
+.ad-table--stack.is-stacked tbody,
+.ad-table--stack.is-stacked tr,
+.ad-table--stack.is-stacked td { display: block; width: auto; }
+.ad-table--stack.is-stacked tr {
+    border: 1px solid var(--ad-border);
+    border-radius: var(--ad-radius);
+    padding: var(--ad-2) var(--ad-3);
+    margin-bottom: var(--ad-3);
+    background: var(--ad-surface);
+}
+.ad-table--stack.is-stacked tr:hover { background: var(--ad-surface); }
+.ad-table--stack.is-stacked tbody tr:last-child { margin-bottom: 0; }
+.ad-table--stack.is-stacked td {
+    border-bottom: 0;
+    padding: var(--ad-2) 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ad-3);
+    text-align: right;
+    /* The label below is flex:none so it stays legible, which means it will not
+       give up a pixel when the value beside it is long - the row then overflowed
+       the card by a little rather than a lot: measured 15px on coupons, 20px on
+       deals, 23px on flash sales. Wrapping lets the value drop to a second line
+       instead, and min-width:0 lets a long value shrink rather than setting the
+       row's floor. */
+    flex-wrap: wrap;
+    min-width: 0;
+    /* Inside a card there is no column left to widen, so the strongest wrapping
+       rule is the right one here even though .ad-table td only asks for
+       break-word: an AWB, a hash or a 60-character URL breaks mid-token rather
+       than pushing the card past the screen. */
+    overflow-wrap: anywhere;
+}
+/* Order numbers, coupon codes, slugs, AWBs and e-mail addresses are single
+   unbreakable tokens; without this they set an unshrinkable minimum. */
+.ad-table--stack.is-stacked td > * { min-width: 0; overflow-wrap: anywhere; }
+.ad-table--stack.is-stacked td + td { border-top: 1px dashed var(--ad-border); }
+.ad-table--stack.is-stacked td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    text-align: left;
+    font-size: var(--ad-fs-caption);
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ad-muted);
+}
+/* --- one value, however many nodes it is made of -------------------------
+   The cell is a flex row, so the ::before label and EVERY node of the value
+   are separate flex items: `justify-content: space-between` spread them right
+   across the card. A rating rendered "RATING   3.9 ........ (5)" with the
+   count stranded at the far edge, and the same happened to every cell that
+   holds a value plus a muted suffix, a second badge or a sub-line (Visibility
+   on homepage/index, Stock with its variant list on products/inventory).
+   Pinning the label left with an auto margin and packing everything else to
+   the right reads as one value again, and costs one declaration per side.
+   Scoped to td[data-label] so the row checkbox and any label-less cell keep
+   the rules above. */
+.ad-table--stack.is-stacked td[data-label] { justify-content: flex-end; }
+.ad-table--stack.is-stacked td[data-label]::before { margin-inline-end: auto; }
+/* --- an inline nowrap may not set a card's width -------------------------
+   Two dozen list screens carry `<td style="white-space:nowrap">` on a date or
+   a meta column - orders, banners, combos, deals, flash sales, returns,
+   reviews, reports, the activity and login logs. In a table that is a fair
+   way to keep "14 Jun 2026, 10:59 AM" on one line; in a card, and above all
+   in the field grid below, the cell cannot shrink and its text runs under the
+   field beside it, which is content hidden with no way to reach it.
+   `!important` is not decoration here: the declaration being beaten is an
+   inline style attribute, which no selector can outrank. The rule on line 839
+   does not help - that nowrap is on the <td> itself, not on a child. */
+.ad-table--stack.is-stacked td { white-space: normal !important; }
+/* --- nor may an inline column width follow the cell into the card --------
+   The same trap in its other form: `<td style="width:45%">` and
+   `style="max-width:260px">` are hints to the TABLE's column algorithm, and
+   the six cells that carry one meant them that way. Inside a card the cell is
+   no longer a column - it is one field of a grid - so the percentage
+   re-resolves against the field's own box and the fixed cap sits inside it.
+   The error log's message cell was the visible case: `width: 45%` turned a
+   230px field at 768px into a 100px ribbon reading "Maximum / execution time
+   / of 120 seconds / exceeded" with two empty fields beside it, while the
+   `max-width` cells give up a quarter of a 360px card for nothing. `auto` and
+   `none` are what the rules above already ask for; `!important` is only here
+   because an inline declaration cannot be outranked any other way. */
+.ad-table--stack.is-stacked td { width: auto !important; max-width: none !important; }
+/* Actions and the row checkbox read better full width at the card's foot. */
+.ad-table--stack.is-stacked .ad-table__actions { justify-content: flex-end; }
+.ad-table--stack.is-stacked .ad-table__check { justify-content: flex-start; width: auto; }
+.ad-table--stack.is-stacked .ad-table__num { text-align: right; }
+/* A card is not a table row, so nothing inside it may claim a row's width. */
+.ad-table--stack.is-stacked .ad-cellflex { flex-wrap: wrap; justify-content: flex-end; }
+
+/* --- the same cards, two or three fields across ---------------------------
+   A twelve-column list that does not fit a 1024px laptop still has ~700px to
+   spend, and one field per line there is a column of air beside a very tall
+   card. Above ~480px of card the fields lay out as a field GRID instead, label
+   over value, which is the shape a record detail normally takes and reads as a
+   deliberate layout rather than a phone view someone left switched on. auto-fit
+   picks the count from the width, so one rule gives two fields across at 520px
+   and three at 760px with nothing to tune.
+
+   data-stack="wide" comes from admin.js, which already knows the wrapper's
+   width from the fit test - the same measurement, not a second one. */
+.ad-table--stack.is-stacked[data-stack="wide"] tr {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+    column-gap: 26px;
+    row-gap: 0;
+    padding: var(--ad-1) var(--ad-4) var(--ad-3);
+}
+.ad-table--stack.is-stacked[data-stack="wide"] td {
+    display: block;
+    text-align: left;
+    padding: var(--ad-2) 0 0;
+    border-top: 0;
+    min-width: 0;
+}
+.ad-table--stack.is-stacked[data-stack="wide"] td[data-label]::before {
+    display: block;
+    margin-bottom: 3px;
+}
+/* The two service columns are not fields: they belong to the card rather than
+   to one cell of it, so they take its full width. Actions sit at the foot,
+   behind a rule that closes the field grid off; the row checkbox sits at the
+   head, where it is the first thing a bulk selection reaches - and takes no
+   rule, because there is nothing above it to divide it from. */
+.ad-table--stack.is-stacked[data-stack="wide"] .ad-table__actions,
+.ad-table--stack.is-stacked[data-stack="wide"] .ad-table__check {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--ad-2);
+}
+.ad-table--stack.is-stacked[data-stack="wide"] .ad-table__actions {
+    justify-content: flex-start;
+    margin-top: var(--ad-2);
+    padding-top: var(--ad-3);
+    border-top: 1px dashed var(--ad-border);
+}
+.ad-table--stack.is-stacked[data-stack="wide"] .ad-table__check {
+    order: -1;
+    padding-top: 0;
+}
+/* A field is a whole line wide here, so the thumbnail keeps its place at the
+   head of the line and the name wraps beside it rather than under it. (In the
+   narrow card the cell is only half a line, and there wrapping is right.) */
+.ad-table--stack.is-stacked[data-stack="wide"] .ad-cellflex {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+}
+.ad-table--stack.is-stacked[data-stack="wide"] .ad-cellflex > * { min-width: 0; }
+/* A figure keeps its digits together; `₹69,28,792.10` is one token and 85px
+   wide, so it is not what was making these tables too wide. The header above
+   it was (`th` no longer sets nowrap), and so was the actions column below. */
 .ad-table__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ad-table__actions { text-align: right; white-space: nowrap; }
+
+/* The actions column wraps instead of setting a floor.
+   `white-space: nowrap` here made "Edit · Duplicate · Delete" one unbreakable
+   ~190px block, and `th.ad-table__actions` was the single element sticking out
+   of 29 list tables at 768-1440px. Letting it wrap drops the buttons to a
+   second line in a squeezed column and leaves a roomy one exactly as it was.
+
+   `white-space: normal` rather than a flex container, because this class also
+   sits on a <td>: `display: flex` would take the cell out of the table's
+   column model and hand it to an anonymous cell, and the column would stop
+   lining up with its header. Inline-block children wrap at the whitespace
+   between them, which is all that was needed. */
+.ad-table__actions { text-align: right; white-space: normal; }
 .ad-table__actions > * { display: inline-block; vertical-align: middle; }
+/* ...but a column that HAS the room should not break the row up either. The
+   wrap above is what a squeezed column needs; in a roomy one it read as a
+   broken row rather than a dense one - three icons stacked one per line on
+   customers at 1280px, two on orders, because auto table layout hands a cell
+   whose minimum is one button exactly one button's width once the columns
+   beside it have asked for more.
+
+   So `is-actrow` is put on by fit() in admin.js, and only after it has asked
+   the table what its minimum becomes with this rule applied and checked that
+   the space it has still covers it. That keeps both ends honest: the actions
+   row never sets a floor that pushes a fitting table into a sideways scroll,
+   and a table with room keeps its buttons on one line. See "the actions
+   column" in admin.js. */
+.ad-table.is-actrow .ad-table__actions { white-space: nowrap; }
 .ad-table__check { width: 38px; }
 .ad-table input[type="checkbox"] { accent-color: var(--ad-primary); width: 16px; height: 16px; cursor: pointer; }
 
@@ -734,7 +1032,40 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-sort:hover, .ad-sort.is-active { color: var(--ad-primary); }
 
 .ad-muted { color: var(--ad-muted); }
-.ad-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+/* --- Long unbreakable strings wrap, everywhere ----------------------------
+   The admin is full of tokens no line-breaking algorithm will break on its
+   own: e-mail addresses, absolute URLs, AWB numbers, order references, API
+   keys, SHA hashes, JSON and shell commands. Each one is a single "word", so
+   a box containing one grows to fit it - and if that box is a table cell the
+   table grows, and if it is a card the card is clipped by its own
+   overflow:hidden. `anywhere` rather than `break-word` on these because these
+   ARE the long tokens: their intrinsic minimum has to come down, not just
+   their rendered line.
+
+   .ad-mono used to set a font and nothing else, so `pre.ad-mono` inherited
+   `white-space: pre` and system/backup's restore command line scrolled 121px
+   sideways at 360px while logs/errors' stack traces scrolled 1387px inside
+   their <details>. pre-wrap keeps the intentional newlines and indentation of
+   a command or a stack trace and lets the rest reflow. */
+.ad-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+pre.ad-mono,
+.ad-body pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Inline code keeps whatever white-space handling it had - pre-wrap on an
+   inline <code> would start honouring the newlines PHP puts around it - and
+   only gains the ability to break. */
+.ad-body code,
+.ad-body samp,
+.ad-body kbd { overflow-wrap: anywhere; }
+/* A code editor is a code editor: no sideways scroll, no clipped line. */
+.ad-body textarea,
+.ad-codearea { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
+/* And the sitewide floor, so an ordinary paragraph or table cell that happens
+   to contain a URL behaves the same. break-word here, not anywhere: this
+   inherits into every box in the admin, and dropping every element's intrinsic
+   minimum to one character would make the table fit test in admin.js believe a
+   twelve-column list fits a phone. */
+.ad-body { overflow-wrap: break-word; }
 
 /* --------------------------------------------------------------------------
    Buttons
@@ -815,18 +1146,18 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-search input { width: 100%; padding-left: 34px !important; }
 .ad-search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ad-muted); }
 
-.ad-tabs { display: flex; gap: 3px; overflow-x: auto; border-bottom: 1px solid var(--ad-border); background: var(--ad-surface); }
-.ad-tabs::-webkit-scrollbar { display: none; }
-
-/* On a phone the strip wraps instead of scrolling.
-   The scrollbar is hidden above, so a strip wider than the screen gave no hint
-   that the tabs past the edge existed — measured on coupons at 375px, 410px of
-   tabs in a 331px rail, and on reviews 447px in 346px. Hidden overflow plus no
-   affordance is how a whole filter tab goes unnoticed. Wrapping keeps every tab
-   on screen and costs one extra line. overflow-x: visible so the wrapped rows
-   are not clipped by the scroller the desktop rule sets up. */
-@media (max-width: 767px) {
-    .ad-tabs { flex-wrap: wrap; overflow-x: visible; }
+/* The strip WRAPS at every width instead of scrolling sideways.
+   A scroller with its scrollbar hidden gave no hint that the tabs past the edge
+   existed: on a phone, coupons had 410px of tabs in a 331px rail; on a laptop,
+   Settings' 14 tabs lost Theme, Social and Widgets past "Redirects" at 1024-1366px.
+   Hidden overflow plus no affordance is how a whole screen goes unnoticed.
+   Wrapping keeps every tab on screen and costs one extra line where needed. */
+.ad-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 3px;
+    border-bottom: 1px solid var(--ad-border);
+    background: var(--ad-surface);
 }
 .ad-tab {
     padding: 12px 16px;
@@ -841,6 +1172,20 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 }
 .ad-tab:hover { color: var(--ad-text); }
 .ad-tab.is-active { color: var(--ad-primary); border-bottom-color: var(--ad-primary); }
+/* A tab sits flush with the top and the left of its card, and `.ad-card` is
+   `overflow: hidden` to keep its rounded corners. The sitewide focus ring is
+   drawn 2px OUTSIDE the box, so on the first tab it was the one thing in the
+   admin whose ring the card cut (measured: a.ad-tab.is-active, 4px of ring
+   outside the card on every list screen). Drawing it inside costs nothing -
+   the tab is 40px+ tall - and keeps the card's corners clean. Same for
+   .sik-tab, the product form's strip, which app.css lays out the same way. */
+.ad-body .ad-tab:focus-visible,
+.ad-body .sik-tab:focus-visible { outline-offset: -2px; }
+/* Tighter on a phone so a long strip (Settings has 14) wraps into fewer rows;
+   still a 40px+ tap target. */
+@media (max-width: 767px) {
+    .ad-tab { padding: 11px 11px; font-size: 13px; }
+}
 .ad-tab__count {
     background: var(--ad-bg);
     border-radius: 999px;
@@ -897,7 +1242,16 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     padding-inline: 7px;
 }
 
-.ad-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
+/* position: relative is load-bearing, not tidiness.
+   -------------------------------------------------------------------------
+   The real checkbox below is `position: absolute` with no positioned ancestor
+   here, so its containing block was the page. Inside a table it therefore
+   escaped `.ad-tablewrap`'s scroller - the one box that is supposed to contain
+   a wide table - and was laid out at the table's own x, past the right edge of
+   the viewport. That is the whole of the genuine page-level sideways scroll on
+   popups/index (232px at 768px, 247px at 1024px) and homepage/index (65/80px):
+   a zero-sized invisible input, dragging the page sideways. */
+.ad-switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
 .ad-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .ad-switch__track {
     width: 40px; height: 22px;
@@ -984,16 +1338,26 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 /* --------------------------------------------------------------------------
    Chart & progress
    -------------------------------------------------------------------------- */
+/* The chart fits its card, always.
+   -------------------------------------------------------------------------
+   It was `overflow-x: auto` over a 26px-per-column floor, so a 30- or 90-point
+   series asked for 950px+ and scrolled sideways inside its card at every
+   width: reports/customers was 667px over at 768px and still 526px over at
+   1280px. flex:1 over a zero floor divides whatever width there is, so the
+   chart fits by construction however many points it carries - and with nothing
+   to scroll, the scroller itself can go. What a narrow chart gives up is the
+   per-bar label and value; initCharts() in admin.js works out when that is and
+   hands the figures to the readout line instead (see .ad-chart--nolabels). */
 .ad-chart {
     display: flex;
     align-items: flex-end;
     gap: 6px;
     padding: 16px 4px 0;
-    overflow-x: auto;
+    min-width: 0;
 }
 .ad-chart__col {
-    flex: 1;
-    min-width: 26px;
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1015,26 +1379,58 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-chart__label { font-size: 10.5px; color: var(--ad-muted); white-space: nowrap; }
 .ad-chart__value { font-size: 10px; font-weight: 700; color: var(--ad-muted); white-space: nowrap; }
 
-/* Phones: the chart fits instead of scrolling.
+/* What a narrow chart drops, and when.
    ---------------------------------------------------------------------------
-   The 26px column floor plus a 6px gap means a 30-day chart asks for ~954px;
-   in a 331px card that scrolled 671px sideways on Reports and 159px on the
-   dashboard. Dropping the floor lets flex:1 divide whatever width there is, so
-   the chart always fits by construction however many points it has.
+   These two classes are set by initCharts() in admin.js from the width the
+   chart actually got and the number of points in it - not from the viewport,
+   because the same 90-point series is comfortable in a full-width card at
+   1440px and impossible in a half-width one at 1024px. A printed label needs
+   ~42px of column and a printed value ~34px; below that they stop being
+   readable and start overlapping their neighbours, which is what they were
+   doing above 768px all along.
 
-   The per-bar label and value go with it, and that is not information lost by
-   sleight of hand: at 9px per column a date and a figure cannot be rendered
-   legibly anyway — they were only ever readable because the chart was wider
-   than the screen and most of it was off it. The bars keep the shape of the
-   trend, which is what this component is for at this size, and the same figures
-   are in the table beneath it. */
-@media (max-width: 767px) {
-    .ad-chart { gap: 2px; overflow-x: visible; }
-    .ad-chart__col { min-width: 0; }
-    .ad-chart__bar { border-radius: 3px 3px 1px 1px; }
-    .ad-chart__label,
-    .ad-chart__value { display: none; }
+   Nothing is hidden without a way to see it: with the labels gone, tapping,
+   hovering or arrowing onto a bar writes its date and figure into the readout
+   line under the chart (and the same figures are in the table beneath it). */
+.ad-chart--novalues .ad-chart__value { display: none; }
+.ad-chart--nolabels .ad-chart__label { display: none; }
+.ad-chart--nolabels { gap: 2px; }
+.ad-chart--nolabels .ad-chart__bar { border-radius: 3px 3px 1px 1px; }
+
+/* Reading one figure (initCharts() in admin.js).
+   The readout and the fade appear wherever the printed labels are hidden; a
+   chart roomy enough to print them keeps exactly the look it had.
+   pan-y hands a sideways finger drag to the page script (scrubbing along the
+   bars) and keeps vertical drags scrolling the page. The chart no longer
+   scrolls sideways itself, so there is no gesture left to conflict with. */
+.ad-chart__readout { display: none; }
+.ad-chart__col:focus { outline: none; }
+.ad-chart__col:focus-visible { outline: 2px solid var(--ad-primary); outline-offset: 2px; border-radius: 4px; }
+/* Whenever a printed figure is hidden - the values first (--novalues), the
+   labels only when it is tighter still - the readout is the only place that
+   figure exists, for a mouse as much as for a finger. It used to appear with
+   --nolabels alone, so at the widths that hide just the values a desktop
+   visitor had no way to read one: the hover tooltip is gone (the column's
+   aria-label replaced it) and nothing took its place.
+   pinch-zoom is listed explicitly because `pan-y` on its own also switches
+   zooming off, and a low-vision admin pinching a small chart is exactly who
+   needs it most. */
+.ad-chart--nolabels,
+.ad-chart--novalues { touch-action: pan-y pinch-zoom; cursor: pointer; }
+.ad-chart--nolabels.has-active .ad-chart__col:not(.is-active) .ad-chart__bar,
+.ad-chart--novalues.has-active .ad-chart__col:not(.is-active) .ad-chart__bar { opacity: .4; }
+.ad-chart--nolabels + .ad-chart__readout,
+.ad-chart--novalues + .ad-chart__readout {
+    display: block;
+    min-height: 22px;
+    margin: 10px 0 0;
+    font-size: 13px;
+    line-height: 22px;
+    text-align: center;
+    color: var(--ad-muted);
+    font-variant-numeric: tabular-nums;
 }
+.ad-chart__readout strong { font-size: 15px; font-weight: 700; color: var(--ad-text); }
 
 .ad-progressrow { margin-bottom: 13px; }
 .ad-progressrow:last-child { margin-bottom: 0; }
@@ -1286,8 +1682,15 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-checklist > li.is-bad::before  { content: "\2715"; color: #B91C1C; }
 .ad-checklist > li.is-todo::before { content: "\2022"; color: #B45309; }
 
-/* Horizontal scroll for wide tables instead of pushing the page out. */
-.ad-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* `.ad-table-scroll` used to live here: a bare `overflow-x: auto` wrapper for
+   wide tables. It is deleted rather than kept, and deliberately not replaced
+   by an alias, because it is a trap for the next person who reaches for it:
+   it has no `min-width: 0`, so in a flex or grid track it widens the PAGE
+   instead of scrolling itself; admin.js's fit engine does not watch it, so a
+   table inside it never becomes a card; and the `.ad-tablewrap.is-stacked`
+   stackbar rules do not apply to it. Its only two users in the repo
+   (settings/seo-health.php and settings/redirects.php) now use .ad-tablewrap.
+   Wide tables are handled by the fit engine + card view under "Tables". */
 
 /* ===========================================================================
    40. Touch and narrow viewports
@@ -1398,17 +1801,12 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 }
 
 /* --- Big figures need room before they need company ----------------------
-   A 4-up KPI grid gives each tile ~83px at 390px, which a 28px numeral does
-   not fit; the spill was clipped rather than scrollable. Two columns hold a
-   lakh-scale figure, one column holds anything. */
-@media (max-width: 640px) {
-    .ad-grid--4,
-    .ad-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 400px) {
-    .ad-grid--4,
-    .ad-grid--3 { grid-template-columns: minmax(0, 1fr); }
-}
+   This used to be two breakpoints dropping the KPI grid to 2-up at 640px and
+   1-up at 400px, because a 28px numeral does not fit an 83px tile. The grid
+   itself now sizes by the tile rather than by a count (see .ad-grid--3/--4
+   under "Cards & panels"), which produces the same 2-up and 1-up at the same
+   widths and also fixes the 641-1100px band these two never covered. Nothing
+   is needed here any more. */
 
 /* --- The bulk bar has to stay with the selection -------------------------
    In the stacked card view the toolbar sat above a long list, so choosing
@@ -1433,16 +1831,31 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 }
 
 /* --- The collapsed rail is a mouse affordance ----------------------------
-   Its icons are labelled only by :hover tooltips, so on a touch tablet one tap
-   on the hamburger replaced thirty labelled links with thirty anonymous
-   glyphs and no way to read them. Gate the collapse on a pointer that can
-   actually hover; touch tablets keep the labelled sidebar. */
+   Its icons are labelled only by hover, so on a touch tablet one tap on the
+   hamburger replaced thirty labelled links with thirty anonymous glyphs and
+   no way to read them. The collapse itself is now gated on `hover: hover`
+   where it is defined (section "Collapsed icon rail"). The override that used
+   to sit here targeted `.ad-shell.is-collapsed`, a class nothing ever sets -
+   the real one is `body.ad-collapsed` - so it never applied and a touch
+   tablet measured the 72px rail with every label clipped.
+   What is left for this block: the toggle. Above 1024px it only collapses the
+   rail, which cannot happen on this device, so it is a button that does
+   nothing and says "Toggle sidebar" - remove it rather than leave it lying. */
 @media (min-width: 1024px) and (hover: none) {
-    .ad-shell.is-collapsed .ad-sidebar { width: var(--ad-sidebar-w); }
-    .ad-shell.is-collapsed .ad-main { margin-left: var(--ad-sidebar-w); }
-    .ad-shell.is-collapsed .ad-nav__label,
-    .ad-shell.is-collapsed .ad-sidebar__section { display: block; }
-    .ad-shell.is-collapsed .ad-sidebar__logo-icon { display: none; }
+    #adSidebarToggle { display: none; }
+}
+
+/* --- Stacked spec tables keep a gutter in a flush card -------------------
+   .sik-spectable is app.css's label/value table, and app.css already stacks
+   it below 560px (label over value) - it has no <thead>, so it is not an
+   initResponsiveTables() table and needs no data-label. The stacked cells
+   take `padding-inline: 0`, which is right on the storefront, where the page
+   supplies the gutter. In an admin `.ad-card__body--flush` nothing does, so
+   on products/view.php every label and value sat 1px from the card border.
+   18px is the card body's own padding, so the text lines up with the head. */
+@media (max-width: 560px) {
+    .ad-card__body--flush .sik-spectable th,
+    .ad-card__body--flush .sik-spectable td { padding-inline: 18px; }
 }
 
 /* --- The HTML body editor ------------------------------------------------
@@ -1462,31 +1875,42 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 /* --- The bar that carries what the card view hides ------------------------
    addStackControls() in admin.js builds this above a stacked table, holding
    the sort control and the select-all box that live in the hidden <thead>. It
-   exists only while the table is in card form. */
+   exists only while the table is in card form, and whether a table is in card
+   form is now a measurement rather than a breakpoint - so this keys off the
+   `is-stacked` class admin.js puts on the wrapper, not off a viewport width. */
 .ad-stackbar { display: none; }
-@media (max-width: 767px) {
-    .ad-stackbar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-        padding: 10px 12px;
-        border: 1px solid var(--ad-border);
-        border-bottom: 0;
-        border-radius: 10px 10px 0 0;
-        background: var(--ad-surface-alt, var(--ad-bg));
-    }
-    .ad-stackbar__all {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        min-height: var(--tap, 44px);
-        font-size: 13.5px;
-        font-weight: 600;
-        cursor: pointer;
-    }
-    .ad-stackbar__all input { width: 24px; height: 24px; accent-color: var(--ad-primary); }
-    .ad-stackbar__sort { margin-left: auto; font-size: 16px; min-width: 150px; }
+.ad-tablewrap.is-stacked > .ad-stackbar,
+.ad-stackbar.is-on {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border: 1px solid var(--ad-border);
+    border-bottom: 0;
+    border-radius: 10px 10px 0 0;
+    background: var(--ad-surface-alt, var(--ad-bg));
+}
+.ad-stackbar__all {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.ad-stackbar__all input { accent-color: var(--ad-primary); }
+/* .sik-select is width:100%, which is right on a phone and wrong in a bar that
+   now also appears on a laptop - the sort control would be a 1000px dropdown
+   holding six words. It takes the right-hand end of the bar instead. */
+.ad-stackbar__sort { margin-left: auto; width: auto; min-width: 190px; max-width: 100%; }
+/* Phone sizing: a 44px row, a 24px box and the 16px field that stops iOS
+   zooming the page on focus. A laptop showing the card view because its table
+   is wide does not need any of that. */
+@media (pointer: coarse), (max-width: 767px) {
+    .ad-stackbar__all { min-height: var(--tap, 44px); }
+    .ad-stackbar__all input { width: 24px; height: 24px; }
+    .ad-stackbar__sort { font-size: 16px; min-width: 150px; width: 100%; }
 }
 
 /* --- Filters stack on a phone instead of straggling ----------------------
@@ -1634,8 +2058,9 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     position: relative;
     z-index: 5;
 }
-/* Where the dragged row will land. */
-.ad-sec-gap {
+/* Where the dragged row will land - drawn by Admin.sortable() for every
+   reorderable list, not only this one. */
+.ad-reorder-gap {
     height: 3px;
     border-radius: 999px;
     background: var(--ad-primary);
@@ -1663,9 +2088,17 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     font-size: 13.5px;
     font-weight: 650;
     color: var(--ad-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    /* Was `overflow:hidden; text-overflow:ellipsis; white-space:nowrap`, which
+       cut section names by 11-20px in the designer's 260-330px list
+       ("Frequently asked questions" became "Frequently asked question…").
+       A name is the only thing identifying the row you are about to drag or
+       open, so it wraps instead: the list is short, the rows are already of
+       uneven height because of the type chip, and nothing else in the pane
+       depends on a fixed row height. initTruncationTitles() measures before it
+       adds a title, so it simply stops adding one here. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
 }
 .ad-sec__type {
     display: inline-block;
@@ -1696,7 +2129,8 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     color: var(--ad-muted);
     cursor: pointer;
 }
-.ad-sec__move button:disabled { opacity: .35; cursor: default; }
+/* aria-disabled, not disabled: see sync() in Admin.sortable(). */
+.ad-sec__move button[aria-disabled="true"] { opacity: .35; cursor: default; }
 
 /* --- The inspector ------------------------------------------------------- */
 .ad-insp__empty { padding: 34px 18px; text-align: center; color: var(--ad-muted); font-size: 13.5px; }
@@ -1765,9 +2199,8 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
    also returns the 43 sub-links the rail otherwise hides: collapsed, it could
    reach only 12 of 55 destinations.
 
-   Gated on `hover: hover` because a touch tablet never enters this state and
-   would be left with the unreadable rail; those devices keep the full sidebar
-   via the rule above. */
+   Gated on `hover: hover` like the collapse itself: a touch tablet never
+   collapses, so it keeps the full labelled sidebar. */
 @media (min-width: 1024px) and (hover: hover) {
     body.ad-collapsed .ad-sidebar:hover,
     body.ad-collapsed .ad-sidebar:focus-within {
@@ -1809,3 +2242,140 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     body.ad-collapsed .ad-sidebar:hover .ad-sidebar__section::after,
     body.ad-collapsed .ad-sidebar:focus-within .ad-sidebar__section::after { content: none; }
 }
+
+/* ===========================================================================
+   42. Reorderable lists - Admin.sortable() in admin.js
+   ---------------------------------------------------------------------------
+   The designer, a mega panel's rows, a combo's components and its gallery
+   share one drag and one set of move buttons. The designer keeps its own
+   compact buttons (.ad-sec__move, section 41); these are the form screens'.
+   =========================================================================== */
+
+/* A grip is only ever a drag handle, and the drag is a Pointer Events drag
+   that now works under a finger - so the grip must claim the gesture instead
+   of letting the page scroll away underneath it. (Section 40 once removed
+   this, correctly, from a grip whose HTML5 drag never fired on touch.) */
+[data-grip] {
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.ad-movebtns { display: inline-flex; gap: 4px; flex: none; }
+.ad-movebtns button {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--ad-border);
+    border-radius: 7px;
+    background: var(--ad-surface);
+    color: var(--ad-muted);
+    cursor: pointer;
+}
+.ad-movebtns button:hover { color: var(--ad-text); border-color: color-mix(in srgb, var(--ad-primary) 45%, var(--ad-border)); }
+.ad-movebtns button:focus-visible { outline: 2px solid var(--ad-primary); outline-offset: 1px; }
+/* aria-disabled, not disabled: a disabled button drops the focus it holds. */
+.ad-movebtns button[aria-disabled="true"],
+.ad-movebtns button[aria-disabled="true"]:hover {
+    opacity: .35;
+    cursor: default;
+    color: var(--ad-muted);
+    border-color: var(--ad-border);
+}
+/* Both conditions, as in section 40: a phone-width window deserves phone
+   targets, and a headless browser reports pointer: fine. */
+@media (pointer: coarse), (max-width: 767px) {
+    .ad-movebtns { gap: 6px; }
+    .ad-movebtns button { width: var(--tap, 44px); height: var(--tap, 44px); border-radius: 9px; }
+}
+
+
+/* ===========================================================================
+   43. Nothing scrolls sideways
+   ---------------------------------------------------------------------------
+   The rest of the answer to "saare horizontal scrollbar hatao admin side se".
+   The large pieces live where they belong - the table floor and the card view
+   under "Tables", the KPI grid under "Cards & panels", the chart under "Chart
+   & progress", the long-string rules under .ad-mono - and what is left here is
+   the handful of components that scroll or clip for a reason of their own.
+
+   The rule the whole admin is held to: no page-level sideways scroll at any
+   width, no inner box that scrolls sideways, and nothing cut off without a way
+   to reach it. A scroller is allowed only where it is the content's own idea
+   (the storefront carousel inside homepage/preview.php) - never as a way of
+   coping with a layout that does not fit.
+   =========================================================================== */
+
+/* --- The product form's tab strip ----------------------------------------
+   `.sik-tabs` is app.css's, and admin/products/_form.php renders its tabs
+   (General / Variants / Marketing / SEO / ...) through it. app.css makes the
+   strip `overflow-x: auto` with `scrollbar-width: none`: a sideways scroller
+   whose scrollbar is deliberately hidden. On the storefront that is a fair
+   carousel gesture; in the admin it meant 388px of tabs unreachable at 360px
+   and still scrolling at 1024px, with no affordance of any kind - the later
+   tabs of the product form simply did not appear to exist.
+
+   Scoped to .ad-body rather than fixed in app.css, because app.css is a
+   storefront file and the storefront's tab strips are not this task's to
+   change. Same treatment as .ad-tabs above: wrap, never scroll. */
+.ad-body .sik-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    scrollbar-width: auto;
+}
+.ad-body .sik-tab { white-space: normal; }
+
+/* --- The designer's device switch ----------------------------------------
+   `.ad-btngroup` is an inline-flex with `overflow: hidden` to keep its
+   segments inside one rounded outline, and section 40 already unclips it on a
+   phone. The homepage designer's left pane is narrow at EVERY viewport width,
+   so "Desktop" was clipped by 37px at 1280px - a viewport breakpoint can never
+   see that. In this one head the group wraps unconditionally. */
+.ad-designer__head .ad-btngroup {
+    display: flex;
+    flex-wrap: wrap;
+    overflow: visible;
+    border-radius: 9px;
+}
+.ad-designer__head .ad-btngroup > *:not(:last-child) { border-bottom: 1px solid var(--ad-border); }
+
+/* --- Truncation keeps a way to read the rest ------------------------------
+   These two clip with an ellipsis, which is the right look in a topbar and in
+   a 260px section list - but an ellipsis on its own is content hidden with no
+   affordance. initTruncationTitles() in admin.js gives any one that is
+   actually clipped a `title`, so the full text is a hover and a focus away;
+   the cursor says so. */
+.ad-topbar__title[title],
+.ad-nav__label[title],
+.ad-sec__name[title] { cursor: help; }
+
+/* --- A grid or flex child may never set the page's width -----------------
+   `minmax(0, 1fr)` is spelled out on every admin grid, but a child of a plain
+   flex row floors at its own min-content in the same way. These are the boxes
+   that routinely hold a table, a chart or a long string, and any one of them
+   growing past its track is a page-level scrollbar. */
+.ad-card,
+.ad-card__body,
+.ad-card__head,
+.ad-panel,
+.ad-main,
+.ad-content { min-width: 0; }
+
+/* --- Print views ----------------------------------------------------------
+   shipping/manifest.php and shipping/label.php load neither admin.css nor
+   admin.js, so nothing above reaches them and their own inline stylesheets
+   carry the same two mistakes (a min-width floor on the table, nowrap on the
+   numeric column). Those are fixed in the files themselves; this note is here
+   so the next person looks there rather than for a rule that does not exist.
+   ------------------------------------------------------------------------- */
+
+/* --- The last line of defence --------------------------------------------
+   body already carries `overflow-x: clip`, which stops a stray box from
+   producing a page scrollbar but ALSO makes it unreachable - the brief's "no
+   overflow:hidden that clips content" applies to the page too. So this is not
+   a fix, it is an alarm: anything that still overflows here is a bug to find,
+   not a scrollbar to live with. Everything section 43 refers to has been
+   measured at 360, 390, 768, 1024, 1280 and 1440.
+   ------------------------------------------------------------------------- */

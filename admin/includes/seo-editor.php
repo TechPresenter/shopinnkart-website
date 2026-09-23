@@ -91,7 +91,7 @@ function seo_editor(array $row = [], array $options = []): void
                         <input type="text" class="sik-input" id="<?= e_attr($id) ?>_focus"
                                name="focus_keyword" maxlength="120" data-seo="focus"
                                value="<?= e($val('focus_keyword')) ?>"
-                               placeholder="e.g. wireless earbuds">
+                               placeholder="e.g. diwali curtain lights">
                         <p class="sik-help">Used only for the checklist below. It is never published.</p>
                     </div>
 

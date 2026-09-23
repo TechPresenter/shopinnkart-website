@@ -44,7 +44,7 @@ if (!empty($post['published_at'])) {
                                    id="postTitleField" name="title" maxlength="255" required
                                    data-slug-source="#postSlugField"
                                    value="<?= e($post['title'] ?? '') ?>"
-                                   placeholder="e.g. How to pick the right laptop for college">
+                                   placeholder="e.g. How to hang curtain lights for a Diwali backdrop">
                             <?php if (isset($errors['title'])): ?>
                                 <span class="sik-error"><?= e($errors['title']) ?></span>
                             <?php endif; ?>
@@ -54,7 +54,7 @@ if (!empty($post['published_at'])) {
                             <label class="sik-label" for="postSlugField">Slug</label>
                             <input class="sik-input<?= isset($errors['slug']) ? ' is-invalid' : '' ?>" type="text"
                                    id="postSlugField" name="slug" maxlength="280" data-slugify
-                                   value="<?= e($post['slug'] ?? '') ?>" placeholder="pick-the-right-laptop">
+                                   value="<?= e($post['slug'] ?? '') ?>" placeholder="hang-curtain-lights-for-diwali">
                             <?php if (isset($errors['slug'])): ?>
                                 <span class="sik-error"><?= e($errors['slug']) ?></span>
                             <?php else: ?>

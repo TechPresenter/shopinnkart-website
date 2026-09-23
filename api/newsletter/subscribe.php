@@ -13,6 +13,8 @@ require_once __DIR__ . '/../../includes/init.php';
 
 api_require_method(['POST']);
 api_require_csrf();
+// Keyed on the client address, not the session: a subscriber who drops their
+// cookie used to get a fresh allowance (and a fresh welcome mail) every time.
 api_rate_limit('newsletter_subscribe', 6, 300);
 
 $v = new Validator(request_all(), ['email' => 'Email address', 'name' => 'Name']);
@@ -31,17 +33,24 @@ $name  = trim((string) request_input('name', ''));
 $source = strtolower(preg_replace('/[^a-zA-Z0-9_-]/', '', (string) request_input('source', '')) ?? '');
 $source = $source === '' ? 'website' : mb_substr($source, 0, 60);
 
+/**
+ * One answer for every state.
+ *
+ * The three distinguishable replies ("already on the list", "welcome back",
+ * "you are subscribed", plus an already_subscribed flag) told anybody who
+ * could type an address whether it was on the list - and whether it had ever
+ * unsubscribed. The subscriber themselves loses nothing: what they wanted to
+ * know is that the form worked.
+ */
+$confirmation = 'Thanks! If that address is not on the list already, offers and early access are on their way to it.';
+
 $existing = Database::fetch(
     'SELECT `id`, `name`, `status` FROM `newsletter_subscribers` WHERE `email` = :email LIMIT 1',
     ['email' => $email]
 );
 
 if ($existing !== null && $existing['status'] === 'active') {
-    json_success('You are already on the list - offers land in your inbox every week.', [
-        'email'              => $email,
-        'status'             => 'active',
-        'already_subscribed' => true,
-    ]);
+    json_success($confirmation, ['email' => $email, 'status' => 'active']);
 }
 
 if ($existing !== null) {
@@ -52,14 +61,10 @@ if ($existing !== null) {
         'name'       => $name === '' ? ($existing['name'] ?? null) : $name,
     ], '`id` = :id', ['id' => (int) $existing['id']]);
 
-    json_success('Welcome back - your subscription is active again.', [
-        'email'              => $email,
-        'status'             => 'active',
-        'already_subscribed' => false,
-    ]);
+    json_success($confirmation, ['email' => $email, 'status' => 'active']);
 }
 
-$id = Database::insert('newsletter_subscribers', [
+Database::insert('newsletter_subscribers', [
     'email'      => $email,
     'name'       => $name === '' ? null : $name,
     'source'     => $source,
@@ -70,9 +75,4 @@ $id = Database::insert('newsletter_subscribers', [
 // Only genuinely new subscribers get the welcome mail; reactivations already had it.
 notify_newsletter_welcome($email);
 
-json_success('You are subscribed. Watch your inbox for offers and early access to flash sales.', [
-    'email'              => $email,
-    'status'             => 'active',
-    'already_subscribed' => false,
-    'subscriber_id'      => $id,
-], 201);
+json_success($confirmation, ['email' => $email, 'status' => 'active'], 201);

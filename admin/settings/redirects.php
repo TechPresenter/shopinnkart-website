@@ -228,13 +228,24 @@ require ADMIN_PATH . '/includes/header.php';
                 </p>
             </div>
         <?php else: ?>
-            <div class="ad-table-scroll">
+            <?php /* .ad-tablewrap is the wrapper admin.js measures and the card
+                     view's own rules are keyed to. `.ad-table-scroll`, which
+                     this page and seo-health were the only two users of, is a
+                     bare `overflow-x: auto` with none of that - and, unlike
+                     .ad-tablewrap, no `min-width: 0`, so as a grid or flex item
+                     it widens the PAGE instead of scrolling itself. The card
+                     view saved it here, because admin.js stacks by measuring
+                     the TABLE; the wrapper was a trap waiting for a layout that
+                     put it in a flex track. The column classes are the real
+                     ones too: `.ad-num` is defined in no stylesheet, so none of
+                     these figures were ever right-aligned. */ ?>
+            <div class="ad-tablewrap">
                 <table class="ad-table">
                     <thead>
                         <tr>
                             <th>From &rarr; To</th>
-                            <th class="ad-num">Code</th>
-                            <th class="ad-num">Hits</th>
+                            <th class="ad-table__num">Code</th>
+                            <th class="ad-table__num">Hits</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -252,8 +263,8 @@ require ADMIN_PATH . '/includes/header.php';
                                         <br><span class="ad-muted" style="font-size:12px"><?= e((string) $rule['notes']) ?></span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="ad-num"><?= (int) $rule['status_code'] ?></td>
-                                <td class="ad-num">
+                                <td class="ad-table__num"><?= (int) $rule['status_code'] ?></td>
+                                <td class="ad-table__num">
                                     <?= (int) $rule['hits'] ?>
                                     <?php if (!empty($rule['last_hit_at'])): ?>
                                         <br><span class="ad-muted" style="font-size:11px">
@@ -261,7 +272,12 @@ require ADMIN_PATH . '/includes/header.php';
                                         </span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="ad-num" style="white-space:nowrap">
+                                <?php /* No inline `white-space: nowrap`: three
+                                         buttons held on one line are what push
+                                         an actions column out of its table. The
+                                         shared class right-aligns them and lets
+                                         them wrap when the column is squeezed. */ ?>
+                                <td class="ad-table__actions">
                                     <a class="ad-btn ad-btn--sm"
                                        href="<?= e(admin_url('settings/redirects.php?edit=' . (int) $rule['id'])) ?>">Edit</a>
 

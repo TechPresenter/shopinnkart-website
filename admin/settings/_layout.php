@@ -26,6 +26,14 @@
 
 declare(strict_types=1);
 
+// Include-only: the parent page already ran authentication and permissions.
+// The .htaccess rule refuses /_*.php outright; this is the backstop for a
+// host that does not read .htaccess at all.
+if (!defined('SIK_BOOTSTRAPPED')) {
+    http_response_code(404);
+    exit;
+}
+
 /** The tab strip, in the order an admin works through it. */
 const SETTINGS_SCREENS = [
     'general'  => ['label' => 'General',  'file' => 'general.php'],

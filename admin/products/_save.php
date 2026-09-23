@@ -327,7 +327,7 @@ function product_form_validate(array $in, array $variants, ?int $productId): arr
         }
 
         if ($variant['variant_name'] === '') {
-            $errors[$prefix . 'name'] = 'Give the variant a name, e.g. "Black / 256GB".';
+            $errors[$prefix . 'name'] = 'Give the variant a name, e.g. "Warm White / 5 m".';
         }
         if ($variant['price'] === '' || !is_numeric($variant['price']) || (float) $variant['price'] < 0) {
             $errors[$prefix . 'price'] = 'Enter a valid variant price.';

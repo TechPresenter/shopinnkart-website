@@ -10,6 +10,14 @@
 
 declare(strict_types=1);
 
+// Include-only: the parent page already ran authentication and permissions.
+// The .htaccess rule refuses /_*.php outright; this is the backstop for a
+// host that does not read .htaccess at all.
+if (!defined('SIK_BOOTSTRAPPED')) {
+    http_response_code(404);
+    exit;
+}
+
 /** @var array $banner @var array $errors @var bool $isEdit */
 $isEdit   = $isEdit ?? false;
 $errors   = $errors ?? [];
@@ -114,7 +122,7 @@ $state = marketing_state(
                             <label class="sik-label" for="bannerAccent">Accent line</label>
                             <input class="sik-input<?= isset($errors['title_accent']) ? ' is-invalid' : '' ?>" type="text"
                                    id="bannerAccent" name="title_accent" maxlength="200" data-preview-source="title_accent"
-                                   value="<?= e($banner['title_accent'] ?? '') ?>" placeholder="Gaming Laptops">
+                                   value="<?= e($banner['title_accent'] ?? '') ?>" placeholder="Festive Lights">
                             <?php if (isset($errors['title_accent'])): ?>
                                 <span class="sik-error"><?= e($errors['title_accent']) ?></span>
                             <?php else: ?>

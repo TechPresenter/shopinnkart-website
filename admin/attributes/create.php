@@ -147,7 +147,7 @@ if (is_post()) {
 
 $isEdit       = false;
 $pageTitle    = 'Add Attribute';
-$pageSubtitle = 'Attributes such as Colour, Storage or RAM build product variants and shop filters.';
+$pageSubtitle = 'Attributes such as Colour, Length or Pack Size build product variants and shop filters.';
 $breadcrumbs  = [
     ['label' => 'Dashboard',  'url' => admin_url('dashboard.php')],
     ['label' => 'Attributes', 'url' => admin_url('attributes/')],

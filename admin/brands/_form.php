@@ -36,7 +36,7 @@ $errors = $errors ?? [];
                             <input class="sik-input<?= isset($errors['name']) ? ' is-invalid' : '' ?>" type="text"
                                    id="brandName" name="name" maxlength="150" required
                                    data-slug-source="#brandSlug"
-                                   value="<?= e($brand['name'] ?? '') ?>" placeholder="e.g. Samsung">
+                                   value="<?= e($brand['name'] ?? '') ?>" placeholder="e.g. Lexton">
                             <?php if (isset($errors['name'])): ?>
                                 <span class="sik-error"><?= e($errors['name']) ?></span>
                             <?php endif; ?>
@@ -46,7 +46,7 @@ $errors = $errors ?? [];
                             <label class="sik-label" for="brandSlug">Slug</label>
                             <input class="sik-input<?= isset($errors['slug']) ? ' is-invalid' : '' ?>" type="text"
                                    id="brandSlug" name="slug" maxlength="180" data-slugify
-                                   value="<?= e($brand['slug'] ?? '') ?>" placeholder="samsung">
+                                   value="<?= e($brand['slug'] ?? '') ?>" placeholder="lexton">
                             <?php if (isset($errors['slug'])): ?>
                                 <span class="sik-error"><?= e($errors['slug']) ?></span>
                             <?php else: ?>
@@ -59,7 +59,7 @@ $errors = $errors ?? [];
                         <label class="sik-label" for="brandWebsite">Official website</label>
                         <input class="sik-input<?= isset($errors['website']) ? ' is-invalid' : '' ?>" type="url"
                                id="brandWebsite" name="website" maxlength="255"
-                               value="<?= e($brand['website'] ?? '') ?>" placeholder="https://www.samsung.com">
+                               value="<?= e($brand['website'] ?? '') ?>" placeholder="https://www.brand-website.com">
                         <?php if (isset($errors['website'])): ?>
                             <span class="sik-error"><?= e($errors['website']) ?></span>
                         <?php else: ?>

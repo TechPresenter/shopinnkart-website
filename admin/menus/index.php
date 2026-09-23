@@ -198,7 +198,10 @@ require ADMIN_PATH . '/includes/header.php';
         padding: 9px 4px; border: 1px solid var(--ad-border); border-radius: 9px;
         background: #fff; cursor: pointer; font-size: 11.5px; color: var(--ad-muted); text-align: center;
     }
-    .ad-iconpick__box em { font-style: normal; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Wraps rather than clipping: the icon key is the only thing identifying a
+       tile, and an 84px tile cuts the longest keys with no way to read them.
+       Same fix as homepage/trust-features.php and categories/_form.php. */
+    .ad-iconpick__box em { font-style: normal; max-width: 100%; line-height: 1.3; overflow-wrap: anywhere; }
     .ad-iconpick input:checked + .ad-iconpick__box {
         border-color: var(--ad-primary); color: var(--ad-primary); box-shadow: 0 0 0 2px rgba(244, 81, 30, .16);
     }
@@ -495,7 +498,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <label class="sik-label" for="miLabel">Label <span class="req">*</span></label>
                             <input class="sik-input<?= isset($errors['label']) ? ' is-invalid' : '' ?>" type="text"
                                    id="miLabel" name="label" maxlength="120" required
-                                   value="<?= e($formItem['label']) ?>" placeholder="Laptops">
+                                   value="<?= e($formItem['label']) ?>" placeholder="Curtain Lights">
                             <?php if (isset($errors['label'])): ?>
                                 <span class="sik-error"><?= e($errors['label']) ?></span>
                             <?php endif; ?>

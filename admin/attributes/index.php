@@ -148,7 +148,7 @@ require ADMIN_PATH . '/includes/header.php';
                 ? admin_empty('No attributes match', 'Try a different search term or clear the filters.', null, null, 'search')
                 : admin_empty(
                     'No attributes yet',
-                    'Attributes such as Colour, Storage or RAM build product variants and the shop filters.',
+                    'Attributes such as Colour, Length or Pack Size build product variants and the shop filters.',
                     admin_can('attributes.create') ? 'Add Attribute' : null,
                     admin_can('attributes.create') ? admin_url('attributes/create.php') : null,
                     'sort'

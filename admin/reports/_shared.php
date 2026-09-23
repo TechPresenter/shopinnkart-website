@@ -508,3 +508,30 @@ function report_search_terms(array $filters, int $limit = 25, bool $zeroOnly = f
         ['from' => $filters['from_dt'], 'to' => $filters['to_dt']]
     );
 }
+
+// ===========================================================================
+//  Personal data on report screens
+// ===========================================================================
+
+/**
+ * An email address as this viewer is allowed to see it.
+ *
+ * The report screens are reachable with reports.view alone, which is a
+ * performance permission, not a customer-records one. Showing a partial
+ * address keeps the rows recognisable to someone who already knows the
+ * customer without handing a mailing list to a role that was never given one.
+ */
+function report_email(string $email): string
+{
+    return $email !== '' && admin_can('customers.view') ? $email : mask_email($email);
+}
+
+/** The same rule for a phone number: last two digits only. */
+function report_phone(string $phone): string
+{
+    if ($phone === '' || admin_can('customers.view')) {
+        return $phone;
+    }
+    $tail = mb_substr($phone, -2);
+    return str_repeat('*', max(3, mb_strlen($phone) - 2)) . $tail;
+}

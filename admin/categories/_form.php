@@ -52,7 +52,11 @@ $iconValue = (string) ($category['icon'] ?? '');
         color: var(--ad-muted);
         text-align: center;
     }
-    .ad-iconpick__box em { font-style: normal; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* The key wraps instead of being cut: inside an 84px tile the longest keys
+       ("chevron-right", "shield-check") are ~75px at 11.5px, so one resize
+       away from "chevron-righ..." with nothing to reveal the rest. They break
+       at their own hyphens; `anywhere` covers a long key with no hyphen. */
+    .ad-iconpick__box em { font-style: normal; max-width: 100%; line-height: 1.3; overflow-wrap: anywhere; }
     .ad-iconpick input:checked + .ad-iconpick__box {
         border-color: var(--ad-primary);
         color: var(--ad-primary);
@@ -76,7 +80,7 @@ $iconValue = (string) ($category['icon'] ?? '');
                             <input class="sik-input<?= isset($errors['name']) ? ' is-invalid' : '' ?>" type="text"
                                    id="catName" name="name" maxlength="150" required
                                    data-slug-source="#catSlug"
-                                   value="<?= e($category['name'] ?? '') ?>" placeholder="e.g. Gaming Laptops">
+                                   value="<?= e($category['name'] ?? '') ?>" placeholder="e.g. Fairy Lights">
                             <?php if (isset($errors['name'])): ?>
                                 <span class="sik-error"><?= e($errors['name']) ?></span>
                             <?php endif; ?>
@@ -86,7 +90,7 @@ $iconValue = (string) ($category['icon'] ?? '');
                             <label class="sik-label" for="catSlug">Slug</label>
                             <input class="sik-input<?= isset($errors['slug']) ? ' is-invalid' : '' ?>" type="text"
                                    id="catSlug" name="slug" maxlength="180" data-slugify
-                                   value="<?= e($category['slug'] ?? '') ?>" placeholder="gaming-laptops">
+                                   value="<?= e($category['slug'] ?? '') ?>" placeholder="fairy-lights">
                             <?php if (isset($errors['slug'])): ?>
                                 <span class="sik-error"><?= e($errors['slug']) ?></span>
                             <?php else: ?>

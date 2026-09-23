@@ -57,7 +57,7 @@ function admin_menu(): array
                  'also' => ['shipping/book.php']],
                 ['label' => 'Tracking',     'url' => 'shipping/track.php',     'permission' => 'orders.view'],
                 // The directory entry catches index.php and configure.php.
-                ['label' => 'Integrations', 'url' => 'shipping/',              'permission' => 'orders.view'],
+                ['label' => 'Integrations', 'url' => 'shipping/',              'permission' => 'settings.view'],
             ],
         ],
         [
@@ -137,6 +137,14 @@ function admin_menu(): array
             ],
         ],
         [
+            // Its own group and permission: who may change how the back office
+            // is reached is a narrower question than who may edit settings.
+            'label' => 'Security', 'icon' => 'lock', 'permission' => 'security',
+            'children' => [
+                ['label' => 'Security Settings', 'url' => 'security/settings.php', 'permission' => 'security.view'],
+            ],
+        ],
+        [
             'label' => 'System', 'icon' => 'shield', 'permission' => 'admins',
             'children' => [
                 ['label' => 'Admin Users',    'url' => 'admins/',            'permission' => 'admins.view'],
@@ -145,7 +153,7 @@ function admin_menu(): array
                 ['label' => 'Error Log',      'url' => 'logs/errors.php',    'permission' => 'logs.view'],
                 ['label' => 'Login History',  'url' => 'logs/login-history.php', 'permission' => 'logs.view'],
                 ['label' => 'Maintenance',    'url' => 'system/maintenance.php', 'permission' => 'settings.edit'],
-                ['label' => 'Backup',         'url' => 'system/backup.php',      'permission' => 'settings.edit'],
+                ['label' => 'Backup',         'url' => 'system/backup.php',      'permission' => 'system.backup'],
             ],
         ],
     ];
@@ -671,7 +679,14 @@ function admin_safe_return(string $candidate, string $fallback): string
     // which is the gap a target like "/" + backslash + "evil.example" walks
     // through. chr(92) rather than an escaped literal: this file has been
     // written through a heredoc more than once, and a heredoc eats the escape.
-    if (strpos($candidate, chr(92)) !== false || strpos($candidate, chr(0)) !== false) {
+    //
+    // Control characters and whitespace are refused for the same reason and
+    // one more: the target becomes a Location header, and a CR or LF makes
+    // header() throw AFTER the caller has already done its work, so the admin
+    // sees a stack trace for an action that succeeded. A real admin link never
+    // carries a raw space - http_build_query() encodes it. POSIX classes, not
+    // \x escapes, for the heredoc reason above.
+    if (strpos($candidate, chr(92)) !== false || preg_match('/[[:cntrl:][:space:]]/', $candidate) === 1) {
         return $fallback;
     }
 
@@ -690,6 +705,30 @@ function admin_safe_return(string $candidate, string $fallback): string
     $adminPath = (string) parse_url(ADMIN_URL, PHP_URL_PATH);
     $adminPath = rtrim($adminPath, '/') . '/';
     $path      = (string) parse_url($candidate, PHP_URL_PATH);
+    if (strncmp($path, $adminPath, strlen($adminPath)) !== 0) {
+        return $fallback;
+    }
 
-    return strncmp($path, $adminPath, strlen($adminPath)) === 0 ? $candidate : $fallback;
+    // The same traversal, percent-encoded. A browser decodes "%2e%2e" to ".."
+    // before resolving the path, so "/admin/%2e%2e/cart.php" passed both
+    // checks above and still landed outside the admin; a server may likewise
+    // read %2f and %5c as separators. No path this admin links to contains an
+    // encoded dot, slash or backslash, so any of them - at any depth of
+    // encoding, since every hop may undo one layer - disqualifies the target.
+    // Only the PATH is judged: a search for "a/b" or "a..b" legitimately
+    // reaches the query string encoded (track.php relies on it).
+    for ($layer = 0; $layer < 4; $layer++) {
+        if (stripos($path, '%2e') !== false || stripos($path, '%2f') !== false || stripos($path, '%5c') !== false
+            || strpos($path, '..') !== false || strpos($path, '//') !== false || strpos($path, chr(92)) !== false
+            || preg_match('/[[:cntrl:]]/', $path) === 1) {
+            return $fallback;
+        }
+        $decoded = rawurldecode($path);
+        if ($decoded === $path) {
+            break;
+        }
+        $path = $decoded;
+    }
+
+    return $candidate;
 }

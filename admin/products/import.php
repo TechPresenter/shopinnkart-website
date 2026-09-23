@@ -65,11 +65,11 @@ $requiredColumns = product_csv_required_columns();
 // A header-only file to start from when the catalogue is still empty.
 if (($_GET['template'] ?? '') === '1') {
     stream_csv('product-import-template.csv', $columns, [[
-        'DEMO-SKU-001', 'Demo Product', 'demo-product', 'Samsung', 'Smartphones',
-        'One line summary', '<p>Full description</p>', '24999', '21999', '18000',
-        '25', '5', '0.212', '18', '85171300', '1 Year Warranty', 'EMI from ₹999/month',
-        'Samsung India', 'SM-A546E', 'A54-5G-8-256', 'Works with 5G bands n78/n1',
-        '1', '5', '1', '0', 'active', '0', '1', '0', '0', '', '', '', '', '', '', '5G|Android',
+        'DEMO-SKU-001', 'Demo Product', 'demo-product', 'Lexton', 'String & Curtain Lights',
+        'One line summary', '<p>Full description</p>', '999', '289', '180',
+        '25', '5', '0.350', '18', '9405', '6 Month Seller Warranty', '',
+        'Lexton', 'LX-STAR-138', 'LX-STAR-138-WW', 'Plugs into any standard Indian socket',
+        '1', '5', '1', '0', 'active', '0', '1', '0', '0', '', '', '', '', '', '', 'Diwali|Warm White',
     ]]);
 }
 
@@ -540,7 +540,7 @@ require ADMIN_PATH . '/includes/header.php';
         </div>
         <div class="ad-card__body ad-card__body--flush">
             <div class="ad-tablewrap">
-                <table class="ad-table" style="min-width:0">
+                <table class="ad-table">
                     <thead>
                         <tr><th>Column</th><th>Required</th></tr>
                     </thead>
@@ -564,7 +564,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__foot">
             <span class="ad-muted" style="font-size:12.5px">
                 <code>brand</code> and <code>category</code> are matched by name and must already exist.
-                <code>tags</code> is pipe separated, e.g. <code>5G|Android</code>.
+                <code>tags</code> is pipe separated, e.g. <code>Diwali|Warm White</code>.
                 Booleans accept 1/0, yes/no or true/false. Stock changes are journalled as import movements.
             </span>
         </div>

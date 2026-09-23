@@ -6,6 +6,14 @@
  * only becomes a usable checkout option when PaymentGatewayFactory can build
  * a gateway for its code, so the list says plainly which rows are backed by
  * working code and the save refuses to activate the ones that are not.
+ *
+ * The config blob is half settings and half credentials. The credential half
+ * (GATEWAY_SECRET_KEYS: key_secret, webhook_secret, merchant_salt, ...) is
+ * encrypted with the application key on the way in and is NEVER printed back:
+ * the textarea shows those keys blank, and blank means "keep what is stored",
+ * exactly like the SMTP password field. Before this, opening ?edit=<id> handed
+ * the live webhook secret to anyone with settings.view, which is all it takes
+ * to forge a "payment captured" callback and ship goods for free.
  */
 
 declare(strict_types=1);
@@ -15,6 +23,52 @@ require_once __DIR__ . '/../includes/auth.php';
 $admin = admin_require('settings.view');
 
 require_once ADMIN_PATH . '/settings/_layout.php';
+require_once ADMIN_PATH . '/includes/rbac.php';
+
+/**
+ * Blank out every secret in a config JSON string, keeping the rest readable.
+ * Used both for the form and for the old-input bag a rejected save leaves behind.
+ */
+function payment_config_redact(?string $json): string
+{
+    $json = trim((string) $json);
+    if ($json === '') {
+        return '';
+    }
+
+    $decoded = json_decode($json, true);
+    if (!is_array($decoded)) {
+        // Unparseable input is the operator's own draft, but it may still hold
+        // a secret, so it is dropped rather than echoed.
+        return '';
+    }
+
+    foreach ($decoded as $key => $value) {
+        if (is_string($value) && gateway_key_is_secret((string) $key)) {
+            $decoded[$key] = '';
+        }
+    }
+
+    return (string) json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+}
+
+/** Which secret keys this method already has on file, for the "stored" hint. */
+function payment_stored_secrets(?string $json): array
+{
+    $decoded = json_decode(trim((string) $json), true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    $names = [];
+    foreach ($decoded as $key => $value) {
+        if (is_string($value) && $value !== '' && gateway_key_is_secret((string) $key)) {
+            $names[] = (string) $key;
+        }
+    }
+
+    return $names;
+}
 
 /** True when a gateway class is registered for this code. */
 function payment_is_implemented(string $code): bool
@@ -147,20 +201,68 @@ if (is_post() && $action === 'save') {
         $errors['max_amount'] = 'Maximum order value must be higher than the minimum.';
     }
 
-    $config = trim((string) input('config', ''));
-    if ($config !== '') {
-        json_decode($config, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            $errors['config'] = 'Config must be valid JSON: ' . json_last_error_msg() . '.';
+    // ---------------------------------------------------------------------
+    //  Config: settings merged, secrets replaced only when one was typed.
+    // ---------------------------------------------------------------------
+    $config          = trim((string) input('config', ''));
+    $storedConfig    = json_decode(trim((string) ($existing['config'] ?? '')), true);
+    $storedConfig    = is_array($storedConfig) ? $storedConfig : [];
+    $mergedConfig    = null;
+    $secretsTouched  = [];
+
+    if ($config === '') {
+        // An emptied box clears the settings but not the credentials - wiping
+        // a live webhook secret should be a deliberate act, not a side effect.
+        $mergedConfig = [];
+        foreach ($storedConfig as $key => $value) {
+            if (gateway_key_is_secret((string) $key)) {
+                $mergedConfig[$key] = $value;
+            }
+        }
+    } else {
+        $submitted = json_decode($config, true);
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($submitted)) {
+            $errors['config'] = 'Config must be a valid JSON object: '
+                . (json_last_error() === JSON_ERROR_NONE ? 'expected an object' : json_last_error_msg()) . '.';
+        } else {
+            $mergedConfig = $submitted;
+            foreach ($storedConfig as $key => $value) {
+                if (!gateway_key_is_secret((string) $key)) {
+                    continue;
+                }
+                $typed = trim((string) ($submitted[$key] ?? ''));
+                if ($typed === '') {
+                    // Blank (or absent) means "keep what is stored", which is
+                    // what lets the form avoid ever rendering the secret.
+                    $mergedConfig[$key] = $value;
+                }
+            }
+            foreach ($mergedConfig as $key => $value) {
+                if (!gateway_key_is_secret((string) $key) || !is_string($value) || $value === '') {
+                    continue;
+                }
+                if (!isset($storedConfig[$key]) || $value !== $storedConfig[$key]) {
+                    $secretsTouched[] = (string) $key;
+                }
+            }
         }
     }
 
     if ($errors !== []) {
         flash_errors($errors);
-        flash_old($_POST);
+        // The rejected input goes back into the session, so the secrets are
+        // stripped out of it first: a bounced form used to park a live
+        // gateway key in the session and print it straight back.
+        $bounce = $_POST;
+        $bounce['config'] = payment_config_redact((string) ($bounce['config'] ?? ''));
+        flash_old($bounce);
         flash('error', 'Nothing was saved. Please fix the highlighted fields.');
         redirect(settings_url('payment') . ($id > 0 ? '?edit=' . $id : '?edit=new'));
     }
+
+    $configToStore = $mergedConfig === null || $mergedConfig === []
+        ? null
+        : (string) json_encode(gateway_config_encrypt($mergedConfig), JSON_UNESCAPED_SLASHES);
 
     $row = [
         'name'             => $name,
@@ -171,7 +273,7 @@ if (is_post() && $action === 'save') {
         'discount_percent' => $numbers['discount_percent'],
         'min_amount'       => $limits['min_amount'],
         'max_amount'       => $limits['max_amount'],
-        'config'           => $config === '' ? null : $config,
+        'config'           => $configToStore,
         'sort_order'       => max(0, input_int('sort_order')),
         'status'           => $status,
     ];
@@ -194,6 +296,17 @@ if (is_post() && $action === 'save') {
         $id = Database::insert('payment_methods', $row);
         log_activity('payment_method.created', 'payment_method', $id, 'Created payment method "' . $name . '"');
         flash('success', $name . ' added.');
+    }
+
+    // A changed gateway credential is the difference between a webhook that
+    // can be trusted and one that can be forged, so it goes on the security
+    // trail by name - never by value.
+    if ($secretsTouched !== []) {
+        security_event('payment.credentials_changed', 'critical', [
+            'payment_method_id' => $id,
+            'code'              => $code,
+            'fields'            => $secretsTouched,
+        ], (int) $admin['id'], 'admin');
     }
 
     admin_after_write();
@@ -230,15 +343,23 @@ $formValue = static function (string $key, $default = '') use ($editing, $hasOld
     if ($hasOld) {
         $submitted = old($key, null);
         if ($submitted !== null) {
-            return $submitted;
+            // The old bag was redacted before it was stored, but the config
+            // field passes through the same filter again: this is the one
+            // value in the form that must never reach the page intact.
+            return $key === 'config' ? payment_config_redact((string) $submitted) : $submitted;
         }
         // Switches post nothing when off, so a bounce means "off".
         if (in_array($key, ['is_online'], true)) {
             return '0';
         }
     }
+    if ($key === 'config') {
+        return payment_config_redact((string) ($editing['config'] ?? ''));
+    }
     return $editing[$key] ?? $default;
 };
+
+$storedSecrets = $editing !== null ? payment_stored_secrets((string) ($editing['config'] ?? '')) : [];
 
 $liveCount = 0;
 foreach ($methods as $method) {
@@ -462,9 +583,25 @@ require ADMIN_PATH . '/includes/header.php';
                         <span class="sik-error"><?= e($errors['config']) ?></span>
                     <?php else: ?>
                         <span class="sik-help">
-                            Keys and secrets for the gateway. Stored as-is and only read by the gateway class,
-                            so leave it blank for offline methods.
+                            Keys for the gateway, read only by the gateway class &mdash; leave it blank for
+                            offline methods. Secret values (<code>key_secret</code>, <code>webhook_secret</code>,
+                            <code>merchant_salt</code>&hellip;) are encrypted at rest and are never shown here:
+                            they come back <strong>blank, which means "keep the stored one"</strong>.
+                            Type a new value only when you are replacing it.
                         </span>
+                    <?php endif; ?>
+
+                    <?php if ($storedSecrets !== []): ?>
+                        <div class="sik-alert sik-alert--info" style="margin-top:10px">
+                            <?= icon('lock', 'w-5 h-5') ?>
+                            <div>
+                                Stored and encrypted:
+                                <?php foreach ($storedSecrets as $index => $secretKey): ?>
+                                    <?= $index > 0 ? ', ' : '' ?><code><?= e($secretKey) ?></code>
+                                <?php endforeach; ?>.
+                                Leave them blank above to keep them as they are.
+                            </div>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>

@@ -225,8 +225,12 @@ $breadcrumbs  = [
     ['label' => 'Dashboard', 'url' => admin_url('dashboard.php')],
     ['label' => 'Maintenance'],
 ];
-$pageActions  = '<a class="ad-btn" href="' . e(admin_url('system/backup.php')) . '">'
-    . icon('download', 'w-4 h-4') . ' Database Backup</a>';
+// Backups moved behind their own permission (a dump is every password hash in
+// the shop), so the link is only offered to someone the screen will admit.
+$pageActions  = admin_can('system.backup')
+    ? '<a class="ad-btn" href="' . e(admin_url('system/backup.php')) . '">'
+        . icon('download', 'w-4 h-4') . ' Database Backup</a>'
+    : '';
 
 require ADMIN_PATH . '/includes/header.php';
 ?>

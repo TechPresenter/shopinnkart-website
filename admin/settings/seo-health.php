@@ -123,40 +123,72 @@ require ADMIN_PATH . '/includes/header.php';
 
 <?= settings_tabs('seo-health') ?>
 
+<?php
+/* The tiles are the shared helper's, not hand-built ones.
+   -------------------------------------------------------------------------
+   They used to be three bare spans - label, value and a `.ad-stat__hint` that
+   is not a class admin.css defines - dropped straight into `.ad-stat`, which
+   is a wrap-flex. So the three sat SIDE BY SIDE and then wrapped in whatever
+   order the width allowed, and the hint line was unstyled body text. The
+   helper emits the icon + `.ad-stat__body` pairing the tile's container
+   queries are written against, which is what sizes the numeral to the tile
+   rather than to the window. */
+$tiles = [
+    admin_stat_card(
+        'Records missing meta',
+        (string) (int) $totalMissing,
+        'search',
+        $totalMissing > 0 ? 'amber' : 'green',
+        'title or description blank'
+    ),
+    admin_stat_card(
+        'Images without alt text',
+        (string) (int) $imagesNoAlt,
+        'camera',
+        $imagesNoAlt > 0 ? 'amber' : 'green',
+        'of ' . (int) $imagesTotal . ' product images'
+    ),
+    admin_stat_card(
+        'Sitemap',
+        $sitemapOk ? (string) (int) $sitemapUrls : "\u{2014}",
+        'globe',
+        $sitemapOk ? 'blue' : 'red',
+        $sitemapOk ? 'URLs listed' : 'not reachable'
+    ),
+    admin_stat_card(
+        'Redirects',
+        (string) (int) $redirects['active'],
+        'external',
+        'navy',
+        'active of ' . (int) $redirects['total'],
+        admin_url('settings/redirects.php')
+    ),
+];
+?>
 <div class="ad-grid ad-grid--4" style="margin-bottom:20px">
-    <div class="ad-stat">
-        <span class="ad-stat__label">Records missing meta</span>
-        <strong class="ad-stat__value"><?= (int) $totalMissing ?></strong>
-        <span class="ad-stat__hint">title or description blank</span>
-    </div>
-    <div class="ad-stat">
-        <span class="ad-stat__label">Images without alt text</span>
-        <strong class="ad-stat__value"><?= (int) $imagesNoAlt ?></strong>
-        <span class="ad-stat__hint">of <?= (int) $imagesTotal ?> product images</span>
-    </div>
-    <div class="ad-stat">
-        <span class="ad-stat__label">Sitemap</span>
-        <strong class="ad-stat__value"><?= $sitemapOk ? (int) $sitemapUrls : '—' ?></strong>
-        <span class="ad-stat__hint"><?= $sitemapOk ? 'URLs listed' : 'not reachable' ?></span>
-    </div>
-    <div class="ad-stat">
-        <span class="ad-stat__label">Redirects</span>
-        <strong class="ad-stat__value"><?= (int) $redirects['active'] ?></strong>
-        <span class="ad-stat__hint">active of <?= (int) $redirects['total'] ?></span>
-    </div>
+    <?= implode("\n    ", $tiles) ?>
 </div>
 
 <div class="ad-card" style="margin-bottom:20px">
     <div class="ad-card__head"><h2 class="ad-card__title">Metadata coverage</h2></div>
-    <div class="ad-table-scroll">
+    <?php /* .ad-tablewrap, not .ad-table-scroll: the wrapper the card view and
+             the fit measurement in admin.js are keyed to. `.ad-table-scroll` -
+             this page and settings/redirects were its only two users - is a
+             bare `overflow-x: auto` with no `min-width: 0` and no part in
+             either, so it would widen the page rather than scroll itself the
+             moment such a table sat in a flex or grid track. `.ad-table__num` /
+             `.ad-table__actions` are the real column classes too: `.ad-num` is
+             defined in no stylesheet, so none of these figures were ever
+             right-aligned. */ ?>
+    <div class="ad-tablewrap">
         <table class="ad-table">
             <thead>
                 <tr>
                     <th>Content type</th>
-                    <th class="ad-num">Published</th>
-                    <th class="ad-num">No meta title</th>
-                    <th class="ad-num">No description</th>
-                    <th class="ad-num">Noindex</th>
+                    <th class="ad-table__num">Published</th>
+                    <th class="ad-table__num">No meta title</th>
+                    <th class="ad-table__num">No description</th>
+                    <th class="ad-table__num">Noindex</th>
                     <th></th>
                 </tr>
             </thead>
@@ -164,15 +196,11 @@ require ADMIN_PATH . '/includes/header.php';
                 <?php foreach ($rows as $label => $row): ?>
                     <tr>
                         <td><strong><?= e($label) ?></strong></td>
-                        <td class="ad-num"><?= (int) $row['total'] ?></td>
-                        <td class="ad-num">
-                            <?= (int) $row['no_title'] ?>
-                        </td>
-                        <td class="ad-num<?= $row['no_description'] > 0 ? '' : '' ?>">
-                            <?= (int) $row['no_description'] ?>
-                        </td>
-                        <td class="ad-num"><?= (int) $row['noindex'] ?></td>
-                        <td class="ad-num">
+                        <td class="ad-table__num"><?= (int) $row['total'] ?></td>
+                        <td class="ad-table__num"><?= (int) $row['no_title'] ?></td>
+                        <td class="ad-table__num"><?= (int) $row['no_description'] ?></td>
+                        <td class="ad-table__num"><?= (int) $row['noindex'] ?></td>
+                        <td class="ad-table__actions">
                             <a class="ad-btn ad-btn--sm" href="<?= e(admin_url($row['url'])) ?>">Open</a>
                         </td>
                     </tr>

@@ -112,26 +112,59 @@ $pageActions = '<a class="ad-btn" href="' . e($editUrl) . '#menuForm">' . icon('
 require ADMIN_PATH . '/includes/header.php';
 ?>
 <style>
-    /* --- the row list --- */
-    .mp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    /* --- the row list ---
+       Laid out by the width of the LIST, not of the window. The six cells
+       used to sit on one line from 1100px up and fold to a three-column grid
+       below it - which put the icon <select> into the 26px grip column on the
+       second line, and above 1100px the one-line row wanted ~720px while the
+       column beside the promo card offers ~600px at 1280, so the badge and the
+       switch hung off the card. A container query asks the question that
+       matters: how wide is the list itself. Without container query support
+       the stacked layout applies, which works at any width. */
+    .mp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; container-type: inline-size; }
     .mp-row {
         display: grid;
-        grid-template-columns: 26px 56px minmax(140px, 1.2fr) minmax(190px, 1.1fr) minmax(170px, 1fr) 72px;
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "grip name  show"
+            "grip icon  icon"
+            "grip badge badge"
+            "grip pos   pos";
         gap: 10px; align-items: center;
         padding: 10px; border: 1px solid var(--ad-border); border-radius: 10px; background: #fff;
     }
-    @media (max-width: 1100px) { .mp-row { grid-template-columns: 26px 64px 1fr; } }
-    .mp-row.is-off { background: var(--ad-bg); opacity: .72; }
-    /* The row being carried. Kept to opacity + a dashed outline: a transform
-       here would fight the drop target's own movement. */
-    .mp-row.is-dragging { opacity: .4; }
-    .mp-row.is-over { border-style: dashed; border-color: var(--ad-primary); }
-    .mp-grip {
-        display: flex; align-items: center; justify-content: center;
-        color: var(--ad-muted); cursor: grab;
+    @container (min-width: 560px) {
+        .mp-row {
+            grid-template-columns: 34px auto minmax(0, 1fr) minmax(0, 1fr) auto;
+            grid-template-areas:
+                "grip pos  name name  show"
+                "grip icon icon badge badge";
+        }
     }
+    @container (min-width: 820px) {
+        .mp-row {
+            grid-template-columns: 34px auto minmax(120px, 1.2fr) minmax(170px, 1.1fr) minmax(150px, 1fr) auto;
+            grid-template-areas: "grip pos name icon badge show";
+        }
+    }
+    .mp-row.is-off { background: var(--ad-bg); opacity: .72; }
+    /* The row being carried stays in place, faded; the bar that
+       Admin.sortable() draws shows where it will land. */
+    .mp-row.is-dragging { opacity: .4; }
+    /* The whole left edge of the row is the handle - on a phone a finger
+       needs a strip, not a 16px glyph. touch-action comes from admin.css. */
+    .mp-grip {
+        grid-area: grip; align-self: stretch;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 7px; color: var(--ad-muted); cursor: grab;
+    }
+    .mp-grip:hover { background: var(--ad-bg); color: var(--ad-text); }
     .mp-grip:active { cursor: grabbing; }
-    .mp-row__name { min-width: 0; }
+    .mp-pos { grid-area: pos; display: flex; align-items: center; gap: 8px; }
+    .mp-row__name { grid-area: name; min-width: 0; }
+    .mp-iconcell { grid-area: icon; }
+    .mp-badgecell { grid-area: badge; }
+    .mp-row > .ad-switch { grid-area: show; justify-self: end; }
     .mp-row__name a { font-weight: 600; }
     .mp-row__meta { display: block; font-size: 11.5px; color: var(--ad-muted); }
     .mp-glyph {
@@ -148,7 +181,7 @@ require ADMIN_PATH . '/includes/header.php';
     /* A colour means nothing until the row has a badge. The UA's own disabled
        styling for a colour input is too faint to read as "not in use". */
     .mp-badgecell input[type="color"]:disabled { opacity: .3; cursor: not-allowed; }
-    .mp-order { width: 64px; text-align: center; }
+    .mp-order { width: 64px; flex: none; text-align: center; }
     .mp-bank { display: none; }
 
     /* --- the preview ---
@@ -181,19 +214,25 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <div class="ad-card__title">Rows in this panel</div>
                     <div class="ad-card__sub">
-                        Drag a row to reorder it, or type a position. Hiding a row here is the same
-                        switch as Status on the item itself — the row keeps everything else it has.
+                        Drag a row by its handle, move it with the arrows, or type a position. Hiding a
+                        row here is the same switch as Status on the item itself — the row keeps
+                        everything else it has.
                     </div>
                 </div>
             </div>
 
             <?php if ((int) $panel['is_mega'] !== 1): ?>
                 <div class="ad-card__body">
+                    <?php // One wrapping <div>: .sik-alert is a flex row, so bare text,
+                          // <strong> and <a> each became a column of their own and the
+                          // sentence read in three narrow strips. ?>
                     <div class="sik-alert sik-alert--warning">
-                        <strong><?= e($panel['label']) ?></strong> is not set to render as a mega panel, so its
-                        children appear as a plain dropdown. The rows below still control that list, but the
-                        &ldquo;Shop all&rdquo; header and the promo tile only exist on a mega panel —
-                        <a href="<?= e($editUrl) ?>#menuForm">turn it on in the item editor</a>.
+                        <div>
+                            <strong><?= e($panel['label']) ?></strong> is not set to render as a mega panel, so its
+                            children appear as a plain dropdown. The rows below still control that list, but the
+                            &ldquo;Shop all&rdquo; header and the promo tile only exist on a mega panel —
+                            <a href="<?= e($editUrl) ?>#menuForm">turn it on in the item editor</a>.
+                        </div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -234,14 +273,31 @@ require ADMIN_PATH . '/includes/header.php';
                                 $kids     = (int) ($grandchildren[$rowId] ?? 0);
                                 ?>
                                 <li class="mp-row<?= $row['status'] === 'active' ? '' : ' is-off' ?>"
-                                    data-panel-row draggable="true">
+                                    data-panel-row data-name="<?= e_attr($row['label']) ?>">
+                                    <?php // Not focusable and hidden from assistive tech on
+                                          // purpose: the arrows beside the position are the
+                                          // keyboard and screen-reader way to move a row. ?>
                                     <span class="mp-grip" data-grip aria-hidden="true" title="Drag to reorder">
                                         <?= icon('dots', 'w-4 h-4') ?>
                                     </span>
 
-                                    <input class="sik-input mp-order" type="number" min="0" max="9999" step="1"
-                                           name="sort[<?= $rowId ?>]" value="<?= $index + 1 ?>" data-order
-                                           aria-label="Position of <?= e_attr($row['label']) ?>">
+                                    <span class="mp-pos">
+                                        <input class="sik-input mp-order" type="number" min="0" max="9999" step="1"
+                                               name="sort[<?= $rowId ?>]" value="<?= $index + 1 ?>" data-order
+                                               aria-label="Position of <?= e_attr($row['label']) ?>">
+                                        <?php // No name, so they post nothing: the position
+                                              // input above stays the only thing saved. ?>
+                                        <span class="ad-movebtns">
+                                            <button type="button" data-move="up"
+                                                    aria-label="Move <?= e_attr($row['label']) ?> up">
+                                                <?= icon('chevron-up', 'w-4 h-4') ?>
+                                            </button>
+                                            <button type="button" data-move="down"
+                                                    aria-label="Move <?= e_attr($row['label']) ?> down">
+                                                <?= icon('chevron-down', 'w-4 h-4') ?>
+                                            </button>
+                                        </span>
+                                    </span>
 
                                     <span class="mp-row__name">
                                         <a href="<?= e(admin_url('menus/?location=' . urlencode($location) . '&item=' . $rowId)) ?>#menuForm">
@@ -407,16 +463,19 @@ require ADMIN_PATH . '/includes/header.php';
     /* ----------------------------------------------------------------------
        Reordering.
 
-       The number inputs are the control; dragging is a shortcut that rewrites
-       them. That order matters — HTML5 drag events do not fire from touch, so
-       on a tablet the numbers are the only way to reorder, and they have to be
-       the thing that is actually posted rather than a mirror of a drag state.
+       The number inputs are the control; dragging and the arrows are
+       shortcuts that rewrite them. They are what is posted, so a drag or an
+       arrow press changes exactly the `sort[id]` values a typed number would,
+       and panel-save.php sees no difference between the three.
+
+       The drag is Admin.sortable() in admin.js - Pointer Events, so it works
+       under a finger. The HTML5 drag-and-drop it replaces never fired from a
+       touch screen, which left typing numbers as the only way to reorder a
+       panel on a phone or tablet.
        ---------------------------------------------------------------------- */
     (function () {
         var list = document.querySelector('[data-panel-rows]');
         if (!list) return;
-
-        var dragged = null;
 
         function renumber() {
             Array.prototype.forEach.call(list.querySelectorAll('[data-order]'), function (input, index) {
@@ -424,39 +483,20 @@ require ADMIN_PATH . '/includes/header.php';
             });
         }
 
-        list.addEventListener('dragstart', function (e) {
-            var row = e.target.closest('[data-panel-row]');
-            if (!row) return;
-            dragged = row;
-            row.classList.add('is-dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            // Firefox will not start a drag without data on the transfer.
-            e.dataTransfer.setData('text/plain', '');
-        });
-
-        list.addEventListener('dragend', function () {
-            if (dragged) dragged.classList.remove('is-dragging');
-            Array.prototype.forEach.call(list.querySelectorAll('.is-over'), function (r) {
-                r.classList.remove('is-over');
+        // admin.js is deferred, so SIK.admin exists once the document has
+        // parsed - not yet while this inline script runs.
+        document.addEventListener('DOMContentLoaded', function () {
+            SIK.admin.sortable(list, {
+                row: '[data-panel-row]',
+                onChange: function () {
+                    renumber();
+                    // Values set from script fire no event, so without this the
+                    // unsaved-changes guard would let a reordered panel be
+                    // walked away from without a word.
+                    list.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             });
-            dragged = null;
         });
-
-        list.addEventListener('dragover', function (e) {
-            if (!dragged) return;
-            e.preventDefault();
-            var over = e.target.closest('[data-panel-row]');
-            if (!over || over === dragged) return;
-
-            // Insert before or after depending on which half of the target the
-            // pointer is in, so a row can be dropped at the end of the list.
-            var box = over.getBoundingClientRect();
-            var after = (e.clientY - box.top) > box.height / 2;
-            list.insertBefore(dragged, after ? over.nextSibling : over);
-            renumber();
-        });
-
-        list.addEventListener('drop', function (e) { e.preventDefault(); });
 
         // Typing a number is the other half of the same control: sorting the
         // DOM to match keeps the list and the values telling one story.

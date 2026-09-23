@@ -207,7 +207,9 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
             <?php else: ?>
                 <div class="ad-designer__head">
-                    <span class="ad-designer__title" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    <?php // No ellipsis here: a widget label is at most two short words, so it
+                          // is allowed to wrap rather than be cut by an overflow:hidden. ?>
+                    <span class="ad-designer__title">
                         <?= e(homepage_widget_label((string) $section['widget_type'])) ?>
                     </span>
                     <span class="ad-designer__count" style="margin-left:auto">

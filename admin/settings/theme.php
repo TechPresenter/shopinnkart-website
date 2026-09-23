@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/auth.php';
 $admin = admin_require('settings.view');
 
 require_once ADMIN_PATH . '/settings/_layout.php';
+require_once ADMIN_PATH . '/includes/rbac.php';
 require_once INCLUDES_PATH . '/theme-fonts.php';
 
 /** Shipped defaults, matching the values the installer seeds. */
@@ -130,7 +131,8 @@ $spec += [
     ],
     'custom_js' => [
         'type' => 'code', 'label' => 'Custom JavaScript', 'rows' => 8,
-        'help' => 'Injected at the end of the storefront body. Nothing here runs in the admin.',
+        'help' => 'Runs on every storefront page, on this site\'s own origin and session. '
+            . 'Treat it as admin-level access, not a styling tweak.',
     ],
     'admin_primary' => [
         'type' => 'color', 'label' => 'Admin accent', 'required' => true, 'group' => 'admin_theme',
@@ -155,6 +157,29 @@ if (defined('SETTINGS_SPEC_ONLY')) {
 
 $action = (string) input('action', '');
 
+/**
+ * Custom CSS and JavaScript are not styling fields.
+ *
+ * custom_js is printed inside a <script> tag on every storefront page,
+ * including checkout, on the same origin and the same session as /admin. A
+ * settings.edit holder who can write it can make the next Super Admin who
+ * browses the shop POST a new admin account for them, or skim card details at
+ * checkout. So the two boxes need settings.scripts (or Super Admin), they need
+ * the actor's own password, and every change is recorded with a hash of the
+ * before and after.
+ */
+$canScripts = admin_can_edit_scripts();
+
+if (!$canScripts) {
+    // Still rendered, so the operator can see what is running and ask for it -
+    // but not editable, and never writable (see the save branch below).
+    foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
+        $spec[$scriptKey]['attr'] = 'disabled readonly';
+        $spec[$scriptKey]['help'] = 'Read-only: changing code that runs on the storefront needs the '
+            . 'settings.scripts permission.';
+    }
+}
+
 // ---------------------------------------------------------------------------
 //  Reset
 // ---------------------------------------------------------------------------
@@ -162,6 +187,11 @@ if (is_post() && $action === 'reset') {
     admin_require_action('settings.edit');
 
     foreach (THEME_DEFAULTS as $key => $value) {
+        // A reset must not be a way to wipe (or keep) code the operator could
+        // not have written in the first place.
+        if (in_array($key, ADMIN_SCRIPT_SETTING_KEYS, true) && !$canScripts) {
+            continue;
+        }
         setting_save($key, $value, 'theme', settings_store_type($spec[$key] ?? []));
     }
 
@@ -178,7 +208,55 @@ if (is_post() && $action === 'reset') {
 $stored = settings_group('theme') + settings_group('admin_theme');
 
 if (is_post()) {
-    settings_handle_save('theme', 'theme', $spec, $stored);
+    admin_require_action('settings.edit');   // POST + CSRF + permission, before any decision below
+
+    $saveSpec = $spec;
+
+    foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
+        $submittedCode = (string) ($_POST[$scriptKey] ?? ($stored[$scriptKey] ?? ''));
+        $storedCode    = (string) ($stored[$scriptKey] ?? '');
+
+        if ($submittedCode === $storedCode) {
+            continue;   // nothing to guard: an ordinary theme save carrying the box along
+        }
+
+        if (!$canScripts) {
+            // The field is disabled in the HTML, so anything arriving here was
+            // hand-crafted. Refuse the whole save rather than quietly dropping
+            // one field, and leave a record of the attempt.
+            admin_deny_back(
+                'Changing the storefront\'s custom CSS or JavaScript needs the settings.scripts permission. '
+                    . 'Nothing was saved.',
+                settings_url('theme'),
+                ['setting' => $scriptKey, 'bytes' => mb_strlen($submittedCode)]
+            );
+        }
+
+        if (!admin_reauth_ok()) {
+            flash_errors(['reauth_password' => admin_reauth_error('change code that runs on every storefront page')]);
+            flash_old($_POST);
+            flash('error', 'Nothing was saved. Confirm with your own password to change the custom code.');
+            redirect(settings_url('theme'));
+        }
+
+        security_event('settings.scripts_changed', 'critical', [
+            'setting'     => $scriptKey,
+            'bytes_from'  => mb_strlen($storedCode),
+            'bytes_to'    => mb_strlen($submittedCode),
+            'sha256_from' => $storedCode === '' ? null : hash('sha256', $storedCode),
+            'sha256_to'   => $submittedCode === '' ? null : hash('sha256', $submittedCode),
+        ], (int) $admin['id'], 'admin');
+    }
+
+    if (!$canScripts) {
+        // Belt and braces: even an unchanged value is not written by someone
+        // who may not write it.
+        foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
+            unset($saveSpec[$scriptKey]);
+        }
+    }
+
+    settings_handle_save('theme', 'theme', $saveSpec, $stored);
 }
 
 $errors = errors_pull();
@@ -203,7 +281,7 @@ $sampleProduct = Database::fetch(
      LIMIT 1"
 );
 
-$sampleName  = (string) ($sampleProduct['name'] ?? 'Sample Wireless Headphones');
+$sampleName  = (string) ($sampleProduct['name'] ?? 'Sample Curtain Light');
 $sampleMrp   = (float) ($sampleProduct['price'] ?? 4999);
 $samplePrice = $sampleProduct !== null && $sampleProduct['sale_price'] !== null
     ? (float) $sampleProduct['sale_price']
@@ -397,11 +475,20 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__body">
                 <?= settings_field('custom_css', $spec, $values, $errors) ?>
                 <?= settings_field('custom_js', $spec, $values, $errors) ?>
+                <?php if ($canScripts): ?>
+                    <?= admin_reauth_field('change the custom CSS or JavaScript',
+                        (string) ($errors['reauth_password'] ?? '')) ?>
+                <?php endif; ?>
                 <div class="sik-alert sik-alert--warning" style="margin:0">
                     <?= icon('alert', 'w-5 h-5') ?>
                     <div>
-                        Both blocks are printed on every storefront page. A syntax error here breaks the
-                        shop for real visitors, so test on a copy before saving something large.
+                        Both blocks are printed on every storefront page, on this site's own origin and
+                        session &mdash; JavaScript here can do anything a signed-in admin browsing the shop
+                        could do. A syntax error breaks the shop for real visitors, so test on a copy first.
+                        <?php if (!$canScripts): ?>
+                            <br><strong>You have read-only access to these two boxes</strong>
+                            (<code>settings.scripts</code> is needed to change them).
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

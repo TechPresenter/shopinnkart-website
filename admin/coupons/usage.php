@@ -184,7 +184,9 @@ require ADMIN_PATH . '/includes/header.php';
                                         ? e(money((float) $row['total_amount']))
                                         : '<span class="ad-muted">&mdash;</span>' ?>
                                 </td>
-                                <td class="ad-muted" style="white-space:nowrap">
+                                <?php // Same as the list: the timestamp wraps rather than setting a floor
+                                      // under the table's minimum width. ?>
+                                <td class="ad-muted">
                                     <?= e(format_datetime($row['created_at'])) ?>
                                     <span class="ad-cellflex__meta" style="display:block"><?= e(time_ago($row['created_at'])) ?></span>
                                 </td>

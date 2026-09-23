@@ -265,7 +265,7 @@ require ADMIN_PATH . '/includes/header.php';
                                                     <?= e($name) ?>
                                                 <?php endif; ?>
                                             </div>
-                                            <div class="ad-cellflex__meta"><?= e($row['email']) ?></div>
+                                            <div class="ad-cellflex__meta"><?= e(report_email((string) $row['email'])) ?></div>
                                         </div>
                                     </div>
                                 </td>

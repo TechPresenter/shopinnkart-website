@@ -30,6 +30,14 @@
 
 declare(strict_types=1);
 
+// Include-only: the parent page already ran authentication and permissions.
+// The .htaccess rule refuses /_*.php outright; this is the backstop for a
+// host that does not read .htaccess at all.
+if (!defined('SIK_BOOTSTRAPPED')) {
+    http_response_code(404);
+    exit;
+}
+
 require_once ADMIN_PATH . '/settings/_layout.php';
 require_once ADMIN_PATH . '/appearance/_header-spec.php';
 
@@ -739,12 +747,21 @@ function appearance_snapshot_read(): ?array
  */
 function appearance_write(array $values): int
 {
-    $specs   = appearance_specs();
-    $written = 0;
+    require_once ADMIN_PATH . '/includes/rbac.php';
 
-    Database::transaction(static function () use ($values, $specs, &$written): void {
+    $specs      = appearance_specs();
+    $canScripts = admin_can_edit_scripts();
+    $written    = 0;
+
+    Database::transaction(static function () use ($values, $specs, $canScripts, &$written): void {
         foreach ($values as $key => $value) {
             if (!array_key_exists($key, $specs['spec'])) {
+                continue;
+            }
+            // custom_js / custom_css run in the visitor's browser on this
+            // site's origin, so a section reset is not a back door into them
+            // for an operator who may not edit them on Settings → Theme.
+            if (!$canScripts && in_array($key, ADMIN_SCRIPT_SETTING_KEYS, true)) {
                 continue;
             }
             setting_save(

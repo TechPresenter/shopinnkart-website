@@ -252,7 +252,11 @@ require ADMIN_PATH . '/includes/header.php';
                                         : '<span class="ad-muted">&mdash;</span>' ?>
                                 </td>
                                 <td><?= marketing_usage_bar($used, $usageLimit, 'redeemed') ?></td>
-                                <td class="ad-muted" style="font-size:12px;white-space:nowrap">
+                                <?php // No nowrap: a dated window is "14 Jun 2026, 10:59 AM -> 11 Nov 2026,
+                                      // 10:59 AM", far wider than this column at any viewport. Held on one
+                                      // line it ran under the STATE badge in the card view; it wraps at its
+                                      // spaces instead. ?>
+                                <td class="ad-muted" style="font-size:12px">
                                     <?= e(marketing_window_text($coupon['start_date'], $coupon['end_date'])) ?>
                                 </td>
                                 <td><?= marketing_state_badge($rowState) ?></td>

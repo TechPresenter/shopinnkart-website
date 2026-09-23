@@ -12,7 +12,15 @@ require_once __DIR__ . '/../../includes/init.php';
 
 api_require_method(['POST']);
 api_require_csrf();
-api_rate_limit('contact_send', 3, 900);
+// Per client address, not per session: the session counter reset itself
+// whenever the sender dropped the cookie, which made this form a bulk sender.
+api_rate_limit('contact_send', 5, 3600);
+
+// Honeypot: a field no human sees and every form-filling bot completes.
+if (trim((string) request_input('website', '')) !== '') {
+    security_event('api.honeypot', 'low', ['endpoint' => 'contact']);
+    json_success('Thanks for writing in. Our support team replies within one business day.', [], 201);
+}
 
 $v = new Validator(request_all(), [
     'name'    => 'Name',
@@ -76,16 +84,31 @@ if ($adminEmail !== '') {
     }
 }
 
-// Acknowledge to the customer so a message never disappears into silence.
+/**
+ * Acknowledge to the customer so a message never disappears into silence.
+ *
+ * The acknowledgement goes to an address a stranger typed, so it must not
+ * carry anything that stranger wrote: reflecting the subject and body turned
+ * this form into a sender of store-branded mail whose content the sender
+ * chose, to any inbox they chose. Only someone writing from the address on
+ * their own signed-in account gets their words quoted back.
+ */
+$signedIn  = current_user();
+$ownsInbox = $signedIn !== null && hash_equals(mb_strtolower((string) $signedIn['email']), $email);
+
 try {
     notify('contact_received', $email, [
-        'customer_name'  => $name,
+        'customer_name'  => $ownsInbox ? $name : 'there',
         'customer_email' => $email,
-        'subject'        => $subject,
-        'message'        => $message,   // notify() escapes and line-breaks it
+        'subject'        => $ownsInbox ? $subject : 'your message to our support team',
+        'message'        => $ownsInbox
+            ? $message   // notify() escapes and line-breaks it
+            : 'Your message has reached our support team and someone will reply within one business day. '
+              . 'If you did not write to us, you can ignore this email - nothing has been sent on your behalf.',
     ], 'contact_message', $messageId, 'email', [
         'email_type'     => 'contact_received',
-        'recipient_name' => $name,
+        // The display name on the envelope is free text from the form too.
+        'recipient_name' => $ownsInbox ? $name : null,
         // One acknowledgement per stored message, so a double-submitted form
         // does not thank the customer twice.
         'idempotency_key' => 'contact_received:' . $messageId,

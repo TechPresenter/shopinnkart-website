@@ -200,7 +200,7 @@ require ADMIN_PATH . '/includes/header.php';
                 ) ?>
         <?php else: ?>
             <div class="ad-tablewrap">
-                <table class="ad-table" style="min-width:1180px">
+                <table class="ad-table">
                     <thead>
                         <tr>
                             <th><?= admin_sort_header('Name', 'name', $sort, $dir) ?></th>

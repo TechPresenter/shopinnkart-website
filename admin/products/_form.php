@@ -50,7 +50,7 @@ $variantRow = static function (array $variant, string $key, array $variantAttrib
             <label class="ad-field">
                 <span class="sik-label">Variant SKU</span>
                 <input type="text" class="sik-input<?= $bad($prefix . 'sku') ?>" name="variant_sku[]"
-                       value="<?= e($variant['sku']) ?>" maxlength="80" placeholder="SKU-BLK-256">
+                       value="<?= e($variant['sku']) ?>" maxlength="80" placeholder="SKU-WW-5M">
                 <?php if ($err($prefix . 'sku') !== ''): ?>
                     <span class="sik-error"><?= e($err($prefix . 'sku')) ?></span>
                 <?php endif; ?>
@@ -59,7 +59,7 @@ $variantRow = static function (array $variant, string $key, array $variantAttrib
             <label class="ad-field">
                 <span class="sik-label">Variant name</span>
                 <input type="text" class="sik-input<?= $bad($prefix . 'name') ?>" name="variant_name[]"
-                       value="<?= e($variant['variant_name']) ?>" maxlength="255" placeholder="Black / 256GB">
+                       value="<?= e($variant['variant_name']) ?>" maxlength="255" placeholder="Warm White / 5 m">
                 <?php if ($err($prefix . 'name') !== ''): ?>
                     <span class="sik-error"><?= e($err($prefix . 'name')) ?></span>
                 <?php endif; ?>
@@ -161,7 +161,7 @@ $blankVariant = [
                         <span class="sik-label">Product name <span class="req">*</span></span>
                         <input type="text" class="sik-input<?= $bad('name') ?>" name="name" required maxlength="255"
                                value="<?= e($product['name']) ?>" data-slug-source="#productSlug"
-                               placeholder="Samsung Galaxy S24 Ultra 5G">
+                               placeholder="Star Curtain Light, 138 LED, Warm White">
                         <?php if ($err('name') !== ''): ?><span class="sik-error"><?= e($err('name')) ?></span><?php endif; ?>
                     </label>
 
@@ -178,7 +178,7 @@ $blankVariant = [
                     <label class="ad-field">
                         <span class="sik-label">SKU <span class="req">*</span></span>
                         <input type="text" class="sik-input<?= $bad('sku') ?>" name="sku" required maxlength="80"
-                               value="<?= e($product['sku']) ?>" placeholder="SGS24U-512-BLK">
+                               value="<?= e($product['sku']) ?>" placeholder="LT-STAR-138-WW">
                         <?php if ($err('sku') !== ''): ?><span class="sik-error"><?= e($err('sku')) ?></span><?php endif; ?>
                     </label>
 
@@ -445,14 +445,18 @@ $blankVariant = [
                     <label class="ad-field">
                         <span class="sik-label">Warranty</span>
                         <input type="text" class="sik-input<?= $bad('warranty') ?>" name="warranty" maxlength="150"
-                               value="<?= e($product['warranty']) ?>" placeholder="1 Year Manufacturer Warranty">
+                               <?php // The hint has to be the cover the store actually gives. Every
+                                     // product in the catalogue carries "6 Month Seller Warranty", and
+                                     // that is what the seed and the CSV import template emit, so a
+                                     // manufacturer-warranty hint would invite a claim nobody honours. ?>
+                               value="<?= e($product['warranty']) ?>" placeholder="6 Month Seller Warranty">
                         <?php if ($err('warranty') !== ''): ?><span class="sik-error"><?= e($err('warranty')) ?></span><?php endif; ?>
                     </label>
 
                     <label class="ad-field">
                         <span class="sik-label">EMI note</span>
                         <input type="text" class="sik-input<?= $bad('emi_text') ?>" name="emi_text" maxlength="150"
-                               value="<?= e($product['emi_text']) ?>" placeholder="EMI from ₹2,499/month">
+                               value="<?= e($product['emi_text']) ?>" placeholder="Leave blank unless EMI is offered">
                         <?php if ($err('emi_text') !== ''): ?><span class="sik-error"><?= e($err('emi_text')) ?></span><?php endif; ?>
                     </label>
                 </div>
@@ -461,7 +465,7 @@ $blankVariant = [
                     <span class="sik-label">Compatibility</span>
                     <textarea class="sik-textarea<?= $bad('compatibility') ?>" name="compatibility" rows="2"
                               maxlength="500" style="min-height:70px"
-                              placeholder="Works with iPhone 12 and newer, iPad Pro (USB-C)"><?= e($product['compatibility']) ?></textarea>
+                              placeholder="Runs from any 5V USB adapter or power bank; indoor use only"><?= e($product['compatibility']) ?></textarea>
                     <?php if ($err('compatibility') !== ''): ?><span class="sik-error"><?= e($err('compatibility')) ?></span><?php endif; ?>
                 </label>
 
@@ -474,17 +478,17 @@ $blankVariant = [
                                     <label class="ad-field">
                                         <span class="sik-label">Group</span>
                                         <input type="text" class="sik-input" name="spec_group[]" maxlength="100"
-                                               value="<?= e((string) $spec['spec_group']) ?>" placeholder="Display">
+                                               value="<?= e((string) $spec['spec_group']) ?>" placeholder="Lighting">
                                     </label>
                                     <label class="ad-field">
                                         <span class="sik-label">Specification</span>
                                         <input type="text" class="sik-input" name="spec_key[]" maxlength="150"
-                                               value="<?= e((string) $spec['spec_key']) ?>" placeholder="Screen size">
+                                               value="<?= e((string) $spec['spec_key']) ?>" placeholder="LED count">
                                     </label>
                                     <label class="ad-field">
                                         <span class="sik-label">Value</span>
                                         <input type="text" class="sik-input" name="spec_value[]" maxlength="500"
-                                               value="<?= e((string) $spec['spec_value']) ?>" placeholder="6.8 inch QHD+">
+                                               value="<?= e((string) $spec['spec_value']) ?>" placeholder="138 LEDs, warm white">
                                     </label>
                                     <div class="ad-field">
                                         <button type="button" class="ad-btn ad-btn--icon ad-btn--danger-ghost" data-repeat-remove
@@ -498,15 +502,15 @@ $blankVariant = [
                             <div style="grid-column:1/-1;display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end">
                                 <label class="ad-field">
                                     <span class="sik-label">Group</span>
-                                    <input type="text" class="sik-input" name="spec_group[]" maxlength="100" placeholder="Display">
+                                    <input type="text" class="sik-input" name="spec_group[]" maxlength="100" placeholder="Lighting">
                                 </label>
                                 <label class="ad-field">
                                     <span class="sik-label">Specification</span>
-                                    <input type="text" class="sik-input" name="spec_key[]" maxlength="150" placeholder="Screen size">
+                                    <input type="text" class="sik-input" name="spec_key[]" maxlength="150" placeholder="LED count">
                                 </label>
                                 <label class="ad-field">
                                     <span class="sik-label">Value</span>
-                                    <input type="text" class="sik-input" name="spec_value[]" maxlength="500" placeholder="6.8 inch QHD+">
+                                    <input type="text" class="sik-input" name="spec_value[]" maxlength="500" placeholder="138 LEDs, warm white">
                                 </label>
                                 <div class="ad-field">
                                     <button type="button" class="ad-btn ad-btn--icon ad-btn--danger-ghost" data-repeat-remove
@@ -544,7 +548,7 @@ $blankVariant = [
                                 <label class="ad-field">
                                     <span class="sik-label">Feature</span>
                                     <input type="text" class="sik-input" name="feature[]" maxlength="300"
-                                           placeholder="200MP quad camera with OIS">
+                                           placeholder="8 lighting modes with memory">
                                 </label>
                                 <div class="ad-field">
                                     <button type="button" class="ad-btn ad-btn--icon ad-btn--danger-ghost" data-repeat-remove
@@ -640,7 +644,7 @@ $blankVariant = [
                     <label class="ad-field">
                         <span class="sik-label">New tags</span>
                         <input type="text" class="sik-input" name="new_tags" value="<?= e($state['new_tags']) ?>"
-                               placeholder="5G, Fast Charging">
+                               placeholder="Diwali, Warm White">
                         <span class="sik-help">Comma separated. Anything new here is created and attached on save.</span>
                     </label>
                 </div>

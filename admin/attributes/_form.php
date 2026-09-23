@@ -118,7 +118,7 @@ $type   = (string) ($attribute['type'] ?? 'select');
                                 <label class="ad-field">
                                     <span class="sik-label">Value</span>
                                     <input class="sik-input" type="text" name="value_name[]" maxlength="150"
-                                           value="<?= e($value['value'] ?? '') ?>" placeholder="e.g. Midnight Black">
+                                           value="<?= e($value['value'] ?? '') ?>" placeholder="e.g. Warm White">
                                 </label>
 
                                 <label class="ad-field">
@@ -170,7 +170,7 @@ $type   = (string) ($attribute['type'] ?? 'select');
                             <label class="ad-field">
                                 <span class="sik-label">Value</span>
                                 <input class="sik-input" type="text" name="value_name[]" maxlength="150"
-                                       placeholder="e.g. Midnight Black">
+                                       placeholder="e.g. Warm White">
                             </label>
 
                             <label class="ad-field">

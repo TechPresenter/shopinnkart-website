@@ -1,9 +1,22 @@
 # ShopInnKart - this directory holds server-side code only.
 # Nothing in here should ever be requested directly over HTTP.
-<IfModule mod_authz_core.c>
-    Require all denied
+#
+# 404 rather than the usual 403, because this folder is under /admin/: a 403
+# says "an admin panel lives here", which is exactly what the hidden admin
+# login address exists to stop a scanner learning. RedirectMatch is answered
+# in the fixup phase, so it needs authorization to allow the request through
+# first - hence no "Require all denied" alongside it. The hard deny is kept
+# for a server without mod_alias, and every file in here also refuses to run
+# without the admin bootstrap that require()s it.
+<IfModule mod_alias.c>
+    RedirectMatch 404 ".*"
 </IfModule>
-<IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
+<IfModule !mod_alias.c>
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </IfModule>
