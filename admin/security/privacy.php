@@ -257,16 +257,35 @@ require ADMIN_PATH . '/includes/header.php';
         privacy_enabled() ? 'customers can run their own' : 'every request comes through here') ?>
 </div>
 
+<?php // The warning is six words; the detail is one click away. It used to be
+      // one 67-word paragraph, and the sentence that matters - that the printed
+      // name survives on tax invoices - was the fourth clause of the third
+      // sentence, which is where a warning goes to be missed. ?>
 <div class="sik-alert sik-alert--warning">
     <?= icon('alert', 'w-5 h-5') ?>
     <div>
-        <strong>Deletion is anonymisation, and it cannot be undone.</strong>
-        The account becomes a tombstone and every trace that points at a person is removed or
-        detached. What survives is the money: orders as numbers, and tax invoices exactly as they
-        were issued &mdash; including the name and address printed on them. Say that to the customer
-        before you run it, not after; the confirmation email says it too.
+        <strong>Deletion is anonymisation. It cannot be undone.</strong>
+        Tax invoices keep the printed name and address.
     </div>
 </div>
+
+<details style="margin:-6px 0 18px">
+    <summary>What survives a deletion, and what to tell the customer</summary>
+    <div class="ad-muted" style="margin-top:8px;display:grid;gap:6px">
+        <p style="margin:0">
+            The account becomes a tombstone: every trace that points at a person is removed or
+            detached.
+        </p>
+        <p style="margin:0">
+            What survives is the money &mdash; orders as numbers, and tax invoices exactly as they
+            were issued, including the name and address printed on them. The store is required to
+            keep those.
+        </p>
+        <p style="margin:0">
+            Say it to the customer before you run it, not after. The confirmation email says it too.
+        </p>
+    </div>
+</details>
 
 <div class="ad-card">
     <div class="ad-card__head">

@@ -50,7 +50,7 @@ $errors = $errors ?? [];
                             <?php if (isset($errors['slug'])): ?>
                                 <span class="sik-error"><?= e($errors['slug']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Leave blank to build it from the name. Used in the brand URL.</span>
+                                <span class="sik-help">Blank builds it from the name. Used in the URL.</span>
                             <?php endif; ?>
                             <?php
                             /* Offers to keep the current URL alive as a 301 when the slug

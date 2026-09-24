@@ -394,10 +394,9 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="sik-alert sik-alert--info">
     <?= icon('info', 'w-5 h-5') ?>
     <div>
-        Only <strong>Cash on Delivery</strong> has a gateway implementation today. The other rows are
-        configuration placeholders: their credentials can be filled in now, but until a
-        <code>PaymentGatewayInterface</code> class is registered for the code they cannot be activated,
-        because checkout would offer an option it is unable to charge.
+        <strong>Only Cash on Delivery can actually charge a shopper.</strong>
+        The other rows hold credentials but cannot be activated until a
+        <code>PaymentGatewayInterface</code> class is registered for the code.
     </div>
 </div>
 
@@ -445,7 +444,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php else: ?>
                             <span class="sik-help">
                                 <?= $isNew
-                                    ? 'Lower case, no spaces. This is what orders store and what the gateway factory looks up.'
+                                    ? 'Lower case, no spaces. Orders store this value.'
                                     : 'Frozen after creation - existing orders reference it.' ?>
                             </span>
                         <?php endif; ?>
@@ -512,7 +511,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php if (isset($errors['status'])): ?>
                                 <span class="sik-error"><?= e($errors['status']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Only a method with a gateway implementation can be set active.</span>
+                                <span class="sik-help">Only a method with a gateway implementation can be active.</span>
                             <?php endif; ?>
                         </div>
 
@@ -577,19 +576,25 @@ require ADMIN_PATH . '/includes/header.php';
                     <label class="sik-label" for="pmConfig">Gateway config (JSON)</label>
                     <textarea class="sik-textarea<?= isset($errors['config']) ? ' is-invalid' : '' ?>"
                               id="pmConfig" name="config" rows="6" spellcheck="false"
-                              style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"
+                              style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--ad-text-sm)"
                               placeholder='{"key_id":"","key_secret":"","mode":"test"}'><?= e((string) $formValue('config')) ?></textarea>
                     <?php if (isset($errors['config'])): ?>
                         <span class="sik-error"><?= e($errors['config']) ?></span>
                     <?php else: ?>
                         <span class="sik-help">
-                            Keys for the gateway, read only by the gateway class &mdash; leave it blank for
-                            offline methods. Secret values (<code>key_secret</code>, <code>webhook_secret</code>,
-                            <code>merchant_salt</code>&hellip;) are encrypted at rest and are never shown here:
-                            they come back <strong>blank, which means "keep the stored one"</strong>.
-                            Type a new value only when you are replacing it.
+                            Blank for offline methods. A secret reads back blank, which keeps it.
                         </span>
                     <?php endif; ?>
+
+                    <details>
+                        <summary>How gateway config is stored</summary>
+                        <p>
+                            The JSON is read only by the gateway class. Secret values
+                            (<code>key_secret</code>, <code>webhook_secret</code>, <code>merchant_salt</code>&hellip;)
+                            are encrypted at rest and never shown here.
+                        </p>
+                        <p>Type a new value only when you are replacing one.</p>
+                    </details>
 
                     <?php if ($storedSecrets !== []): ?>
                         <div class="sik-alert sik-alert--info" style="margin-top:10px">
@@ -718,12 +723,11 @@ require ADMIN_PATH . '/includes/header.php';
         <?php endif; ?>
     </div>
     <div class="ad-card__foot">
-        <span class="ad-muted" style="margin-right:auto;font-size:12.5px">
+        <span class="ad-muted" style="margin-right:auto;font-size:var(--ad-text-xs)">
             <?php if (admin_can('settings.edit')): ?>
-                A method with orders against it cannot be deleted &mdash; set it to inactive so the history stays readable.
+                A method with orders against it cannot be deleted &mdash; set it inactive instead.
             <?php else: ?>
-                You have read-only access to settings. Ask a Super Admin for the
-                <code>settings.edit</code> permission to change anything here.
+                Read-only: changing anything here needs the <code>settings.edit</code> permission.
             <?php endif; ?>
         </span>
     </div>

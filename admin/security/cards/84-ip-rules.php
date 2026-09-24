@@ -92,11 +92,6 @@ return [
 
                 <div class="ad-muted" style="font-size:13px;line-height:1.7">
                     You are on <code class="ad-mono"><?= e($myIp !== '' ? $myIp : 'an unknown address') ?></code>.
-                    A rule that would cover it is refused when you try to save it, so this screen cannot lock you out.
-                    <?php if (!$proxied): ?>
-                        No trusted proxy is configured, so addresses are taken straight from the connection - correct
-                        for a direct host, wrong behind Cloudflare.
-                    <?php endif; ?>
                 </div>
 
                 <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('security/ip-rules.php')) ?>">
@@ -121,6 +116,9 @@ return [
                 <details style="font-size:13px">
                     <summary style="cursor:pointer;font-weight:600">What this is not</summary>
                     <div style="display:grid;gap:8px;margin-top:8px">
+                        <p>It cannot lock you out: a rule covering the address you are on is refused at the
+                           moment you try to save it. With no trusted proxy configured, that address is taken
+                           straight from the connection &mdash; right for a direct host, wrong behind a CDN.</p>
                         <p>It is <strong>not</strong> DDoS protection. A blocked request still wakes PHP, reads one
                            small file and answers 403. That stops a scanner and a password sprayer; it does not stop
                            a flood, and it saves no bandwidth. Anything at that scale belongs at the CDN.</p>

@@ -94,7 +94,7 @@ $iconValue = (string) ($category['icon'] ?? '');
                             <?php if (isset($errors['slug'])): ?>
                                 <span class="sik-error"><?= e($errors['slug']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Leave blank to build it from the name. Used in the category URL.</span>
+                                <span class="sik-help">Blank builds it from the name. Used in the URL.</span>
                             <?php endif; ?>
                             <?php
                             /* Offers to keep the current URL alive as a 301 when the slug
@@ -139,11 +139,17 @@ $iconValue = (string) ($category['icon'] ?? '');
                         <div class="ad-field">
                             <label class="sik-label">Thumbnail image</label>
                             <p class="sik-help" style="margin:-2px 0 8px">
-                                Shown on the homepage category row. A <strong>PNG or SVG</strong> is treated as
-                                artwork and sits inside the circle with space around it; a
-                                <strong>JPG or WEBP</strong> is treated as a photograph and fills it. With no image
-                                the tile borrows a photo from the first product in the category.
+                                Shown on the homepage category row.
                             </p>
+                            <details style="margin:-2px 0 10px">
+                                <summary>How the tile uses this image</summary>
+                                <p>
+                                    A <strong>PNG or SVG</strong> is treated as artwork and sits inside the
+                                    circle with space around it; a <strong>JPG or WEBP</strong> is treated as a
+                                    photograph and fills it. With no image the tile borrows a photo from the
+                                    first product in the category.
+                                </p>
+                            </details>
                             <div class="ad-drop" data-drop="#catImagePreview">
                                 <input type="file" name="image" accept="image/*">
                                 <?= icon('upload', 'w-6 h-6') ?>
@@ -205,9 +211,11 @@ $iconValue = (string) ($category['icon'] ?? '');
                         <?php if (isset($errors['icon'])): ?>
                             <span class="sik-error"><?= e($errors['icon']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Read by the categories API. The storefront menus draw their
-                                glyph from the matching entry in Content &gt; Menu Builder, and the homepage
-                                category rail uses the thumbnail above — neither reads this field.</span>
+                            <?php /* The storefront menus draw their glyph from the matching entry in
+                                     Content > Menu Builder, and the homepage category rail uses the
+                                     thumbnail above. Neither one reads this field. */ ?>
+                            <span class="sik-help">Used by the categories API only — not the
+                                menus or homepage rail.</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -273,9 +281,10 @@ $iconValue = (string) ($category['icon'] ?? '');
                         <span class="ad-switch__track"></span>
                         <span>Show in the main menu</span>
                     </label>
-                    <span class="sik-help" style="margin-top:-8px">Hides it from the header nav, the mega
-                        panels and the mobile drawer. The category page, the shop filters and the sitemap
-                        keep it — use Status for a full removal.</span>
+                    <?php /* Unticking this hides the category from the header nav, the mega panels and
+                             the mobile drawer only. Status is the field that removes it everywhere. */ ?>
+                    <span class="sik-help" style="margin-top:-8px">Nav only — the category page,
+                        shop filters and sitemap keep it.</span>
 
                     <label class="ad-switch">
                         <input type="checkbox" name="is_featured" value="1"

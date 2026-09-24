@@ -21,27 +21,27 @@ const PINCODE_CSV_COLUMNS = ['pincode', 'city', 'state', 'is_serviceable', 'cod_
 
 $spec = [
     'free_shipping_enabled' => [
+        // "Off charges the method cost on every order" is only the label read
+        // backwards, so it is no longer printed under the switch.
         'type' => 'bool', 'label' => 'Enable free shipping',
-        'help' => 'Off charges the method cost on every order regardless of value.',
     ],
     'free_shipping_threshold' => [
         'type' => 'number', 'label' => 'Free shipping above', 'required' => true,
         'min_value' => 0, 'max_value' => 1000000, 'step' => '0.01',
-        'help' => 'Fallback threshold used when no shipping method sets its own.',
     ],
     'default_shipping_cost' => [
         'type' => 'number', 'label' => 'Default shipping cost', 'required' => true,
         'min_value' => 0, 'max_value' => 100000, 'step' => '0.01',
-        'help' => 'Charged only when no active shipping method exists.',
+        'help' => 'Only when no shipping method is active.',
     ],
     'default_delivery_days' => [
         'type' => 'number', 'label' => 'Default delivery days', 'required' => true,
         'min_value' => 1, 'max_value' => 60,
-        'help' => 'Used for the delivery estimate when a pincode has no entry.',
+        'help' => 'Used when a PIN code has no entry.',
     ],
     'cod_enabled' => [
         'type' => 'bool', 'label' => 'Enable Cash on Delivery',
-        'help' => 'Off removes COD at checkout even if the payment method row is active.',
+        'help' => 'Off removes COD even if the payment row is active.',
     ],
     'cod_charge' => [
         'type' => 'number', 'label' => 'COD handling fee', 'required' => true,
@@ -49,14 +49,15 @@ $spec = [
         // The fee charged is the one on the COD row, and policy copy quotes
         // that row too - so this field only matters where there is no active
         // COD row to read. Saying so beats two numbers that silently disagree.
-        'help' => 'Only a fallback: the fee actually charged, and the one policy pages quote, '
-            . 'is the COD handling fee on Settings > Payment.',
+        'help' => 'Fallback only. The fee charged is on Settings > Payment.',
     ],
     'cod_max_amount' => [
         'type' => 'number', 'label' => 'Max order value for COD', 'required' => true,
         'min_value' => 0, 'max_value' => 10000000, 'step' => '0.01',
-        'help' => 'Orders above this must be prepaid. 0 removes the cap. A "max order value" '
-            . 'on the COD row in Settings > Payment applies as well; the lower of the two wins.',
+        // The COD row on Settings > Payment carries its own max order value
+        // and the lower of the two wins. That interaction is in the card's
+        // "When COD is refused anyway" details, not under the field.
+        'help' => 'Above this, prepaid only. 0 removes the cap.',
     ],
     // The counterpart of email_log_retention_days on Settings > Email. The
     // floor is enforced again in shipping_log_retention_days(): a courier
@@ -65,7 +66,7 @@ $spec = [
     'shipping_log_retention_days' => [
         'type' => 'number', 'label' => 'Keep courier API log for (days)', 'required' => true,
         'min_value' => 7, 'max_value' => 3650, 'default' => '30',
-        'help' => 'Every courier call and webhook push is recorded. The polling cron deletes older rows on each run.',
+        'help' => 'Never below 7 days: disputes are argued from these rows.',
     ],
 
     // --- Automatic courier selection ---------------------------------------
@@ -76,54 +77,57 @@ $spec = [
     'shipping_select_weight_cost' => [
         'type' => 'number', 'label' => 'Weight: cost', 'required' => true,
         'min_value' => 0, 'max_value' => 100, 'default' => '40',
-        'help' => 'How much the price matters, next to the other three.',
     ],
     'shipping_select_weight_speed' => [
         'type' => 'number', 'label' => 'Weight: delivery speed', 'required' => true,
         'min_value' => 0, 'max_value' => 100, 'default' => '25',
-        'help' => 'A courier that gives no estimate scores neutral here rather than badly.',
     ],
     'shipping_select_weight_reliability' => [
         'type' => 'number', 'label' => 'Weight: courier performance', 'required' => true,
         'min_value' => 0, 'max_value' => 100, 'default' => '25',
-        'help' => 'Delivered against returned and refused, from your own shipments.',
+        'help' => 'Delivered against returned, from your own shipments.',
     ],
     'shipping_select_weight_rating' => [
         'type' => 'number', 'label' => 'Weight: courier rating', 'required' => true,
         'min_value' => 0, 'max_value' => 100, 'default' => '10',
-        'help' => "The courier's own published rating, where it publishes one.",
+        'help' => "The courier's own published rating.",
     ],
     'shipping_select_window_days' => [
         'type' => 'number', 'label' => 'Performance window (days)', 'required' => true,
         'min_value' => 7, 'max_value' => 730, 'default' => '90',
-        'help' => 'How far back the delivered/returned count looks. Shorter reacts faster and is noisier.',
+        'help' => 'Shorter reacts faster and is noisier.',
     ],
     'shipping_select_min_shipments' => [
         'type' => 'number', 'label' => 'Parcels needed before judging a courier', 'required' => true,
         'min_value' => 1, 'max_value' => 10000, 'default' => '20',
-        'help' => 'Below this, the screens say there is not enough history and score performance neutral '
-            . 'instead of treating three deliveries out of three as a perfect courier.',
+        // Without a floor, three deliveries out of three would read as a
+        // perfect courier. Below it the screens say "not enough history".
+        'help' => 'Below this, performance scores neutral.',
     ],
     'shipping_auto_book_enabled' => [
         'type' => 'bool', 'label' => 'Ship confirmed orders automatically',
-        'help' => 'Off by default. On, a confirmed order books the recommended courier with nobody watching. '
-            . 'Unpaid prepaid orders, blocked orders, PIN codes nobody serves and COD above the ceiling '
-            . 'are always left for a human, and every refusal is in the activity log.',
+        // What is always left for a human - unpaid prepaid orders, blocked
+        // orders, PIN codes nobody serves, COD above the ceiling - is in the
+        // card's details, with every refusal in the activity log.
+        'help' => 'On, a confirmed order books a courier with nobody watching.',
     ],
     'shipping_auto_book_cod_max' => [
         'type' => 'number', 'label' => 'Auto-ship COD ceiling', 'required' => true,
         'min_value' => 0, 'max_value' => 10000000, 'step' => '0.01', 'default' => '10000',
-        'help' => 'A COD order above this is never booked automatically: it is goods handed over against '
-            . 'a promise of cash. 0 removes the ceiling.',
+        // Unattended COD is goods handed over against a promise of cash,
+        // which is why this ceiling is separate from cod_max_amount.
+        'help' => 'Above this, never booked automatically. 0 removes the ceiling.',
     ],
     'shipping_auto_book_max_age_days' => [
         'type' => 'number', 'label' => 'Auto-ship only orders newer than (days)', 'required' => true,
         'min_value' => 0, 'max_value' => 3650, 'default' => '7',
-        'help' => 'What the FIRST pass may touch. The switch above ships off, so by the time it is turned on '
-            . 'there is usually a tail of old confirmed orders that were settled by hand, written off or are '
-            . 'waiting on stock. Without this the first cron pass books couriers for all of them, oldest '
-            . 'first, with nobody watching. Older orders are still bookable by hand. 0 removes the limit and '
-            . 'lets the sweep reach the whole order history.',
+        // This guards the FIRST pass. The switch above ships off, so by the
+        // time it is turned on there is usually a tail of old confirmed
+        // orders that were settled by hand, written off, or are waiting on
+        // stock. Without this the first cron pass books a courier for every
+        // one of them, oldest first, with nobody watching. Older orders stay
+        // bookable by hand.
+        'help' => 'Guards the first pass. 0 lets it book your whole backlog.',
     ],
 ];
 
@@ -570,9 +574,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Delivery charges</div>
-                    <div class="ad-card__sub">
-                        A shipping method with its own free-above value wins; these are the fallbacks.
-                    </div>
+                    <div class="ad-card__sub">Fallbacks. A method with its own free-above value wins.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -598,10 +600,14 @@ require ADMIN_PATH . '/includes/header.php';
                     <?= settings_field('cod_charge', $spec, $values, $errors) ?>
                     <?= settings_field('cod_max_amount', $spec, $values, $errors) ?>
                 </div>
-                <p class="ad-muted" style="font-size:12.5px">
-                    COD is also refused when the delivery PIN code has it switched off below, or when any
-                    product in the cart is marked "no COD".
-                </p>
+                <details>
+                    <summary>When COD is refused anyway</summary>
+                    <p>
+                        The delivery PIN code has COD switched off below; a product in the cart is
+                        marked "no COD"; or the max order value on the COD row in
+                        Settings &rsaquo; Payment is lower than the cap above &mdash; the lower wins.
+                    </p>
+                </details>
             </div>
         </div>
 
@@ -610,22 +616,13 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Automatic courier selection</div>
-                    <div class="ad-card__sub">
-                        How the booking screen, the rate calculator and unattended shipping decide which
-                        courier wins.
-                    </div>
+                    <div class="ad-card__sub">Which courier the store picks, and why.</div>
                 </div>
                 <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('shipping/rates.php')) ?>">
                     <?= icon('truck', 'w-4 h-4') ?> Try it in the rate calculator
                 </a>
             </div>
             <div class="ad-card__body">
-                <p class="ad-muted" style="font-size:12.5px;margin:0 0 12px">
-                    The four weights are relative, not percentages: 40/25/25/10 and 4/2.5/2.5/1 pick the
-                    same courier. A courier that cannot be judged on something &mdash; no delivery
-                    estimate, no rating, not enough history &mdash; scores neutral there, and the screen
-                    says so in words rather than guessing.
-                </p>
                 <div class="ad-grid ad-grid--4" style="gap:12px 16px">
                     <?= settings_field('shipping_select_weight_cost', $spec, $values, $errors) ?>
                     <?= settings_field('shipping_select_weight_speed', $spec, $values, $errors) ?>
@@ -642,12 +639,33 @@ require ADMIN_PATH . '/includes/header.php';
                     <?= settings_field('shipping_auto_book_cod_max', $spec, $values, $errors) ?>
                     <?= settings_field('shipping_auto_book_max_age_days', $spec, $values, $errors) ?>
                 </div>
-                <p class="ad-muted" style="font-size:12.5px;margin:0">
-                    Unattended booking needs the shipment cron (<code>bin/refresh-shipments.php</code>)
-                    to be running: that is what walks the queue. Nothing is ever booked twice, a booking
-                    the courier refuses is left for a human rather than retried forever, and an order it
-                    declines to touch stays bookable by hand on its own shipping screen.
-                </p>
+                <?php /* A callout, not a muted paragraph. This is the one line on the card
+                         that says the switch above it does nothing on its own, and as
+                         12.5px muted prose it rendered as the faintest text in the card,
+                         wrapping under the field help above it as though it belonged to
+                         that input. A box at the card's own body size is the rank it
+                         needs; section 48 of admin.css ranks a callout above help. */ ?>
+                <div class="sik-alert sik-alert--info" style="margin:12px 0 0">
+                    <?= icon('info', 'w-5 h-5') ?>
+                    <div>Unattended booking does nothing until the shipment cron is running.</div>
+                </div>
+                <details>
+                    <summary>How the scoring and unattended booking work</summary>
+                    <p>
+                        The four weights are relative, not percentages: 40/25/25/10 and 4/2.5/2.5/1
+                        pick the same courier. A courier that cannot be judged on something &mdash; no
+                        delivery estimate, no rating, not enough history &mdash; scores neutral there,
+                        and the screen says so in words rather than guessing.
+                    </p>
+                    <p>
+                        <code>bin/refresh-shipments.php</code> is what walks the queue. Nothing is ever
+                        booked twice, and a booking the courier refuses is left for a human rather than
+                        retried forever. Unpaid prepaid orders, blocked orders, PIN codes nobody serves
+                        and COD above the ceiling are always left for a human; every refusal is in the
+                        activity log. An order the sweep declines to touch stays bookable by hand on
+                        its own shipping screen.
+                    </p>
+                </details>
             </div>
         </div>
 
@@ -655,23 +673,27 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Courier API log</div>
-                    <div class="ad-card__sub">
-                        Every call to a courier and every webhook push it sends back, under
-                        Shipping &rsaquo; API log.
-                    </div>
+                    <div class="ad-card__sub">Every courier call and webhook push, under Shipping &rsaquo; API log.</div>
                 </div>
             </div>
             <div class="ad-card__body">
                 <div class="ad-row ad-row--2">
                     <?= settings_field('shipping_log_retention_days', $spec, $values, $errors) ?>
                 </div>
-                <p class="ad-muted" style="font-size:12.5px">
-                    The webhook URL is unauthenticated by nature — a courier cannot hold a login — so
-                    anyone who finds it can add rows here. <code>bin/refresh-shipments.php</code> deletes
-                    what is past this age on every run; without a cron, roughly one log write in 500 does
-                    a smaller pass instead. Seven days is the lowest this goes: a courier dispute is
-                    argued from these rows.
-                </p>
+                <?php /* Same reason as the card above: this names an attack on the log,
+                         so it cannot be the faintest line on the screen. */ ?>
+                <div class="sik-alert sik-alert--warning" style="margin:12px 0 0">
+                    <?= icon('alert', 'w-5 h-5') ?>
+                    <div>The webhook URL is unauthenticated: anyone who finds it can add rows.</div>
+                </div>
+                <details>
+                    <summary>How old rows are deleted</summary>
+                    <p>
+                        A courier cannot hold a login, which is why the webhook URL is open.
+                        <code>bin/refresh-shipments.php</code> deletes what is past this age on every
+                        run; without a cron, roughly one log write in 500 does a smaller pass instead.
+                    </p>
+                </details>
             </div>
             <?= settings_save_bar() ?>
         </div>
@@ -683,7 +705,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Shipping methods</div>
-            <div class="ad-card__sub">What the shopper picks at checkout. The cheapest active method is the default.</div>
+            <div class="ad-card__sub">What the shopper picks. The cheapest active method is the default.</div>
         </div>
         <?php if ($canEdit): ?>
             <button type="button" class="ad-btn ad-btn--primary ad-btn--sm"
@@ -783,8 +805,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div>
                 <div class="ad-card__title">Nothing was imported</div>
                 <div class="ad-card__sub">
-                    <?= count($importErrors) ?> problem(s) found. The import runs in one transaction,
-                    so no rows were written &mdash; fix the file and upload it again.
+                    <?= count($importErrors) ?> problem(s). Nothing was written &mdash; fix the file and upload it again.
                 </div>
             </div>
         </div>
@@ -824,10 +845,12 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <div class="ad-card__title">PIN code serviceability</div>
-                <div class="ad-card__sub">
-                    Checkout blocks an address whose PIN code is listed as not serviceable.
-                    A PIN code that is not on this list at all is accepted with the default delivery estimate.
-                </div>
+                <?php
+                // A PIN code that is NOT on this list is accepted with the default delivery
+                // estimate - the list blocks, it does not allow. Said in the subtitle because
+                // assuming the opposite is how a store quietly refuses half its addresses.
+                ?>
+                <div class="ad-card__sub">Not serviceable blocks checkout. Unlisted PIN codes are accepted.</div>
             </div>
             <?php if ($canEdit): ?>
                 <button type="button" class="ad-btn ad-btn--primary ad-btn--sm"
@@ -929,7 +952,7 @@ require ADMIN_PATH . '/includes/header.php';
 
         <?php if ($pagination['last'] > 1): ?>
             <div class="ad-card__foot" style="justify-content:space-between">
-                <span class="ad-muted" style="font-size:12.5px">
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                     Showing <?= (int) $pagination['from'] ?>&ndash;<?= (int) $pagination['to'] ?>
                     of <?= number_format((int) $pagination['total']) ?>
                 </span>
@@ -961,23 +984,25 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
                         <div class="ad-preview" id="pincodeCsvPreview"></div>
                         <span class="sik-help">
-                            Rows are matched on <code>pincode</code>, so an existing entry is updated instead of duplicated.
-                            Up to <?= number_format(PINCODE_IMPORT_MAX_ROWS) ?> rows and
-                            <?= e(format_bytes(MAX_UPLOAD_SIZE)) ?> per file.
+                            Matched on <code>pincode</code>: an existing row is updated, not duplicated.
                         </span>
                     </div>
 
                     <button type="submit" class="ad-btn ad-btn--primary ad-btn--block">
                         <?= icon('upload', 'w-4 h-4') ?> Validate &amp; import
                     </button>
+
+                    <details>
+                        <summary>CSV format</summary>
+                        <p>
+                            Columns: <?= e(implode(', ', PINCODE_CSV_COLUMNS)) ?>.
+                            <code>pincode</code>, <code>city</code> and <code>state</code> are required;
+                            the flags accept 1/0 or yes/no and default to yes. Up to
+                            <?= number_format(PINCODE_IMPORT_MAX_ROWS) ?> rows and
+                            <?= e(format_bytes(MAX_UPLOAD_SIZE)) ?> per file.
+                        </p>
+                    </details>
                 </form>
-                <div class="ad-card__foot">
-                    <span class="ad-muted" style="font-size:12.5px;margin-right:auto">
-                        Columns: <?= e(implode(', ', PINCODE_CSV_COLUMNS)) ?>.
-                        <code>pincode</code>, <code>city</code> and <code>state</code> are required;
-                        the flags accept 1/0 or yes/no and default to yes.
-                    </span>
-                </div>
             </div>
         <?php endif; ?>
     </div>

@@ -31,7 +31,7 @@ const SEO_ROBOTS_OPTIONS = [
 $spec = [
     'meta_title' => [
         'type' => 'text', 'label' => 'Default meta title', 'required' => true, 'max' => 255,
-        'help' => 'Used when a page has nothing more specific. Aim for 50-60 characters.',
+        'help' => '50-60 characters. Used when a page sets none.',
     ],
     'meta_description' => [
         'type' => 'textarea', 'label' => 'Default meta description', 'max' => 320, 'rows' => 3,
@@ -43,7 +43,7 @@ $spec = [
     ],
     'og_image' => [
         'type' => 'image', 'label' => 'Default social share image', 'folder' => 'seo',
-        'help' => '1200x630 works everywhere. Used whenever a page has no image of its own.',
+        'help' => '1200x630. Used when a page has no image of its own.',
     ],
     'google_analytics_id' => [
         'type' => 'text', 'label' => 'Google Analytics ID', 'max' => 60,
@@ -55,7 +55,7 @@ $spec = [
     ],
     'google_site_verification' => [
         'type' => 'text', 'label' => 'Google site verification', 'max' => 190,
-        'help' => 'The content value of the verification meta tag, not the whole tag.',
+        'help' => 'The content value, not the whole tag.',
     ],
 ];
 
@@ -209,6 +209,9 @@ $values = settings_values($spec, $stored);
 
 $pages = Database::fetchAll('SELECT * FROM `seo_settings` ORDER BY `page_key`');
 
+// Storefront routes have no delete: seo_from_page() looks a row up by key, so
+// removing one would break the lookup rather than clear the override. Clearing
+// the fields is the same result and keeps the row.
 $editing = null;
 $pageParam = (string) ($_GET['page'] ?? '');
 if ($pageParam === 'new') {
@@ -281,8 +284,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--info" style="margin:0">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        These identifiers are stored for the storefront head. Keep them empty on a staging
-                        copy so test traffic never reaches your production analytics property.
+                        Keep these blank on a staging copy, or test traffic reaches your production property.
                     </div>
                 </div>
             </div>
@@ -441,7 +443,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php if (isset($errors['canonical'])): ?>
                             <span class="sik-error"><?= e($errors['canonical']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Leave blank to let the page canonicalise to its own URL.</span>
+                            <span class="sik-help">Blank canonicalises to the page's own URL.</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -541,9 +543,8 @@ require ADMIN_PATH . '/includes/header.php';
         <?php endif; ?>
     </div>
     <div class="ad-card__foot">
-        <span class="ad-muted" style="font-size:12.5px;margin-right:auto">
-            Storefront routes cannot be deleted &mdash; clearing their fields is the same thing, without
-            breaking the lookup.
+        <span class="ad-muted" style="font-size:var(--ad-text-xs);margin-right:auto">
+            Storefront routes cannot be deleted &mdash; clear their fields instead.
         </span>
     </div>
 </div>

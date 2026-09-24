@@ -752,11 +752,13 @@ require ADMIN_PATH . '/includes/header.php';
         </div><!-- /.ad-card__body -->
     </div><!-- /.ad-card -->
 
-    <p class="ad-muted" style="margin-top:14px;font-size:12.5px">
-        Stock goes back on the shelf when the ORDER first reaches Returned or Cancelled, which is why that
-        is what "Stock restored" reads - not the courier's status. Refunds are made on the
-        <a href="<?= e(admin_url('orders/returns.php')) ?>">Return requests</a> screen, which is also where a
-        customer's request is approved or rejected.
+    <?php /* Why "Stock restored" reads off the order and not the consignment: stock
+             goes back exactly once, when the ORDER first enters a releasing status
+             (Returned or Cancelled), so the courier's status is the wrong thing to
+             read. The full rule is in this file's docblock. */ ?>
+    <p class="ad-muted" style="margin-top:14px;font-size:var(--ad-text-xs)">
+        "Stock restored" follows the order's status, not the courier's. Refunds and decisions
+        are on <a href="<?= e(admin_url('orders/returns.php')) ?>">Return requests</a>.
     </p>
 
 </div>

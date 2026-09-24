@@ -32,7 +32,6 @@ foreach (SOCIAL_NETWORKS as $key => [$iconName, $label, $placeholder]) {
         'label'       => $label,
         'max'         => 255,
         'placeholder' => $placeholder,
-        'help'        => 'Leave blank to hide the ' . $label . ' icon.',
     ];
 }
 
@@ -76,9 +75,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Profile links</div>
-                    <div class="ad-card__sub">
-                        Full URLs including https://. A blank field removes that network everywhere it appears.
-                    </div>
+                    <div class="ad-card__sub">Full URLs. Blank hides that network everywhere.</div>
                 </div>
             </div>
             <div class="ad-card__body" style="display:grid;gap:4px">
@@ -108,9 +105,11 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
             </div>
             <div class="ad-card__body">
+                <?php /* Each rendered icon carries target="_blank" rel="noopener noreferrer",
+                         the same as the storefront footer does. */ ?>
                 <?php if ($filled === 0): ?>
                     <p class="ad-muted" style="font-size:13px">
-                        No links saved, so the footer prints no social row at all.
+                        No links saved: the footer prints no social row.
                     </p>
                 <?php else: ?>
                     <div style="display:flex;flex-wrap:wrap;gap:10px;padding:16px;border-radius:var(--ad-radius);
@@ -127,9 +126,7 @@ require ADMIN_PATH . '/includes/header.php';
                             </a>
                         <?php endforeach; ?>
                     </div>
-                    <p class="ad-muted" style="font-size:12.5px;margin-top:12px">
-                        Each icon opens in a new tab with <code>rel="noopener"</code>, the same as on the storefront.
-                    </p>
+
                 <?php endif; ?>
             </div>
         </div>
@@ -139,8 +136,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--info" style="margin:0">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        These URLs are also emitted as <code>sameAs</code> entries in the Organization
-                        structured data, which is how search engines tie the profiles to the store.
+                        Also emitted as Organization <code>sameAs</code>, which ties the profiles to the store.
                     </div>
                 </div>
             </div>

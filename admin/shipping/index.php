@@ -73,11 +73,11 @@ require ADMIN_PATH . '/includes/header.php';
 
     <?php if (ShippingProviderFactory::available() === []): ?>
         <div class="ad-card" style="margin-bottom:16px;border-left:3px solid var(--ad-primary)"><div class="ad-card__body">
+            <?php /* The Mock Courier is named because it is the one way to exercise
+                     booking, tracking and returns before a real account exists. */ ?>
             <strong>No courier is live yet.</strong>
-            Configure one below and set it to Active. The
-            <strong>Mock Courier</strong> runs the whole booking, tracking and
-            return flow without an account, so the rest of the shipping screens
-            can be used before a real integration exists.
+            Configure one below and set it Active. The <strong>Mock Courier</strong>
+            needs no account.
         </div></div>
     <?php endif; ?>
 
@@ -109,11 +109,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <h2 class="ad-card__title">Automatic courier selection</h2>
-                <div class="ad-card__sub">
-                    Every quote is scored on cost, promised days, the courier's own delivered-against-returned
-                    record and its rating. The booking screen pre-selects the winner; an admin can still pick
-                    any other rate in one click.
-                </div>
+                <div class="ad-card__sub">Which courier the store picks, and why.</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
                 <a class="ad-btn ad-btn--primary ad-btn--sm" href="<?= e(admin_url('shipping/rates.php')) ?>">
@@ -137,27 +133,63 @@ require ADMIN_PATH . '/includes/header.php';
                 <strong>speed <?= e($pctWeight((float) $selectWeights['speed'])) ?></strong>,
                 <strong>performance <?= e($pctWeight((float) $selectWeights['reliability'])) ?></strong>,
                 <strong>rating <?= e($pctWeight((float) $selectWeights['rating'])) ?></strong>
-                over the last <?= (int) shipping_performance_window() ?> days, judging a courier only once it
-                has <?= (int) shipping_performance_minimum() ?> settled parcels behind it.
+                over <?= (int) shipping_performance_window() ?> days, after
+                <?= (int) shipping_performance_minimum() ?> settled parcels.
             </p>
+            <?php /* The two unlimited branches are the ones that cost money, so each
+                     gets its own blunt line rather than a clause at the end of a
+                     paragraph: no COD ceiling means a cash order can leave the
+                     warehouse with nobody having looked at it, and no age limit means
+                     the sweep reaches orders settled by hand months ago. The cron file
+                     (bin/refresh-shipments.php) and the "within one cron interval, not
+                     at confirmation" timing live in the <details> below. */ ?>
             <p style="margin:0">
                 <?php if ($autoShip): ?>
                     <span class="sik-status sik-status--green">Automatic shipping is ON</span>
-                    Confirmed orders book themselves with the recommended courier on each pass of the
-                    shipment cron (<code>bin/refresh-shipments.php</code>) - not the moment they are
-                    confirmed, so a booking follows within one cron interval.
-                    <?= $autoCodMax > 0
-                        ? 'COD above ' . e(money($autoCodMax)) . ' is left for a person.'
-                        : 'There is no COD ceiling, so any cash-on-delivery order may go out unattended.' ?>
-                    <?= $autoMaxAge > 0
-                        ? 'Only orders placed in the last ' . (int) $autoMaxAge . ' days are swept; older ones wait for a person.'
-                        : 'There is no age limit, so the sweep reaches the whole order history - including orders long since settled by hand.' ?>
-                    <span class="ad-muted"><?= (int) $autoWaiting ?> order<?= $autoWaiting === 1 ? '' : 's' ?> waiting for the next cron pass.</span>
+                    Confirmed orders book themselves on each cron pass.
+                    <span class="ad-muted"><?= (int) $autoWaiting ?> waiting for the next one.</span>
                 <?php else: ?>
                     <span class="sik-status sik-status--gray">Automatic shipping is OFF</span>
-                    Every booking is made by a person. The recommendation is advice, not an action.
+                    Every booking is made by a person.
                 <?php endif; ?>
             </p>
+            <?php if ($autoShip && ($autoCodMax <= 0 || $autoMaxAge <= 0)): ?>
+                <div class="sik-alert sik-alert--warning" style="margin:10px 0 0">
+                    <?= icon('alert', 'w-5 h-5') ?>
+                    <div>
+                        <?php if ($autoCodMax <= 0): ?>
+                            No COD ceiling: any cash-on-delivery order may go out unattended.<br>
+                        <?php endif; ?>
+                        <?php if ($autoMaxAge <= 0): ?>
+                            No age limit: the sweep reaches the whole order history.
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
+            <?php if ($autoShip && $autoCodMax > 0 && $autoMaxAge > 0): ?>
+                <p class="ad-muted" style="margin:8px 0 0">
+                    COD over <?= e(money($autoCodMax)) ?> and orders older than
+                    <?= (int) $autoMaxAge ?> days wait for a person.
+                </p>
+            <?php endif; ?>
+            <details style="margin-top:12px">
+                <summary style="cursor:pointer;font-weight:600">How the scoring works</summary>
+                <div class="ad-muted" style="margin-top:8px">
+                    <p style="margin:0 0 8px">
+                        Every quote is scored on cost, promised days, the courier's own
+                        delivered-against-returned record and its rating. The four weights are
+                        relative, not percentages. A courier that cannot be judged on something -
+                        no estimate, no rating, not enough history - scores neutral there rather
+                        than badly, and the rate calculator says so in words.
+                    </p>
+                    <p style="margin:0">
+                        The booking screen pre-selects the winner; an admin can still pick any
+                        other rate in one click. With automatic shipping on, the booking is made
+                        by the shipment cron (<code>bin/refresh-shipments.php</code>) rather than
+                        at the moment of confirmation, so it follows within one cron interval.
+                    </p>
+                </div>
+            </details>
         </div>
         <?php if (admin_can('settings.edit')): ?>
             <div class="ad-card__foot">
@@ -171,8 +203,9 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card">
         <div class="ad-card__head">
             <div>
+                <?php // "Each one is a driver" was developer framing on an operations screen;
+                      // the same fact is in the "Adding a courier" card below. ?>
                 <h2 class="ad-card__title">Courier integrations</h2>
-                <div class="ad-card__sub">Each one is a driver. Adding a courier adds a class, not a schema change.</div>
             </div>
         </div>
 
@@ -280,23 +313,29 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <h2 class="ad-card__title">Adding a courier</h2>
-                <div class="ad-card__sub">What it takes to support one that is not listed.</div>
+                <div class="ad-card__sub">Three steps, no schema change.</div>
             </div>
         </div>
         <div class="ad-card__body">
-            <p class="ad-muted" style="margin:0 0 10px">
-                Write a class implementing <code>ShippingProviderInterface</code> in
-                <code>includes/shipping/</code>, register it in
-                <code>ShippingProviderFactory</code>, and insert a row in
-                <code>shipping_providers</code> with the same code. Nothing in the order,
-                payment, product or customer modules changes.
-            </p>
             <p class="ad-muted" style="margin:0">
                 Drivers installed:
                 <?php foreach (ShippingProviderFactory::implementedCodes() as $implementedCode): ?>
                     <span class="ad-mono"><?= e($implementedCode) ?></span>
                 <?php endforeach; ?>
             </p>
+            <?php /* The three steps are for whoever writes the driver, not for the
+                     operator reading this screen with a customer on the phone, so they
+                     are opt-in rather than inline. */ ?>
+            <details style="margin-top:10px">
+                <summary style="cursor:pointer;font-weight:600">What it takes to add one</summary>
+                <p class="ad-muted" style="margin:8px 0 0">
+                    Write a class implementing <code>ShippingProviderInterface</code> in
+                    <code>includes/shipping/</code>, register it in
+                    <code>ShippingProviderFactory</code>, and insert a row in
+                    <code>shipping_providers</code> with the same code. Nothing in the order,
+                    payment, product or customer modules changes.
+                </p>
+            </details>
         </div>
     </div>
 </div>

@@ -225,7 +225,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <div class="ad-card__title">Deal performance</div>
-                <div class="ad-card__sub">Sales of deal products while the deal was live inside this range</div>
+                <div class="ad-card__sub">Sales while each deal was live in this range</div>
             </div>
         </div>
         <div class="ad-card__body ad-card__body--flush">
@@ -285,7 +285,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <div class="ad-card__title">Flash sale performance</div>
-                <div class="ad-card__sub">Sales of flash-sale products while the sale was live inside this range</div>
+                <div class="ad-card__sub">Sales while each sale was live in this range</div>
             </div>
         </div>
         <div class="ad-card__body ad-card__body--flush">
@@ -383,7 +383,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div>
                 <div class="ad-card__title">Popup impressions vs conversions</div>
                 <div class="ad-card__sub">
-                    Lifetime counters on each popup &mdash; not limited to the selected range
+                    Lifetime counters &mdash; not limited to the selected range
                 </div>
             </div>
         </div>
@@ -517,9 +517,10 @@ require ADMIN_PATH . '/includes/header.php';
         <?php endif; ?>
     </div>
     <?php if ((int) ($searchStats['zero_results'] ?? 0) > 0): ?>
-        <div class="ad-card__foot ad-muted" style="font-size:12.5px">
-            Terms marked <strong>No results</strong> are demand you are not serving &mdash; either the product is
-            missing from the catalogue or it is named something customers do not use.
+        <?php // The two causes worth checking, in order: the product is missing from
+              // the catalogue, or it is there under a name customers do not use. ?>
+        <div class="ad-card__foot ad-muted" style="font-size:var(--ad-text-xs)">
+            Terms marked <strong>No results</strong> are demand you are not serving.
         </div>
     <?php endif; ?>
 </div>

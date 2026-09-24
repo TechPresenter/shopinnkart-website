@@ -164,7 +164,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
             </button>
         </form>
 
-        <p style="text-align:center;font-size:12.5px;color:var(--ad-muted);margin-top:22px">
+        <p style="text-align:center;font-size:var(--ad-text-sm);color:var(--ad-muted);margin-top:22px">
             <a href="<?= e(url()) ?>" style="color:var(--ad-primary);font-weight:600">&larr; Back to storefront</a>
         </p>
     </div>

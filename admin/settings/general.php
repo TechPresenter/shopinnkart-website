@@ -17,7 +17,7 @@ require_once ADMIN_PATH . '/settings/_layout.php';
 $spec = [
     'store_name' => [
         'type' => 'text', 'label' => 'Store name', 'required' => true, 'max' => 100,
-        'help' => 'Used in the browser title, emails and the admin header.',
+        'help' => 'Browser title, emails and the admin header.',
     ],
     'store_tagline' => [
         'type' => 'text', 'label' => 'Tagline', 'max' => 150,
@@ -25,23 +25,23 @@ $spec = [
     ],
     'store_description' => [
         'type' => 'textarea', 'label' => 'Store description', 'max' => 500, 'rows' => 4,
-        'help' => 'Shown in the footer and used as the fallback meta description.',
+        'help' => 'Footer, and the fallback meta description.',
     ],
     'store_logo' => [
         'type' => 'image', 'label' => 'Primary logo', 'folder' => 'branding',
-        'help' => 'Shown on light backgrounds. SVG or a transparent PNG works best.',
+        'help' => 'For light backgrounds. SVG or transparent PNG.',
     ],
     'store_logo_light' => [
         'type' => 'image', 'label' => 'Light logo', 'folder' => 'branding',
-        'help' => 'Used on the dark footer and the admin sidebar.',
+        'help' => 'Dark footer and admin sidebar.',
     ],
     'store_favicon' => [
         'type' => 'image', 'label' => 'Favicon', 'folder' => 'branding',
-        'help' => 'Browser tab icon. A square SVG or 32x32 PNG.',
+        'help' => 'Browser tab icon. Square SVG or 32x32 PNG.',
     ],
     'store_email' => [
         'type' => 'email', 'label' => 'Support email', 'required' => true, 'max' => 190,
-        'help' => 'Printed in the footer and used as the reply-to address on every email.',
+        'help' => 'Reply-to on every email, and in the footer.',
     ],
     'store_phone' => [
         'type' => 'tel', 'label' => 'Support phone', 'max' => 30,
@@ -49,11 +49,11 @@ $spec = [
     ],
     'store_whatsapp' => [
         'type' => 'text', 'label' => 'WhatsApp number', 'max' => 20,
-        'help' => 'Digits with the country code and no +, e.g. 919876543210. Blank hides the floating button.',
+        'help' => 'Country code, no +, e.g. 919876543210. Blank hides the button.',
     ],
     'store_address' => [
         'type' => 'textarea', 'label' => 'Registered address', 'max' => 400, 'rows' => 3,
-        'help' => 'Appears in the footer and at the bottom of every email.',
+        'help' => 'Footer, and the foot of every email.',
     ],
     'business_hours' => [
         'type' => 'text', 'label' => 'Business hours', 'max' => 150,
@@ -70,19 +70,19 @@ $spec = [
     'credit_text' => [
         'type' => 'text', 'label' => 'Credit line', 'max' => 160,
         'placeholder' => 'Design and developed by AppsGain Technologies',
-        'help'  => 'Printed beside the copyright in the footer. Leave empty to hide it.',
+        'help'  => 'Beside the copyright. Blank hides it.',
     ],
     'credit_url' => [
         'type' => 'url', 'label' => 'Credit link', 'max' => 255,
         'placeholder' => 'https://appsgain.in',
-        'help'  => 'Where the credit line links. Leave empty to print it as plain text.',
+        'help'  => 'Blank prints it as plain text.',
     ],
     'maintenance_mode' => [
         'type' => 'bool', 'label' => 'Maintenance mode',
     ],
     'maintenance_message' => [
         'type' => 'textarea', 'label' => 'Maintenance message', 'max' => 500, 'rows' => 3,
-        'help' => 'Shown on the holding page while maintenance mode is on.',
+        'help' => 'Shown on the holding page.',
     ],
 ];
 
@@ -112,8 +112,7 @@ require ADMIN_PATH . '/includes/header.php';
         <?= icon('alert', 'w-5 h-5') ?>
         <div>
             <strong>The storefront is offline.</strong>
-            Every visitor gets a 503 holding page. Only signed-in admins can browse the shop
-            while maintenance mode is on.
+            Every visitor gets a 503. Admins already signed in can still browse.
         </div>
     </div>
 <?php endif; ?>
@@ -150,8 +149,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div>
                         <div class="ad-card__title">Logos &amp; favicon</div>
                         <div class="ad-card__sub">
-                            Up to <?= e(format_bytes(MAX_UPLOAD_SIZE)) ?> per file.
-                            Removing an image falls back to the packaged default.
+                            Up to <?= e(format_bytes(MAX_UPLOAD_SIZE)) ?> each. Removing one restores the default.
                         </div>
                     </div>
                 </div>
@@ -168,7 +166,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <div class="ad-card__title">Contact &amp; legal</div>
-                        <div class="ad-card__sub">Printed in the footer, on invoices and in every notification email.</div>
+                        <div class="ad-card__sub">Printed in the footer, on invoices and in every email.</div>
                     </div>
                 </div>
                 <div class="ad-card__body">
@@ -194,18 +192,21 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__body" style="display:grid;gap:14px">
                     <div class="sik-alert sik-alert--warning" style="margin:0">
                         <?= icon('alert', 'w-5 h-5') ?>
-                        <div>
-                            Turning this on takes the whole storefront offline. Shoppers, search
-                            engine crawlers and the API all receive a 503 holding page carrying the
-                            message below. Only admins who are already signed in can keep browsing,
-                            and the admin panel itself stays reachable.
-                        </div>
+                        <div><strong>Takes the whole storefront offline.</strong> Shoppers, crawlers and the API all get a 503.</div>
                     </div>
 
                     <?= settings_field('maintenance_mode', $spec, $values, $errors) ?>
                     <?= settings_field('maintenance_message', $spec, $values, $errors) ?>
 
-                    <p class="ad-muted" style="font-size:12.5px">
+                    <details>
+                        <summary>What stays reachable</summary>
+                        <p>
+                            The 503 holding page carries the message above. Admins already signed in
+                            keep browsing the shop, and the admin panel itself stays reachable.
+                        </p>
+                    </details>
+
+                    <p class="ad-muted" style="font-size:var(--ad-text-xs)">
                         Current state:
                         <?= $maintenanceOn
                             ? '<span class="sik-status sik-status--red">Storefront offline</span>'

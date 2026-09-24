@@ -98,7 +98,7 @@ return [
                        value="<?= e_attr((string) (old($key, null) ?? $value)) ?>">
                 <?php if (isset($errors[$key])): ?>
                     <span class="sik-error"><?= e($errors[$key]) ?></span>
-                <?php else: ?>
+                <?php elseif ($help !== ''): ?>
                     <span class="sik-help"><?= $help ?></span>
                 <?php endif; ?>
             </div>
@@ -109,10 +109,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Sign-in throttles</h2>
-                    <div class="ad-card__sub">
-                        Brute force is stopped at the guesser, not at the account. Accounts are never locked:
-                        locking one was a way for anybody who knew an email address to keep its owner out.
-                    </div>
+                    <div class="ad-card__sub">Stopped at the guesser. Accounts are never locked.</div>
                 </div>
                 <span class="sik-status sik-status--<?= $blocked > 0 ? 'amber' : 'green' ?>">
                     <?= (int) $blocked ?> blocked / 24h
@@ -123,7 +120,7 @@ return [
                 <?php if ($alerts > 0): ?>
                     <div class="sik-alert sik-alert--warning">
                         <?= icon('alert', 'w-5 h-5') ?>
-                        <div><?= (int) $alerts ?> account(s) were guessed at in the last 24 hours. Their owners were emailed.</div>
+                        <div><?= (int) $alerts ?> account(s) were guessed at in 24 hours. Their owners were emailed.</div>
                     </div>
                 <?php endif; ?>
 
@@ -133,16 +130,16 @@ return [
                         <input type="hidden" name="action" value="throttles_save">
 
                         <?php $field('sec_login_ip_max', 'Attempts per device, per 15 minutes', $limits['ip'],
-                            'Refused past this. Counted whether the attempt succeeds or not and never cleared by signing in &mdash; otherwise one valid account of the guesser\'s own would reopen the budget on demand. It ages out with its own window, and the button below empties it.', $errors); ?>
+                            'Counted even when the sign-in succeeds.', $errors); ?>
 
                         <?php $field('sec_login_ip_daily', 'Attempts per device, per day', $limits['ip_day'],
-                            'The ceiling on a patient attacker who spreads the guesses out.', $errors); ?>
+                            '', $errors); ?>
 
                         <?php $field('sec_login_account_max', 'Attempts per device on one account, per 15 minutes', $limits['account'],
-                            'Also the point at which the account\'s owner is emailed and strangers start waiting a moment per try. Devices that have signed in before are never delayed.', $errors); ?>
+                            'Also when the owner is emailed.', $errors); ?>
 
                         <?php $field('sec_login_global_max', 'Failures across the whole store, per 15 minutes', $limits['global'],
-                            'Recorded in the event log only, never refused - refusing here would let one attacker stop every customer signing in. 0 switches the signal off.', $errors); ?>
+                            'Logged, never refused. 0 switches the signal off.', $errors); ?>
 
                         <div style="display:flex;gap:8px;flex-wrap:wrap">
                             <button type="submit" class="ad-btn ad-btn--primary">
@@ -165,6 +162,21 @@ return [
                         <?= (int) $limits['account'] ?> per account.
                     </p>
                 <?php endif; ?>
+
+                <details style="font-size:13px">
+                    <summary style="cursor:pointer;font-weight:600">How the counters work</summary>
+                    <div style="display:grid;gap:8px;margin-top:8px">
+                        <p>Locking an account was a way for anybody who knew an email address to keep its
+                           owner out, so nothing here locks one. The guesser is refused instead.</p>
+                        <p>The per-device count is never cleared by signing in &mdash; otherwise one valid
+                           account of the guesser&rsquo;s own would reopen the budget on demand. It ages out
+                           with its own window, and the button above empties it.</p>
+                        <p>Past the per-account limit the owner is emailed and strangers start waiting a
+                           moment per try; devices that have signed in before are never delayed.</p>
+                        <p>The store-wide figure is only a signal. Refusing on it would let one attacker
+                           stop every customer signing in.</p>
+                    </div>
+                </details>
             </div>
         </div>
         <?php

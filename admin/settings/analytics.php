@@ -58,14 +58,15 @@ $spec = [
         'options' => ANALYTICS_MODES,
         'default' => 'anonymous',
         'group'   => 'analytics',
-        'help'    => 'Anonymous is the shipped choice: no cookie, no stored IP, so no consent banner is needed for it.',
+        // No help line: each option above already states its own consequence,
+        // including that anonymous needs no banner.
     ],
     'analytics_honor_dnt' => [
         'type'    => 'bool',
         'label'   => 'Honour Do Not Track and Global Privacy Control',
         'default' => '1',
         'group'   => 'analytics',
-        'help'    => 'When the browser sends one of these signals, no tag is loaded and advertising is treated as refused.',
+        'help'    => 'No tag loads, and advertising is treated as refused.',
     ],
     'google_tag_manager_id' => [
         'type'          => 'text',
@@ -74,8 +75,9 @@ $spec = [
         'placeholder'   => 'GTM-XXXXXXX',
         'group'         => 'analytics',
         'pattern'       => '/^GTM-[A-Z0-9]{4,10}$/i',
+        // "Loads only after the visitor allows advertising" is the card
+        // subtitle's job; it is true of every tag on this card.
         'pattern_error' => 'A Tag Manager container ID looks like GTM-ABC1234.',
-        'help'          => 'Loads only after the visitor allows advertising. Blank means no container is printed.',
     ],
     'clarity_project_id' => [
         'type'          => 'text',
@@ -85,7 +87,7 @@ $spec = [
         'group'         => 'analytics',
         'pattern'       => '/^[a-z0-9]{6,15}$/i',
         'pattern_error' => 'A Clarity project ID is 6-15 letters and digits.',
-        'help'          => 'Session recording and heatmaps. Treated as advertising, because it records the visitor.',
+        'help'          => 'Session recording and heatmaps. Counts as advertising.',
     ],
     'consent_banner_title' => [
         'type'        => 'text',
@@ -93,7 +95,7 @@ $spec = [
         'max'         => 120,
         'placeholder' => 'Your choice about cookies',
         'group'       => 'analytics',
-        'help'        => 'Leave blank to use the shipped wording, which matches the Cookie Policy.',
+        'help'        => 'Blank uses the shipped wording.',
     ],
     'consent_banner_text' => [
         'type'        => 'textarea',
@@ -101,7 +103,7 @@ $spec = [
         'max'         => 600,
         'rows'        => 4,
         'group'       => 'analytics',
-        'help'        => 'Leave blank to use the shipped wording. If you change it, change the Cookie Policy to match.',
+        'help'        => 'Blank uses the shipped wording; edit the Cookie Policy to match.',
     ],
     'analytics_exclude_ips' => [
         'type'        => 'textarea',
@@ -110,8 +112,7 @@ $spec = [
         'rows'        => 3,
         'group'       => 'analytics',
         'placeholder' => "203.0.113.0/24\n198.51.100.7",
-        'help'        => 'Your office, warehouse or VPN. One per line, or comma separated; a single address or a '
-                       . 'CIDR range. Leave blank unless your own browsing is distorting the numbers.',
+        'help'        => 'One per line, or comma separated. Address or CIDR range.',
     ],
     'analytics_retention_days' => [
         'type'      => 'number',
@@ -126,24 +127,23 @@ $spec = [
         'min_value' => 30,
         'max_value' => 180,
         'group'     => 'analytics',
-        'help'      => 'How long the individual visits are kept, between 30 and 180 days. The daily totals '
-                     . 'your reports read are kept for good, so shortening this loses detail, never history.',
+        'help'      => 'Shortening loses detail, never the daily totals.',
     ],
     'analytics_debug_timing' => [
         'type'    => 'bool',
         'label'   => 'Log how long each beacon takes',
         'default' => '0',
         'group'   => 'analytics',
-        'help'    => 'Writes one line per beacon to the application log. For diagnosing a slow store; leave it '
-                   . 'off, or the log grows with your traffic.',
+        // One line per beacon in the application log; for diagnosing a slow
+        // store, not for everyday use.
+        'help'    => 'Leave off: the log grows with your traffic.',
     ],
     'analytics_rollup_on_demand' => [
         'type'    => 'bool',
         'label'   => 'Update the totals when a report is opened',
         'default' => '1',
         'group'   => 'analytics',
-        'help'    => 'Leave this on unless your host runs the nightly job. It catches up at most three days '
-                   . 'and at most once every fifteen minutes, so a report is never slow because of it.',
+        'help'    => 'Leave on unless your host runs the nightly job.',
     ],
     'analytics_commerce_window_days' => [
         'type'      => 'number',
@@ -156,9 +156,10 @@ $spec = [
         'min_value' => 1,
         'max_value' => 180,
         'group'     => 'analytics',
-        'help'      => 'An order confirmed, cancelled or refunded after the fact changes the day it was '
-                     . 'placed on. This is how far back the nightly job goes to correct it. Longer than your '
-                     . 'returns window is the right answer.',
+        // An order confirmed, cancelled or refunded after the fact changes
+        // the day it was PLACED on, so the nightly job has to revisit that
+        // day. Anything shorter than the returns window leaves it wrong.
+        'help'      => 'Longer than your returns window is the right answer.',
     ],
 ];
 
@@ -368,10 +369,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Third-party tags</div>
-                    <div class="ad-card__sub">
-                        Google and Meta scripts that run in your shopper's browser. None of them loads
-                        until the visitor allows the advertising category.
-                    </div>
+                    <div class="ad-card__sub">Google and Meta scripts. None loads until the visitor allows advertising.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -381,9 +379,9 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--info" style="margin:0">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        The Google Analytics and Meta Pixel IDs are edited in
-                        <a href="<?= e(settings_url('seo')) ?>">Settings &rsaquo; SEO</a>, where they have always
-                        lived. Whichever screen you set them on, this one decides whether they are allowed to run.
+                        Google Analytics and Meta Pixel IDs are edited in
+                        <a href="<?= e(settings_url('seo')) ?>">Settings &rsaquo; SEO</a>.
+                        This screen decides whether they may run.
                     </div>
                 </div>
             </div>
@@ -393,10 +391,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">This store's own counting</div>
-                    <div class="ad-card__sub">
-                        First-party and separate from the tags above: your own server counts the visit, and
-                        nobody else is told. The mode also decides whether a consent banner is needed for it.
-                    </div>
+                    <div class="ad-card__sub">Your own server counts the visit, and nobody else is told.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -406,10 +401,9 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--warning" style="margin:0">
                     <?= icon('alert', 'w-5 h-5') ?>
                     <div>
-                        <strong>These are two different things.</strong>
-                        Switching this mode off stops <em>your</em> visitor counts. It does not stop Google or
-                        Meta: their tags are controlled by the IDs above and by the visitor's own choice.
-                        If what you want is "no third party watching my shoppers", clear the tag IDs.
+                        <strong>This is not a master privacy switch.</strong>
+                        Off stops <em>your</em> visitor counts, not Google or Meta.
+                        To stop them, clear the tag IDs above.
                     </div>
                 </div>
             </div>
@@ -419,16 +413,21 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Consent banner wording</div>
-                    <div class="ad-card__sub">
-                        Accept, Reject and Choose are always shown together, at the same size, in that order.
-                        That is not configurable: an easier Accept than Reject is what makes a consent banner
-                        invalid.
-                    </div>
+                    <div class="ad-card__sub">Accept, Reject and Choose are always equal, and not configurable.</div>
                 </div>
             </div>
             <div class="ad-card__body">
                 <?= settings_field('consent_banner_title', $spec, $values, $errors) ?>
                 <?= settings_field('consent_banner_text', $spec, $values, $errors) ?>
+
+                <details>
+                    <summary>Why the three buttons cannot be changed</summary>
+                    <p>
+                        Accept, Reject and Choose are shown together, at the same size, in that order.
+                        An easier Accept than Reject is what makes a consent banner invalid, so the
+                        screen does not offer it as a setting.
+                    </p>
+                </details>
             </div>
         </div>
 
@@ -436,10 +435,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Collector</div>
-                    <div class="ad-card__sub">
-                        Housekeeping for the counting above. These change nothing about who is counted -
-                        that is the mode - only whose visits are skipped and how long the detail is kept.
-                    </div>
+                    <div class="ad-card__sub">Whose visits are skipped, and how long the detail is kept.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -450,9 +446,9 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--info" style="margin:0">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        You are never counted yourself. No page view is recorded while an admin is signed in,
-                        because the shop and the back office share one session - so the exclude list is for
-                        colleagues and shared connections, not for you.
+                        <strong>You are never counted yourself.</strong>
+                        No page view is recorded while an admin is signed in.
+                        The list above is for colleagues.
                     </div>
                 </div>
             </div>
@@ -462,26 +458,23 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Daily totals</div>
-                    <div class="ad-card__sub">
-                        Your reports read a total per day, not the individual visits - which is why they open
-                        in milliseconds and stay that way as the store gets older. Something has to add
-                        yesterday up, once a night.
-                    </div>
+                    <div class="ad-card__sub">Reports read one total per day, not the individual visits.</div>
                 </div>
             </div>
             <div class="ad-card__body">
                 <?= settings_field('analytics_rollup_on_demand', $spec, $values, $errors) ?>
                 <?= settings_field('analytics_commerce_window_days', $spec, $values, $errors) ?>
 
-                <div class="sik-alert sik-alert--info" style="margin:0">
-                    <?= icon('info', 'w-5 h-5') ?>
-                    <div>
-                        <strong>If your host has cron</strong>, schedule this once a day, a few minutes after
-                        midnight - it is faster, it catches up further, and it does the clean-up below in the
-                        same pass:<br>
+                <details>
+                    <summary>Run the nightly job from cron instead</summary>
+                    <p>
+                        Once a day, a few minutes after midnight. It is faster than the on-demand catch-up,
+                        it reaches further back, and it does the clean-up in the same pass. On demand,
+                        a report catches up at most three days and at most once every fifteen minutes,
+                        so it is never slow because of it.<br>
                         <code class="ad-mono">php <?= e(ROOT_PATH) ?>/bin/analytics-rollup.php --quiet</code>
-                    </div>
-                </div>
+                    </p>
+                </details>
             </div>
             <?= settings_save_bar('Changes apply on the next storefront page load.') ?>
         </div>
@@ -496,26 +489,25 @@ require ADMIN_PATH . '/includes/header.php';
             </div>
             <div class="ad-card__body" style="display:grid;gap:12px">
                 <div>
-                    <div style="font-size:12.5px;color:var(--ad-muted)">Consent banner</div>
+                    <div style="font-size:var(--ad-text-sm);color:var(--ad-muted)">Consent banner</div>
                     <?php if ($bannerOn): ?>
                         <span class="sik-status sik-status--green">Shown</span>
-                        <div style="font-size:12.5px;margin-top:4px">
+                        <div style="font-size:var(--ad-text-sm);margin-top:4px">
                             <?= $hasTags ? 'A third-party tag is configured' : 'The analytics mode needs an opt-in' ?>,
                             so visitors are asked before anything runs.
                         </div>
                     <?php else: ?>
                         <span class="sik-status sik-status--gray">Not shown</span>
-                        <div style="font-size:12.5px;margin-top:4px">
-                            No tag is configured and the analytics mode sets no identifier, so there is nothing
-                            to ask about. No banner, no consent cookie, and <code>consent.js</code> is not loaded.
+                        <div style="font-size:var(--ad-text-sm);margin-top:4px">
+                            Nothing to ask about: no banner, no consent cookie, no <code>consent.js</code>.
                         </div>
                     <?php endif; ?>
                 </div>
 
                 <div>
-                    <div style="font-size:12.5px;color:var(--ad-muted);margin-bottom:4px">Tags</div>
+                    <div style="font-size:var(--ad-text-sm);color:var(--ad-muted);margin-bottom:4px">Tags</div>
                     <?php foreach ($tagRows as [$label, $raw, $valid, $where]): ?>
-                        <div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px">
+                        <div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:var(--ad-text-sm)">
                             <?php if ($raw === ''): ?>
                                 <span class="sik-status sik-status--gray">Off</span>
                             <?php elseif ($valid === ''): ?>
@@ -532,7 +524,7 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
 
                 <div>
-                    <div style="font-size:12.5px;color:var(--ad-muted)">Do Not Track / GPC</div>
+                    <div style="font-size:var(--ad-text-sm);color:var(--ad-muted)">Do Not Track / GPC</div>
                     <?php if (setting_bool('analytics_honor_dnt', true)): ?>
                         <span class="sik-status sik-status--green">Honoured</span>
                     <?php else: ?>
@@ -541,11 +533,10 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
 
                 <div>
-                    <div style="font-size:12.5px;color:var(--ad-muted)">Your own page views</div>
+                    <div style="font-size:var(--ad-text-sm);color:var(--ad-muted)">Your own page views</div>
                     <span class="sik-status sik-status--green">Never tagged</span>
-                    <div style="font-size:12.5px;margin-top:4px">
-                        No tag is printed while an admin is signed in, because the shop and the back office
-                        share one session.
+                    <div style="font-size:var(--ad-text-sm);margin-top:4px">
+                        The shop and the back office share one session.
                     </div>
                 </div>
             </div>
@@ -557,7 +548,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__title">Collector</div>
                 </div>
             </div>
-            <div class="ad-card__body" style="display:grid;gap:12px;font-size:12.5px">
+            <div class="ad-card__body" style="display:grid;gap:12px;font-size:var(--ad-text-sm)">
                 <?php if (!$collector['ready']): ?>
                     <div>
                         <span class="sik-status sik-status--red">Tables missing</span>
@@ -601,8 +592,7 @@ require ADMIN_PATH . '/includes/header.php';
                             </div>
                         <?php endforeach; ?>
                         <div class="ad-muted" style="margin-top:6px">
-                            Since this store started counting. Crawlers and expired tokens are normal and
-                            usually the largest. A big number next to anything else is worth asking about.
+                            Crawlers and expired tokens are normal. Anything else large is worth a look.
                         </div>
                     </div>
                 <?php endif; ?>
@@ -615,7 +605,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__title">Reports</div>
                 </div>
             </div>
-            <div class="ad-card__body" style="display:grid;gap:12px;font-size:12.5px">
+            <div class="ad-card__body" style="display:grid;gap:12px;font-size:var(--ad-text-sm)">
                 <?php if (!$rollup['ready']): ?>
                     <div>
                         <span class="sik-status sik-status--red">Tables missing</span>
@@ -628,21 +618,19 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php if ($rollup['through'] === null): ?>
                             <span class="sik-status sik-status--gray">Never totalled</span>
                             <div style="margin-top:4px">
-                                Nothing has been added up yet. It happens on the first nightly run, or when you
-                                press the button below.
+                                Happens on the first nightly run, or with the button below.
                             </div>
                         <?php elseif ($rollup['lag_days'] <= 0): ?>
                             <span class="sik-status sik-status--green">Up to date</span>
                             <div style="margin-top:4px">
-                                Complete through <?= e(format_date($rollup['through'])) ?>. Today is still
-                                being counted and keeps changing until midnight.
+                                Complete through <?= e(format_date($rollup['through'])) ?>.
+                                Today keeps changing until midnight.
                             </div>
                         <?php else: ?>
                             <span class="sik-status sik-status--amber"><?= (int) $rollup['lag_days'] ?> day<?= $rollup['lag_days'] === 1 ? '' : 's' ?> behind</span>
                             <div style="margin-top:4px">
-                                Complete only through <?= e(format_date($rollup['through'])) ?>. Your reports
-                                are missing the days since. Either schedule the nightly job or leave
-                                "update when a report is opened" on.
+                                Complete only through <?= e(format_date($rollup['through'])) ?>.
+                                Reports are missing the days since.
                             </div>
                         <?php endif; ?>
                     </div>
@@ -671,7 +659,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__title">What is stored</div>
                 </div>
             </div>
-            <div class="ad-card__body" style="display:grid;gap:12px;font-size:12.5px">
+            <div class="ad-card__body" style="display:grid;gap:12px;font-size:var(--ad-text-sm)">
                 <?php if ($rollup['ready']): ?>
                     <div>
                         <strong><?= number_format($rollup['raw_rows']) ?></strong> visit-by-visit row(s),
@@ -700,10 +688,13 @@ require ADMIN_PATH . '/includes/header.php';
                         <button type="submit" class="ad-btn ad-btn--sm ad-btn--ghost">Delete detail past the window</button>
                     </form>
 
+                    <?php
+                    // The totals are the permanent record. Deleting the rows they are built from
+                    // before they exist would leave a hole nothing could fill, so the purge refuses
+                    // any day that has not been totalled first.
+                    ?>
                     <div class="ad-muted">
-                        Detail is never deleted for a day that has not been totalled first - the totals are the
-                        permanent record, and deleting the rows they come from before they exist would leave a
-                        hole nothing could fill.
+                        Detail is never deleted for a day that has not been totalled first.
                     </div>
                 <?php endif; ?>
 
@@ -731,15 +722,19 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__title">Erase everything</div>
                 </div>
             </div>
-            <div class="ad-card__body" style="font-size:12.5px;display:grid;gap:10px">
-                <div>
-                    Every visit, every page view, every daily total, and the list of URLs and traffic sources
-                    they refer to. There is no undo.
+            <div class="ad-card__body" style="font-size:var(--ad-text-sm);display:grid;gap:10px">
+                <?php // A callout, not a bolded line in a card body. Every other
+                      // irreversible action in this admin says so in a warning box,
+                      // and this one deletes more rows than any of them. ?>
+                <div class="sik-alert sik-alert--warning">
+                    <?= icon('alert', 'w-5 h-5') ?>
+                    <div>
+                        <strong>There is no undo.</strong>
+                        Every visit, page view, daily total and referring URL.
+                    </div>
                 </div>
                 <div class="ad-muted">
-                    Counting carries on unless you also set the mode to <strong>Off</strong>. If what you want
-                    is to stop collecting, do that instead - erasing while the counter runs just gives you a
-                    shorter history.
+                    Counting carries on. To stop collecting, set the mode to <strong>Off</strong> instead.
                 </div>
                 <form method="post" style="display:grid;gap:8px">
                     <?= csrf_field() ?>
@@ -757,24 +752,19 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__title">Still to do</div>
                 </div>
             </div>
-            <div class="ad-card__body" style="font-size:12.5px;display:grid;gap:8px">
+            <div class="ad-card__body" style="font-size:var(--ad-text-sm);display:grid;gap:8px">
                 <div>
-                    The Cookie Policy and Privacy Policy still describe the old behaviour - that analytics
-                    scripts "are not part of the application", and that they can be refused when there was
-                    no way to. Corrected wording is prepared in
-                    <code>database/seeds/analytics-policy-copy.php</code> and is <strong>not applied</strong>
-                    until you have read and ratified it.
+                    The Cookie and Privacy Policies still describe the old behaviour. Corrected wording
+                    waits in <code>database/seeds/analytics-policy-copy.php</code>,
+                    <strong>not applied</strong> until you ratify it.
                 </div>
                 <div>
-                    <strong>One gap to know about.</strong> Anything pasted into
-                    <a href="<?= e(settings_url('theme')) ?>">Custom JS</a> runs before this layer and is not
-                    gated by it. If you paste a tracking snippet there instead of using the fields on this
-                    screen, it will run for visitors who refused.
+                    <strong>One gap.</strong> Anything pasted into
+                    <a href="<?= e(settings_url('theme')) ?>">Custom JS</a> runs before this layer, so it
+                    runs for visitors who refused.
                 </div>
                 <div class="ad-muted">
-                    The reports themselves - traffic, sources, pages, products, the funnel - arrive in the
-                    next phase. Everything they will read is already being collected and totalled, so they
-                    open with your real history rather than starting from the day they ship.
+                    The reports arrive next phase; what they read is already being collected.
                 </div>
             </div>
         </div>

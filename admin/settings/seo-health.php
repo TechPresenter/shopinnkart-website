@@ -313,8 +313,7 @@ $tiles = [
     </div>
     <div class="ad-card__foot">
         <p class="sik-help" style="margin:0">
-            A blank meta title or description is not an error: the storefront falls back to the record
-            name and summary. It only means a search engine is choosing your wording instead of you.
+            Blank is not an error: the storefront falls back to the record name and summary.
         </p>
     </div>
 </div>
@@ -408,8 +407,7 @@ $tiles = [
                 <?php endforeach; ?>
             </ul>
             <p class="sik-help" style="margin-top:12px">
-                Each of these is a credential from your own account. Nothing is filled in for you, and an
-                unconfigured integration simply renders no tag.
+                Your own credentials. Unconfigured renders no tag.
             </p>
             <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('settings/seo.php')) ?>" style="margin-top:8px">
                 Configure

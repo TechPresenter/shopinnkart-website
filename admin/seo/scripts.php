@@ -104,9 +104,8 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="sik-alert sik-alert--info">
             <?= icon('shield-check', 'w-5 h-5') ?>
             <div>
-                Nothing listed here runs inside this admin panel &mdash; the storefront is the only place it
-                is emitted. Anything filed under a consent category stays off until the visitor accepts
-                that category, exactly like every other third-party tag on the store.
+                None of this runs inside the admin &mdash; only on the storefront.
+                Code under a consent category stays off until the visitor accepts.
             </div>
         </div>
     </div>
@@ -115,7 +114,7 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="ad-card">
     <div class="ad-card__head">
         <div class="ad-card__title">Store-wide</div>
-        <div class="ad-card__sub">Runs on every page. Managed on its own screen, not here.</div>
+        <div class="ad-card__sub">Runs on every page. Managed on its own screen.</div>
     </div>
     <div class="ad-card__body ad-card__body--flush">
         <div class="ad-tablewrap">
@@ -160,8 +159,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div class="ad-card__title">Per-record</div>
         <div class="ad-card__sub">
-            Code added on one product, category, page, post, brand or combo through its SEO panel.
-            It runs on that record&rsquo;s page only.
+            Added through a record&rsquo;s SEO panel. Runs on that page only.
         </div>
     </div>
 
@@ -297,8 +295,8 @@ require ADMIN_PATH . '/includes/header.php';
     <?php if (!$canScripts): ?>
         <div class="ad-card__foot">
             <span class="ad-muted">
-                The code itself is hidden from your role. Reading or changing it needs the
-                <code>settings.scripts</code> permission, which only a Super Admin can grant.
+                Bodies hidden from your role. Reading or changing them needs
+                <code>settings.scripts</code>, granted only by a Super Admin.
             </span>
         </div>
     <?php endif; ?>

@@ -206,7 +206,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <span>
                         Treat the source as a regular expression
                         <span class="sik-help" style="display:block">
-                            Captures are available in the target as $1, $2 and so on. Example:
+                            Captures land in the target as $1, $2:
                             <code>^/legacy/product/(.+)$</code> &rarr; <code>/product/$1</code>
                         </span>
                     </span>
@@ -250,7 +250,7 @@ require ADMIN_PATH . '/includes/header.php';
         <?php if ($redirects === []): ?>
             <div class="ad-card__body">
                 <p class="ad-muted" style="margin:0">
-                    No redirects yet. Add one whenever you rename a slug, so existing links keep working.
+                    No redirects yet. Add one whenever you rename a slug.
                 </p>
             </div>
         <?php else: ?>

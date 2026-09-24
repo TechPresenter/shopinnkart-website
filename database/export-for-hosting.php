@@ -84,6 +84,8 @@ const RUNTIME_TABLES = [
     'an_daily_product',
     'an_daily_dim',
     'an_daily_vitals',
+    'an_daily_totals',
+    'an_daily_event',
 ];
 
 /**

@@ -227,10 +227,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <h2 class="ad-card__title">The parcel</h2>
-                <div class="ad-card__sub">
-                    No order is needed and nothing is saved. Couriers bill the larger of the weight you
-                    type and the volumetric weight of the box, so the dimensions change the price.
-                </div>
+                <div class="ad-card__sub">Nothing is saved. Dimensions change the price.</div>
             </div>
         </div>
         <form method="get" action="<?= e(admin_url('shipping/rates.php')) ?>">
@@ -321,12 +318,24 @@ require ADMIN_PATH . '/includes/header.php';
                 <?php endif; ?>
             </div>
             <div class="ad-card__foot" style="align-items:center">
-                <span class="sik-help" style="margin:0">
-                    Every courier is asked fresh. Nothing here is stored or cached.
-                </span>
+                <?php // "Nothing is stored or cached" moved into the card subtitle; keeping
+                      // both said the same thing twice, a screen apart. ?>
+                <span class="sik-help" style="margin:0">Every courier is asked fresh.</span>
                 <button type="submit" class="ad-btn ad-btn--primary"><?= icon('refresh', 'w-4 h-4') ?> Get rates</button>
             </div>
         </form>
+        <?php /* Why the box matters at all: a courier bills the larger of the weight
+                 typed above and the volumetric weight of the box, so a light parcel in
+                 a big carton is priced as a heavy one. Worth knowing once, not on
+                 every visit. */ ?>
+        <details class="ad-card__body" style="border-top:1px solid var(--ad-border)">
+            <summary style="cursor:pointer;font-weight:600">Why the dimensions change the price</summary>
+            <p class="ad-muted" style="margin:8px 0 0">
+                Couriers bill the larger of the weight you type and the volumetric weight of
+                the box. Leaving the dimensions blank prices the parcel on weight alone, which
+                can quote lower than the courier will actually charge.
+            </p>
+        </details>
     </div>
 
     <?php if ($asked && $errors !== []): ?>

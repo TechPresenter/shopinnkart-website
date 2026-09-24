@@ -205,7 +205,7 @@ $movements = Database::fetchAll(
 );
 
 $pageTitle    = 'Inventory';
-$pageSubtitle = 'Adjust stock in place. Every change is journalled with who made it and why.';
+$pageSubtitle = 'Adjust stock in place. Every change is journalled.';
 $breadcrumbs  = [
     ['label' => 'Dashboard', 'url' => admin_url('dashboard.php')],
     ['label' => 'Products', 'url' => admin_url('products/')],
@@ -274,8 +274,8 @@ require ADMIN_PATH . '/includes/header.php';
             <?= admin_empty(
                 $filter === 'out' ? 'Nothing is out of stock' : ($filter === 'low' ? 'Nothing is running low' : 'No products yet'),
                 $filter === 'all'
-                    ? 'Add a product and its stock will be tracked here.'
-                    : 'Good news — no products match this filter right now.',
+                    ? 'Add a product and its stock is tracked here.'
+                    : 'No products match this filter.',
                 admin_can('products.create') ? 'Add Product' : null,
                 admin_can('products.create') ? admin_url('products/create.php') : null
             ) ?>
@@ -354,7 +354,7 @@ require ADMIN_PATH . '/includes/header.php';
                                             <?php if ($rowVariants !== []): ?>
                                                 <label class="sik-sr" for="variant<?= $rowId ?>">Variant</label>
                                                 <select class="sik-select" id="variant<?= $rowId ?>" name="variant_id"
-                                                        style="width:auto;padding:7px 28px 7px 10px;font-size:12.5px">
+                                                        style="width:auto;padding:7px 28px 7px 10px;font-size:var(--ad-text-sm)">
                                                     <?php foreach ($rowVariants as $variant): ?>
                                                         <option value="<?= (int) $variant['id'] ?>">
                                                             <?= e((string) $variant['variant_name']) ?> (<?= (int) $variant['stock'] ?>)
@@ -368,18 +368,18 @@ require ADMIN_PATH . '/includes/header.php';
                                             <label class="sik-sr" for="delta<?= $rowId ?>">Change</label>
                                             <input type="number" class="sik-input" id="delta<?= $rowId ?>" name="delta"
                                                    step="1" required placeholder="&plusmn;0"
-                                                   style="width:82px;padding:7px 10px;font-size:12.5px">
+                                                   style="width:82px;padding:7px 10px;font-size:var(--ad-text-sm)">
 
                                             <label class="sik-sr" for="reason<?= $rowId ?>">Reason</label>
                                             <select class="sik-select" id="reason<?= $rowId ?>" name="reason"
-                                                    style="width:auto;padding:7px 28px 7px 10px;font-size:12.5px">
+                                                    style="width:auto;padding:7px 28px 7px 10px;font-size:var(--ad-text-sm)">
                                                 <?= admin_options($reasons, 'restock') ?>
                                             </select>
 
                                             <label class="sik-sr" for="note<?= $rowId ?>">Note</label>
                                             <input type="text" class="sik-input" id="note<?= $rowId ?>" name="note"
                                                    maxlength="255" placeholder="Note (optional)"
-                                                   style="width:150px;padding:7px 10px;font-size:12.5px">
+                                                   style="width:150px;padding:7px 10px;font-size:var(--ad-text-sm)">
 
                                             <button type="submit" class="ad-btn ad-btn--sm ad-btn--primary">Apply</button>
                                         </form>
@@ -395,7 +395,7 @@ require ADMIN_PATH . '/includes/header.php';
 
     <?php if ($pagination['last'] > 1): ?>
         <div class="ad-card__foot">
-            <span class="ad-muted" style="font-size:12.5px">
+            <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                 Showing <?= number_format($pagination['from']) ?>–<?= number_format($pagination['to']) ?>
                 of <?= number_format($pagination['total']) ?>
             </span>
@@ -413,7 +413,7 @@ require ADMIN_PATH . '/includes/header.php';
     </div>
     <div class="ad-card__body ad-card__body--flush">
         <?php if ($movements === []): ?>
-            <?= admin_empty('No stock movements yet', 'Orders, cancellations, imports and manual adjustments all land here.', null, null, 'clock') ?>
+            <?= admin_empty('No stock movements yet', 'Orders, imports and manual adjustments land here.', null, null, 'clock') ?>
         <?php else: ?>
             <div class="ad-tablewrap">
                 <table class="ad-table">

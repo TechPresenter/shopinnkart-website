@@ -22,15 +22,15 @@ $spec = [
     ],
     'mail_from_email' => [
         'type' => 'email', 'label' => 'From address', 'required' => true, 'max' => 190,
-        'help' => 'Must be a mailbox your server is allowed to send as, or mail lands in spam.',
+        'help' => 'A mailbox your server may send as, or mail lands in spam.',
     ],
     'mail_reply_to' => [
         'type' => 'email', 'label' => 'Reply-To address', 'max' => 190,
-        'help' => 'Where customer replies land. Falls back to the store support address.',
+        'help' => 'Where customer replies land.',
     ],
     'admin_notify_email' => [
         'type' => 'text', 'label' => 'Admin notification address(es)', 'required' => true, 'max' => 500,
-        'help' => 'Gets new-order, failed-payment, cancellation, return and enquiry alerts. Separate several addresses with commas.',
+        'help' => 'New-order, failed-payment, cancellation, return and enquiry alerts. Commas separate several.',
     ],
     'mail_driver' => [
         'type' => 'select', 'label' => 'Transport', 'required' => true,
@@ -54,7 +54,7 @@ $spec = [
     ],
     'smtp_pass' => [
         'type' => 'password', 'label' => 'SMTP password',
-        'help' => 'Encrypted before it is stored and never rendered back into this page. Leave blank to keep the current one.',
+        'help' => 'Encrypted before storage, never rendered back. Blank keeps the current one.',
     ],
     'smtp_encryption' => [
         'type' => 'select', 'label' => 'Encryption',
@@ -73,7 +73,7 @@ $spec = [
     ],
     'email_queue_auto_drain' => [
         'type' => 'bool', 'label' => 'Send from page views',
-        'help' => 'A fallback for installs with no cron. Turn this off once bin/send-queued-emails.php is scheduled.',
+        'help' => 'A fallback for installs with no cron.',
     ],
     'email_log_retention_days' => [
         'type' => 'number', 'label' => 'Keep email log for (days)', 'min_value' => 7, 'max_value' => 3650,
@@ -455,9 +455,9 @@ require ADMIN_PATH . '/includes/header.php';
                         <?= settings_field('mail_from_email', $spec, $values, $errors) ?>
                     </div>
                     <?= settings_field('admin_notify_email', $spec, $values, $errors) ?>
-                    <p class="ad-muted" style="font-size:12.5px">
-                        Replies go to the support address on the General screen
-                        (<?= e((string) setting('store_email', '')) ?>).
+                    <p class="ad-muted" style="font-size:var(--ad-text-xs)">
+                        Reply-To falls back to <?= e((string) setting('store_email', '')) ?>
+                        (Settings &rsaquo; General).
                     </p>
                 </div>
             </div>
@@ -478,14 +478,17 @@ require ADMIN_PATH . '/includes/header.php';
                     ));
                     ?>
 
+                    <?php
+                    // PHP's mail() is gone - no delivery signal, no auth, no way to attach the
+                    // invoice PDF - so SMTP via PHPMailer is the only transport. That history is
+                    // beside the mail_driver entry in $spec; the screen only needs the precedence.
+                    ?>
                     <div class="sik-alert sik-alert--info" style="margin-bottom:16px">
                         <?= icon('info', 'w-5 h-5') ?>
                         <div>
-                            Messages go out over <strong>SMTP via PHPMailer</strong>. PHP's <code>mail()</code>
-                            is no longer used — it reported no delivery errors and could not carry the invoice PDF.
                             Credentials are read in this order:
-                            <strong>environment variables</strong> &rarr; <code>config/mail.local.php</code> &rarr;
-                            the fields below.
+                            <strong>environment variables</strong> &rarr; <code>config/mail.local.php</code>
+                            &rarr; the fields below.
                         </div>
                     </div>
 
@@ -497,7 +500,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 <?php foreach ($overridden as $field): ?>
                                     <br><code><?= e($field) ?></code> comes from <?= e($mailConfig['source'][$field]) ?>.
                                 <?php endforeach; ?>
-                                <br>Editing the matching field here will have no effect until that source is removed.
+                                <br>Editing them here has no effect until that source is removed.
                             </div>
                         </div>
                     <?php endif; ?>
@@ -523,7 +526,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php else: ?>
                             <span class="sik-help">
                                 <?= $hasStoredPassword
-                                    ? 'A password is saved. It is never rendered back into this page — leave the field blank to keep it, or type a new one to replace it.'
+                                    ? 'Saved, and never rendered back. Blank keeps it; type a new one to replace it.'
                                     : 'No password saved yet.' ?>
                             </span>
                         <?php endif; ?>
@@ -537,8 +540,8 @@ require ADMIN_PATH . '/includes/header.php';
                     <?= settings_field('smtp_allow_self_signed', $spec, $values, $errors) ?>
                     <?= settings_field('email_queue_auto_drain', $spec, $values, $errors) ?>
 
-                    <p class="ad-muted" style="font-size:12.5px;margin-top:12px">
-                        For reliable delivery schedule the worker instead of relying on page views:<br>
+                    <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-top:12px">
+                        Schedule the worker rather than relying on page views:<br>
                         <code class="ad-mono">php <?= e(ROOT_PATH) ?>/bin/send-queued-emails.php</code> every minute.
                     </p>
                 </div>
@@ -608,10 +611,15 @@ require ADMIN_PATH . '/includes/header.php';
                                     <?php endforeach; ?>
                                 </div>
                                 <span class="sik-help">
-                                    Click to copy. Anything else in double braces is left in the message as written.
-                                    Every template can also use {{store_name}}, {{store_url}}, {{store_email}},
-                                    {{store_phone}}, {{store_address}} and {{year}}.
+                                    Click to copy. Anything else in double braces is left as written.
                                 </span>
+                                <details>
+                                    <summary>Available in every template</summary>
+                                    <p>
+                                        {{store_name}}, {{store_url}}, {{store_email}}, {{store_phone}},
+                                        {{store_address}} and {{year}}, on top of the ones above.
+                                    </p>
+                                </details>
                             </div>
                         <?php endif; ?>
 
@@ -628,10 +636,9 @@ require ADMIN_PATH . '/includes/header.php';
                             <label class="sik-label" for="tplBody">Body <span class="req">*</span></label>
                             <textarea class="sik-textarea" id="tplBody" name="body" rows="16" required
                                       spellcheck="false"
-                                      style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;min-height:340px"><?= e((string) ($oldBody ?? $editing['body'])) ?></textarea>
+                                      style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--ad-text-sm);min-height:340px"><?= e((string) ($oldBody ?? $editing['body'])) ?></textarea>
                             <span class="sik-help">
-                                HTML fragment. It is wrapped in the branded email shell on send, so there is no need
-                                for &lt;html&gt; or &lt;body&gt; tags. Scripts and event handlers are stripped when saved.
+                                HTML fragment, wrapped in the branded shell on send. Scripts are stripped.
                             </span>
                         </div>
 
@@ -639,10 +646,9 @@ require ADMIN_PATH . '/includes/header.php';
                             <label class="sik-label" for="tplBodyText">Plain-text version</label>
                             <textarea class="sik-textarea" id="tplBodyText" name="body_text" rows="8"
                                       spellcheck="false"
-                                      style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"><?= e((string) ($editing['body_text'] ?? '')) ?></textarea>
+                                      style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--ad-text-sm)"><?= e((string) ($editing['body_text'] ?? '')) ?></textarea>
                             <span class="sik-help">
-                                The fallback part for clients that do not render HTML, and a real factor in
-                                spam scoring. Leave blank and it is derived from the HTML automatically.
+                                Blank derives it from the HTML. It counts in spam scoring.
                             </span>
                         </div>
 
@@ -680,8 +686,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 <span>Attach the PDF invoice</span>
                             </label>
                             <span class="sik-help">
-                                Only meaningful for order emails. The attachment is skipped silently when the
-                                order has no invoice, so the message still goes out.
+                                Order emails only. Skipped silently when the order has no invoice.
                             </span>
                         </div>
                     </div>
@@ -734,7 +739,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <button type="submit" class="ad-btn ad-btn--danger-ghost ad-btn--sm">
                                 <?= icon('refresh', 'w-4 h-4') ?> Reset to default
                             </button>
-                            <span class="ad-muted" style="font-size:12.5px;margin-left:8px">
+                            <span class="ad-muted" style="font-size:var(--ad-text-xs);margin-left:8px">
                                 Restores the subject, body and plain-text version this template ships with.
                             </span>
                         </form>
@@ -814,7 +819,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <input class="sik-input" type="email" id="testEmail" name="test_email" required
                                value="<?= e((string) ($admin['email'] ?? '')) ?>">
                         <span class="sik-help">
-                            Uses the saved sender settings and the real email layout, so it proves the whole path.
+                            Uses the saved settings and the real layout: it proves the whole path.
                         </span>
                     </div>
 

@@ -90,9 +90,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">App sign-in (API tokens)</h2>
-                    <div class="ad-card__sub">
-                        How a mobile app stays signed in. The website's own sessions are not affected by anything here.
-                    </div>
+                    <div class="ad-card__sub">Website sessions are untouched by anything here.</div>
                 </div>
                 <?= $enabled
                     ? '<span class="sik-status sik-status--green">On</span>'
@@ -120,8 +118,7 @@ return [
                         <?= icon('alert', 'w-5 h-5') ?>
                         <div>
                             <strong>Admin accounts may hold API tokens.</strong>
-                            A stolen customer token can place an order; a stolen admin token can change the
-                            catalogue. Leave this off unless an admin app genuinely needs it.
+                            A stolen one can change the catalogue. Leave this off unless an admin app needs it.
                         </div>
                     </div>
                 <?php endif; ?>
@@ -136,20 +133,14 @@ return [
                             <span>
                                 <strong>Allow app sign-in</strong>
                                 <span class="sik-help" style="display:block">
-                                    Turning this off stops new tokens being issued and refuses every existing one
-                                    at once - without touching a single website session.
+                                    Off refuses every existing token at once.
                                 </span>
                             </span>
                         </label>
 
                         <label class="sik-check" style="align-items:flex-start">
                             <input type="checkbox" name="sec_api_tokens_admin" value="1" <?= $adminOn ? 'checked' : '' ?>>
-                            <span>
-                                <strong>Let admin accounts hold tokens</strong>
-                                <span class="sik-help" style="display:block">
-                                    Off by default. An admin token still only opens what that admin's role allows.
-                                </span>
-                            </span>
+                            <span><strong>Let admin accounts hold tokens</strong></span>
                         </label>
 
                         <div class="ad-grid ad-grid--2" style="gap:12px">
@@ -170,7 +161,7 @@ return [
                                 <?php if (isset($errors['sec_api_token_max'])): ?>
                                     <span class="sik-error"><?= e($errors['sec_api_token_max']) ?></span>
                                 <?php else: ?>
-                                    <span class="sik-help">The oldest is retired when the list is full.</span>
+                                    <span class="sik-help">The oldest is retired when full.</span>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -200,6 +191,8 @@ return [
                         <p>Only a hash of each token is stored here, so this database cannot be read for a
                            credential. A password change, a reset or "sign out everywhere" retires every token on
                            that account, exactly as it ends its browser sessions.</p>
+                        <p>An admin token opens only what that admin's role allows, exactly as their browser
+                           session does.</p>
                         <p>There is no app in this build yet - this is the server half, ready for one.</p>
                     </div>
                 </details>

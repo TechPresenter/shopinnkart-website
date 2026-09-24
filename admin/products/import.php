@@ -562,7 +562,7 @@ require ADMIN_PATH . '/includes/header.php';
             </div>
         </div>
         <div class="ad-card__foot">
-            <span class="ad-muted" style="font-size:12.5px">
+            <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                 <code>brand</code> and <code>category</code> are matched by name and must already exist.
                 <code>tags</code> is pipe separated, e.g. <code>Diwali|Warm White</code>.
                 Booleans accept 1/0, yes/no or true/false. Stock changes are journalled as import movements.

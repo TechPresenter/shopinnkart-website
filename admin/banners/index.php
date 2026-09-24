@@ -234,7 +234,7 @@ require ADMIN_PATH . '/includes/header.php';
                                                 </span>
                                             <?php endif; ?>
                                         </td>
-                                        <td style="font-size:12.5px">
+                                        <td style="font-size:var(--ad-text-sm)">
                                             <?php if (!empty($banner['button_text'])): ?>
                                                 <div><strong><?= e($banner['button_text']) ?></strong></div>
                                                 <?php /* admin_trunc(), not e(str_limit(...)): a button's

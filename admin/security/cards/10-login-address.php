@@ -58,10 +58,6 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Hidden admin login address</h2>
-                    <div class="ad-card__sub">
-                        Take the login form off the public map. Without the secret address,
-                        <code>/admin/</code> answers "page not found" like any missing page.
-                    </div>
                 </div>
                 <?= $gateOn
                     ? '<span class="sik-status sik-status--green">Hidden</span>'
@@ -79,7 +75,7 @@ return [
                                 <?= icon('copy', 'w-4 h-4') ?> Copy
                             </button>
                         </div>
-                        <span class="sik-help">Bookmark it. Other admins need it too - send it to them privately.</span>
+                        <span class="sik-help">Bookmark it, and send it to other admins privately.</span>
                     </div>
                 <?php endif; ?>
 
@@ -102,12 +98,12 @@ return [
                             <?php if (isset($errors['admin_login_slug'])): ?>
                                 <span class="sik-error"><?= e($errors['admin_login_slug']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">
-                                    8-40 lowercase letters, digits and hyphens. Avoid words like "admin" or "login".
-                                    <button type="button" class="ad-btn ad-btn--sm" style="margin-top:6px"
-                                            data-fill-slug="<?= e_attr($suggestion) ?>">Use <?= e($suggestion) ?></button>
-                                </span>
+                                <span class="sik-help">8-40 lowercase letters, digits and hyphens.</span>
                             <?php endif; ?>
+                            <div>
+                                <button type="button" class="ad-btn ad-btn--sm" style="margin-top:6px"
+                                        data-fill-slug="<?= e_attr($suggestion) ?>">Use <?= e($suggestion) ?></button>
+                            </div>
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap">
                             <button type="submit" class="ad-btn ad-btn--primary"

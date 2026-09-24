@@ -128,7 +128,7 @@ require ADMIN_PATH . '/includes/header.php';
                 ? admin_empty('No questions match', 'Try a different search term or clear the filters.', null, null, 'search')
                 : admin_empty(
                     'No questions yet',
-                    'The storefront FAQ page groups questions by category. Add the first one to get started.',
+                    'The storefront FAQ page groups them by category.',
                     admin_can('faq.create') ? 'Add Question' : null,
                     admin_can('faq.create') ? admin_url('faq/create.php') : null,
                     'info'
@@ -136,11 +136,13 @@ require ADMIN_PATH . '/includes/header.php';
         </div>
     <?php else: ?>
         <div class="ad-card__body">
+            <?php // The sort inputs save on blur, with a toast either way - see the
+                  // [data-sort-order] handler at the foot of this file. ?>
             <span class="ad-muted">
                 <?= count($faqs) ?> question<?= count($faqs) === 1 ? '' : 's' ?>
                 across <?= count($grouped) ?> categor<?= count($grouped) === 1 ? 'y' : 'ies' ?>.
                 <?php if ($canEdit): ?>
-                    Change a sort number to reorder within its category &mdash; it saves as soon as you leave the field.
+                    Sort numbers save as you leave the field.
                 <?php endif; ?>
             </span>
         </div>
@@ -151,8 +153,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="sik-alert sik-alert--warning">
         <?= icon('alert', 'w-5 h-5') ?>
         <div>
-            Only the first <?= FAQ_LIST_CAP ?> questions are shown. Narrow the list with the
-            category filter or search to reach the rest.
+            Only the first <?= FAQ_LIST_CAP ?> questions are shown. Filter or search to reach the rest.
         </div>
     </div>
 <?php endif; ?>
@@ -208,7 +209,10 @@ require ADMIN_PATH . '/includes/header.php';
                                         <?php endif; ?>
                                     </span>
                                 </td>
-                                <td class="ad-muted"><?= e(str_limit($faq['answer'], 110)) ?></td>
+                                <?php // 70, not 110: this column exists to tell two answers apart,
+                                      // and at 110 a screen of them reads as a wall of prose. The
+                                      // full answer is one click away in the editor. ?>
+                                <td class="ad-muted"><?= e(str_limit($faq['answer'], 70)) ?></td>
                                 <td><?= admin_state_badge((string) $faq['status']) ?></td>
                                 <td class="ad-table__actions">
                                     <?php if ($canEdit): ?>

@@ -313,7 +313,7 @@ require ADMIN_PATH . '/includes/header.php';
 
                         <!-- Links -->
                         <?php if (!$showsLinks): ?>
-                            <p class="ad-muted" style="font-size:12.5px;margin-top:16px">
+                            <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-top:16px">
                                 <?= e(footer_column_type_help($columnType)) ?>
                                 Links added here stay stored but are not drawn while the column is set to this type.
                             </p>
@@ -323,7 +323,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <div class="ad-card__title" style="font-size:13px;margin-bottom:8px">Links</div>
 
                             <?php if ($columnLinks === []): ?>
-                                <p class="ad-muted" style="font-size:12.5px">No links in this column yet.</p>
+                                <p class="ad-muted" style="font-size:var(--ad-text-xs)">No links in this column yet.</p>
                             <?php else: ?>
                                 <div class="ad-tablewrap">
                                     <table class="ad-table">
@@ -459,7 +459,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 <label class="ad-switch" style="flex:0 0 auto;padding-bottom:9px">
                                     <input type="checkbox" name="open_new_tab" value="1">
                                     <span class="ad-switch__track"></span>
-                                    <span style="font-size:12.5px">New tab</span>
+                                    <span style="font-size:var(--ad-text-sm)">New tab</span>
                                 </label>
 
                                 <button type="submit" class="ad-btn ad-btn--primary">

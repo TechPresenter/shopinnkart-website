@@ -252,8 +252,8 @@ require ADMIN_PATH . '/includes/header.php';
         <?= icon('info', 'w-5 h-5') ?>
         <div>
             <?= number_format($variantUse) ?> product variant<?= $variantUse === 1 ? '' : 's' ?>
-            depend<?= $variantUse === 1 ? 's' : '' ?> on this attribute, so it cannot be deleted and the
-            values in use cannot be removed. Renaming a value is safe.
+            use<?= $variantUse === 1 ? 's' : '' ?> this attribute: it cannot be deleted, and values
+            in use cannot be removed. Renaming is safe.
         </div>
     </div>
 <?php endif; ?>

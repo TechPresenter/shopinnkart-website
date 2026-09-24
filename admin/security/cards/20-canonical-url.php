@@ -69,11 +69,6 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Store address in emails</h2>
-                    <div class="ad-card__sub">
-                        Every link we email - password resets, order updates, unsubscribe - is built from this
-                        address. Without it, the links follow whatever <code>Host</code> header the request
-                        arrived with, and a stranger can aim a genuine reset email at their own server.
-                    </div>
                 </div>
                 <?= $canonical !== ''
                     ? '<span class="sik-status sik-status--green">Fixed</span>'
@@ -86,8 +81,8 @@ return [
                     <input class="sik-input ad-mono" type="text" readonly value="<?= e_attr($effective) ?>"
                            aria-label="Address used in emails">
                     <span class="sik-help">
-                        This request arrived as <code><?= e($current === '' ? '(command line)' : $current) ?></code>.
-                        <?= SITE_URL_HOST_OK ? 'That host is recognised.' : 'That host is <strong>not</strong> on the list, so links fall back to the address above.' ?>
+                        This request arrived as <code><?= e($current === '' ? '(command line)' : $current) ?></code>,
+                        <?= SITE_URL_HOST_OK ? 'recognised.' : '<strong>not</strong> on the list.' ?>
                     </span>
                 </div>
 
@@ -95,9 +90,8 @@ return [
                     <div class="sik-alert sik-alert--info">
                         <?= icon('info', 'w-5 h-5') ?>
                         <div>
-                            This server also sets an address in <code>config/db.local.php</code> or the
-                            <code>APP_URL</code> environment variable (<code><?= e((string) SITE_URL_CANONICAL) ?></code>),
-                            and that one wins over the setting below.
+                            <code>config/db.local.php</code> or <code>APP_URL</code> sets
+                            <code><?= e((string) SITE_URL_CANONICAL) ?></code>, which wins over the setting below.
                         </div>
                     </div>
                 <?php endif; ?>
@@ -117,7 +111,7 @@ return [
                             <?php if (isset($errors['sec_canonical_url'])): ?>
                                 <span class="sik-error"><?= e($errors['sec_canonical_url']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Leave empty to keep detecting it, which is fine on a development machine.</span>
+                                <span class="sik-help">Leave empty to keep detecting it.</span>
                             <?php endif; ?>
                         </div>
 
@@ -130,8 +124,7 @@ return [
                                 <span class="sik-error"><?= e($errors['sec_host_allowlist']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    One per line or comma separated. <code><?= e(SITE_DOMAIN) ?></code> and its
-                                    <code>www.</code> form are always accepted.
+                                    <code><?= e(SITE_DOMAIN) ?></code> and <code>www.</code> are always accepted.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -141,8 +134,7 @@ return [
                             <span>
                                 Answer <strong>400 Bad Request</strong> to any other host
                                 <span class="sik-help" style="display:block">
-                                    Off by default: a hostname missing from the list would take the shop down.
-                                    Links are already safe without it.
+                                    A host missing from the list takes the shop down.
                                 </span>
                             </span>
                         </label>
@@ -154,6 +146,18 @@ return [
                         </div>
                     </form>
                 <?php endif; ?>
+
+                <details style="font-size:13px">
+                    <summary style="cursor:pointer;font-weight:600">Why the address is fixed here</summary>
+                    <div style="display:grid;gap:8px;margin-top:8px">
+                        <p>Password resets, order updates and unsubscribe links are all built from this
+                           address. Without it they follow whatever <code>Host</code> header the request
+                           arrived with, and a stranger can aim a genuine reset email at their own server.</p>
+                        <p>Setting the address is what closes that. The <strong>400 Bad Request</strong>
+                           switch is extra: links are already safe without it, and a hostname missing from
+                           the list would take the shop down.</p>
+                    </div>
+                </details>
             </div>
         </div>
         <?php

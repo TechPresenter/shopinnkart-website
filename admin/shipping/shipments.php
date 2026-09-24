@@ -426,7 +426,7 @@ require ADMIN_PATH . '/includes/header.php';
                     </button>
                 </form>
             <?php endif; ?>
-            <span class="ad-muted" style="font-size:12.5px">Only consignments with an AWB can be ticked.</span>
+            <span class="ad-muted" style="font-size:var(--ad-text-xs)">Only consignments with an AWB can be ticked.</span>
         </div>
 
         <!-- ------------------------------ Table ----------------------------- -->
@@ -588,7 +588,7 @@ require ADMIN_PATH . '/includes/header.php';
 
         <?php if ($pagination['last'] > 1): ?>
             <div class="ad-card__foot" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-                <span class="ad-muted" style="font-size:12.5px">
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                     Showing <?= number_format($pagination['from']) ?>&ndash;<?= number_format($pagination['to']) ?>
                     of <?= number_format($pagination['total']) ?>
                 </span>

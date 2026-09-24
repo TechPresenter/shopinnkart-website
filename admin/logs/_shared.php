@@ -142,14 +142,16 @@ function logs_clear_card(string $table, string $actionUrl, int $total): string
 {
     $label = LOG_TABLES[$table] ?? 'log';
 
+    /* The subtitle keeps one thing only: that this cannot be undone. The retention
+       floor and the fact that the clear is itself audited are reassurances rather
+       than warnings, so they moved into the <details> at the foot of the card - the
+       warning reads harder for standing on its own. */
     return '<div class="ad-card">'
         . '<div class="ad-card__head"><div>'
         . '<div class="ad-card__title">Clear the ' . e($label) . '</div>'
         . '<div class="ad-card__sub">'
         . number_format($total) . ' entr' . ($total === 1 ? 'y' : 'ies') . ' stored. '
-        . 'Deleting is permanent — nothing here can be recovered afterwards. '
-        . 'The last ' . LOG_RETENTION_DAYS . ' days are kept whatever is chosen, '
-        . 'and the clearing itself is recorded where this screen cannot reach it.'
+        . '<strong>Deleting is permanent — nothing can be recovered.</strong>'
         . '</div></div></div>'
         /* Emptying a log is one of the three the brief names for a typed
            confirmation: the rows are gone for good and nothing in the admin
@@ -173,6 +175,13 @@ function logs_clear_card(string $table, string $actionUrl, int $total): string
         . '<button type="submit" class="ad-btn ad-btn--danger ad-btn--sm">'
         . icon('trash', 'w-4 h-4') . ' Clear log</button>'
         . '</form>'
+        . '<details class="ad-card__body" style="border-top:1px solid var(--ad-border)">'
+        . '<summary style="cursor:pointer;font-weight:600">What a clear does and does not touch</summary>'
+        . '<p class="ad-muted" style="margin:8px 0 0">'
+        . 'The last ' . LOG_RETENTION_DAYS . ' days are kept whatever you choose, so the most '
+        . 'recent entries survive. The clearing itself is recorded as a security event, '
+        . 'where this screen cannot reach it.'
+        . '</p></details>'
         . '</div>';
 }
 

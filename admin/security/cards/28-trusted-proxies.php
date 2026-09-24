@@ -71,10 +71,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Trusted proxies</h2>
-                    <div class="ad-card__sub">
-                        Only needed when something sits in front of this server - Cloudflare, a load balancer,
-                        a WAF. Leave it empty otherwise.
-                    </div>
+                    <div class="ad-card__sub">Only for a CDN or load balancer in front.</div>
                 </div>
                 <?= $ranges === []
                     ? '<span class="sik-status sik-status--grey">Direct</span>'
@@ -90,10 +87,6 @@ return [
                             <span class="ad-muted">(via proxy <?= e($remote) ?>)</span>
                         <?php endif; ?>
                     </div>
-                    <span class="sik-help">
-                        If this is your real address, the list is right. If it is the CDN's, add its ranges below -
-                        otherwise every visitor is rate-limited as one person and the logs record the CDN.
-                    </span>
                 </div>
 
                 <?php if ($canEdit): ?>
@@ -110,9 +103,8 @@ return [
                                 <span class="sik-error"><?= e($errors['sec_trusted_proxies']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    The word <code>cloudflare</code> stands for Cloudflare's
-                                    <?= count(trusted_proxy_preset('cloudflare')) ?> published ranges, which ship with the store.
-                                    Otherwise one address or CIDR range per line.
+                                    <code>cloudflare</code> expands to
+                                    <?= count(trusted_proxy_preset('cloudflare')) ?> published ranges. Otherwise one per line.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -137,10 +129,22 @@ return [
                     </script>
                 <?php endif; ?>
 
-                <p class="sik-help" style="margin:0">
-                    The store can only rate-limit and log what it can identify. Absorbing a real flood is still
-                    the CDN's or the host's job, not the application's.
-                </p>
+                <p class="sik-help" style="margin:0">Absorbing a flood stays the CDN's job.</p>
+
+                <details style="font-size:13px">
+                    <summary style="cursor:pointer;font-weight:600">How this changes what the store sees</summary>
+                    <div style="display:grid;gap:8px;margin-top:8px">
+                        <p>Behind a CDN, the connecting address is the edge server. Every visitor then shares
+                           one rate-limit bucket and every log line records the CDN instead of the person.
+                           If the address shown above is the CDN&rsquo;s rather than yours, its ranges belong
+                           in the box.</p>
+                        <p>The forwarded headers say who the visitor really is, but anybody can send those
+                           headers &mdash; so they only count when the machine that connected is listed here.
+                           A wrong entry lets someone forge their own address.</p>
+                        <p>The store can only rate-limit and log what it can identify. It cannot absorb a
+                           flood at any setting; that is the CDN&rsquo;s or the host&rsquo;s job.</p>
+                    </div>
+                </details>
             </div>
         </div>
         <?php

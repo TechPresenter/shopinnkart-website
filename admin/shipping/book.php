@@ -544,14 +544,12 @@ require ADMIN_PATH . '/includes/header.php';
                         <?= icon('alert', 'w-5 h-5') ?>
                         <div>
                             <?php if ($pendingStale): ?>
-                                This booking never finished: the courier was called more than
-                                <?= (int) SHIPPING_PENDING_STALE_MINUTES ?> minutes ago and no answer was recorded.
-                                Cancel releases it - then check the courier panel for a consignment it may have
-                                created before booking again.
+                                <strong>This booking never finished</strong> &mdash; no answer in
+                                <?= (int) SHIPPING_PENDING_STALE_MINUTES ?> minutes. Cancel releases it.
+                                Check the courier panel first: it may already hold a consignment.
                             <?php else: ?>
-                                This booking is still being made: the courier was called and has not answered yet.
-                                <?= e('If it has not finished within ' . SHIPPING_PENDING_STALE_MINUTES
-                                    . ' minutes, Cancel releases it - then check the courier panel for a consignment it may have created.') ?>
+                                <strong>Still being made</strong> &mdash; the courier has not answered.
+                                After <?= (int) SHIPPING_PENDING_STALE_MINUTES ?> minutes, Cancel releases it.
                             <?php endif; ?>
                         </div>
                     </div>
@@ -759,7 +757,9 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Tracking timeline</h2>
-                    <div class="ad-card__sub">Oldest first. Late or repeated courier updates are recorded here but never move the status backwards.</div>
+                    <?php // The full rule - a late or repeated scan is recorded but never
+                          // rewinds the shipment - is in shipping_record_events(). ?>
+                    <div class="ad-card__sub">Oldest first. A late update never moves the status backwards.</div>
                 </div>
             </div>
             <?php if ($events === []): ?>
@@ -837,7 +837,7 @@ require ADMIN_PATH . '/includes/header.php';
     <?php elseif (!$canEdit): ?>
         <div class="ad-card">
             <div class="ad-card__body ad-muted">
-                This order has no shipment yet. Your role can view shipments but not book them.
+                No shipment yet. Your role can view shipments but not book them.
             </div>
         </div>
 
@@ -955,9 +955,9 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php endif; ?>
                     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
                         <button type="submit" class="ad-btn"><?= icon('refresh', 'w-4 h-4') ?> Get rates</button>
+                        <?php // The catalogue estimate is already on the facts list above. ?>
                         <span class="sik-help" style="margin:0">
-                            Estimated <?= e($grams((int) $order['estimated_grams'])) ?> from the catalogue. Couriers bill the
-                            larger of this and the volumetric weight.
+                            Couriers bill the larger of this and the volumetric weight.
                         </span>
                     </div>
                 </form>
@@ -1023,7 +1023,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <li><?= e(ucfirst((string) $why)) ?></li>
                                     <?php endforeach; ?>
                                 </ul>
-                                <p class="ad-muted" style="margin:8px 0 0;font-size:12.5px">
+                                <p class="ad-muted" style="margin:8px 0 0;font-size:var(--ad-text-xs)">
                                     Weighted cost <?= e($pctOf((float) $selWeights['cost'])) ?>,
                                     speed <?= e($pctOf((float) $selWeights['speed'])) ?>,
                                     performance <?= e($pctOf((float) $selWeights['reliability'])) ?>,

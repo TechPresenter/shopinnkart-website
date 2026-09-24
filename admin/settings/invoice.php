@@ -38,7 +38,7 @@ $spec = [
     ],
     'invoice_start_number' => [
         'type' => 'number', 'label' => 'Starting invoice number', 'min_value' => 1, 'max_value' => 999999,
-        'help' => 'Only applies to a series that has not issued an invoice yet.',
+        'help' => 'Only for a series with no invoices yet.',
         'attr' => $numberingLocked ? 'readonly' : '',
     ],
     'invoice_number_padding' => [
@@ -49,21 +49,21 @@ $spec = [
 
     'invoice_company_name' => [
         'type' => 'text', 'label' => 'Company name', 'max' => 150,
-        'help' => 'Leave blank to use the store name.',
+        'help' => 'Blank uses the store name.',
     ],
     'invoice_company_address' => [
         'type' => 'textarea', 'label' => 'Registered address', 'rows' => 3,
-        'help' => 'Leave blank to use the store address.',
+        'help' => 'Blank uses the store address.',
     ],
     'invoice_seller_state' => [
         'type' => 'select', 'label' => 'Place of business (state)',
         'options' => array_merge(['' => 'Not set'], array_combine(INDIAN_STATES, INDIAN_STATES)),
-        'help' => 'Decides the GST split: same state as the customer bills CGST + SGST, any other state bills IGST.',
+        'help' => 'Customer in the same state bills CGST + SGST; elsewhere, IGST.',
     ],
     'gst_number' => [
         'type' => 'text', 'label' => 'GSTIN', 'max' => 20,
         'placeholder' => '29ABCDE1234F1Z5',
-        'help' => 'Printed on every invoice when set. Leave blank if you are not GST registered.',
+        'help' => 'Blank if you are not GST registered.',
     ],
     'invoice_pan' => [
         'type' => 'text', 'label' => 'PAN', 'max' => 15,
@@ -80,7 +80,7 @@ $spec = [
     ],
     'invoice_auto_generate' => [
         'type' => 'bool', 'label' => 'Generate invoices automatically',
-        'help' => 'Raise an invoice as soon as an order is confirmed or paid.',
+        'help' => 'Raised as soon as an order is confirmed or paid.',
     ],
     'invoice_attach_to_order_email' => [
         'type' => 'bool', 'label' => 'Attach the PDF to order emails',
@@ -185,11 +185,8 @@ $nextNumber = invoice_format_number($currentSeries, max($lastNumber + 1, setting
     <div class="sik-alert sik-alert--info">
         <?= icon('info', 'w-5 h-5') ?>
         <div>
-            <strong><?= number_format($issuedCount) ?> invoice<?= $issuedCount === 1 ? ' has' : 's have' ?> already been issued,
-            so the numbering fields are locked.</strong>
-            A tax invoice series has to run unbroken. Changing the prefix, the reset mode or the start
-            number now would either repeat a number already given to a customer or leave a gap you would
-            have to account for. Company details, terms and behaviour below stay editable.
+            <strong>Numbering is locked: <?= number_format($issuedCount) ?> invoice<?= $issuedCount === 1 ? ' has' : 's have' ?> been issued.</strong>
+            A tax series has to run unbroken. Everything below stays editable.
         </div>
     </div>
 <?php endif; ?>
@@ -217,7 +214,7 @@ $nextNumber = invoice_format_number($currentSeries, max($lastNumber + 1, setting
                         <?= settings_field('invoice_start_number', $spec, $values, $errors) ?>
                         <?= settings_field('invoice_number_padding', $spec, $values, $errors) ?>
                     </div>
-                    <p class="ad-muted" style="font-size:12.5px">
+                    <p class="ad-muted" style="font-size:var(--ad-text-xs)">
                         Next invoice will be <strong class="ad-mono"><?= e($nextNumber) ?></strong>.
                     </p>
                 </div>
@@ -280,7 +277,7 @@ $nextNumber = invoice_format_number($currentSeries, max($lastNumber + 1, setting
                     </button>
                 </form>
                 <?php if ($issuedCount === 0): ?>
-                    <p class="ad-muted" style="font-size:12.5px;margin-top:10px">
+                    <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-top:10px">
                         No invoices issued yet — place a test order first.
                     </p>
                 <?php endif; ?>
@@ -292,7 +289,7 @@ $nextNumber = invoice_format_number($currentSeries, max($lastNumber + 1, setting
                 <div><div class="ad-card__title">Where the rest comes from</div></div>
             </div>
             <div class="ad-card__body">
-                <p class="ad-muted" style="font-size:12.5px;line-height:1.7;margin:0">
+                <p class="ad-muted" style="font-size:var(--ad-text-xs);line-height:1.7;margin:0">
                     Logo and store address:
                     <a href="<?= e(settings_url('store')) ?>">Store settings</a><br>
                     Tax rates and the tax label:

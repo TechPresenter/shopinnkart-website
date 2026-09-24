@@ -13,6 +13,13 @@
  * Turning self-service off does not remove the right - it only moves the work
  * to a human, and the card says so, because "we switched the button off" is
  * not an answer to a data request.
+ *
+ * Two things the card used to spell out and no longer needs to. A self-service
+ * request always needs a link clicked in the customer's own inbox, is rate
+ * limited, and is written to the security log - that is how it is built, not a
+ * choice the operator makes here. And the confirmation page, the confirmation
+ * email and privacy_delete() all read one list of what deletion touches, so
+ * they cannot drift apart and say different things.
  */
 
 declare(strict_types=1);
@@ -74,10 +81,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Privacy requests</h2>
-                    <div class="ad-card__sub">
-                        A customer can ask for a copy of everything you hold about them, or ask you to
-                        delete their account.
-                    </div>
+                    <div class="ad-card__sub">Export or delete everything you hold about one customer.</div>
                 </div>
                 <span class="sik-status sik-status--<?= $overdue > 0 ? 'red' : ($open > 0 ? 'amber' : 'green') ?>">
                     <?= (int) $open ?> open
@@ -99,12 +103,9 @@ return [
                 <div class="sik-alert sik-alert--info">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        <strong>Deletion is anonymisation, and the customer is told that.</strong>
-                        Tax invoices and the money side of an order cannot be made to disappear
-                        &mdash; the law requires them kept &mdash; so the account becomes a tombstone,
-                        everything pointing at a person is removed or detached, and the order history
-                        survives as numbers. The confirmation page, the confirmation email and the
-                        code that runs all read from one list, so they cannot say different things.
+                        <strong>Deletion is anonymisation.</strong>
+                        Tax invoices must be kept by law, so order history survives as numbers.
+                        The customer is told this before they confirm.
                     </div>
                 </div>
 
@@ -120,11 +121,7 @@ return [
                             <span>
                                 <strong>Let customers run these themselves</strong>
                                 <span class="sik-help" style="display:block">
-                                    Puts the buttons on Data &amp; Privacy in the account area. Every
-                                    request still needs a link clicked in the customer's own inbox, is
-                                    rate limited, and is written to the security log. Switching it off
-                                    does not remove the right and does not hide the page &mdash; the page
-                                    then says to write in, and the requests arrive here instead.
+                                    Off does not remove the right; requests arrive here instead.
                                 </span>
                             </span>
                         </label>
@@ -142,8 +139,7 @@ return [
                                 <span class="sik-error"><?= e($errors['sec_privacy_bundle_days']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    Then it is deleted unread by <code class="ad-mono">bin/prune-logs.php</code>.
-                                    The file holds every address and order one person ever had, so short is safer.
+                                    Then deleted unread. It holds every address and order they had.
                                 </span>
                             <?php endif; ?>
                         </div>

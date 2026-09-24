@@ -399,7 +399,7 @@ $blankVariant = [
                                          style="width:100%;height:110px;object-fit:contain;background:#fff;border-radius:6px">
                                     <label class="ad-field" style="margin-top:8px">
                                         <span class="sik-label" style="font-size:11.5px">Alt text</span>
-                                        <input type="text" class="sik-input" style="padding:7px 10px;font-size:12.5px"
+                                        <input type="text" class="sik-input" style="padding:7px 10px;font-size:var(--ad-text-sm)"
                                                name="image_alt[<?= (int) $image['id'] ?>]" maxlength="200"
                                                value="<?= e((string) ($image['alt_text'] ?? '')) ?>">
                                     </label>
@@ -570,12 +570,14 @@ $blankVariant = [
 
             <!-- ======================= Variants ======================= -->
             <div class="sik-tabpanel" data-tabpanel="variants" style="padding:20px">
+                <?php /* Variant stock changes go through adjust_stock() like any other movement, so the
+                         journal stays complete. The Stock field on the General tab says "Ignored once
+                         variants exist", which is the half of this an operator has to act on. */ ?>
                 <div class="sik-alert sik-alert--info">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        Add a row for every buyable combination. As soon as one variant exists the product is
-                        marked as having variants and its stock becomes the sum of the active variant stock.
-                        Variant stock changes are journalled just like any other stock movement.
+                        One row per buyable combination. The product&rsquo;s stock becomes the sum
+                        of its active variants.
                     </div>
                 </div>
 

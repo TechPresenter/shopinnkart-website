@@ -190,7 +190,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
                                 <?= $qr /* locally generated SVG, no user input in it */ ?>
                             </div>
                         </div>
-                        <div style="text-align:center;font-size:12.5px;color:var(--ad-muted);margin-bottom:8px">
+                        <div style="text-align:center;font-size:var(--ad-text-sm);color:var(--ad-muted);margin-bottom:8px">
                             Cannot scan? Type this key in instead:
                         </div>
                     <?php endif; ?>
@@ -225,7 +225,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
                 </button>
             </form>
 
-            <p style="font-size:12.5px;color:var(--ad-muted);margin-top:16px">
+            <p style="font-size:var(--ad-text-sm);color:var(--ad-muted);margin-top:16px">
                 You will get ten single-use backup codes on the next screen. Save them somewhere
                 that is not your phone &mdash; they are how you get back in if you lose it.
             </p>
@@ -277,7 +277,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
                 </button>
             </form>
 
-            <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:12.5px">
+            <div style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:18px;font-size:var(--ad-text-sm)">
                 <?php if (in_array('backup', $methods, true)): ?>
                     <a href="<?= e(admin_url('login-2fa.php?method=' . ($method === 'backup' ? 'totp' : 'backup'))) ?>"
                        style="color:var(--ad-primary);font-weight:600">
@@ -288,7 +288,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="cancel">
                     <button type="submit" class="ad-linkbtn"
-                            style="background:none;border:0;padding:0;color:var(--ad-muted);cursor:pointer;font-size:12.5px">
+                            style="background:none;border:0;padding:0;color:var(--ad-muted);cursor:pointer;font-size:var(--ad-text-sm)">
                         Cancel
                     </button>
                 </form>

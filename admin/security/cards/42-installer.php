@@ -9,6 +9,12 @@
  * the web installer still sitting in the document root, can this copy store a
  * secret at all, and can anybody who has read the project's public repository
  * simply sign in.
+ *
+ * Why the installer line is short on screen: install.php checks the database
+ * itself rather than a lock file, so a leftover copy cannot reset the
+ * administrator account, rewrite the database credentials or clear the
+ * catalogue. That is why the card says "delete it" without alarm - the
+ * reassurance is here, where it does not cost the operator a paragraph.
  */
 
 declare(strict_types=1);
@@ -50,8 +56,7 @@ return [
                     </div>
                     <div class="ad-muted" style="font-size:13px;margin-top:6px;line-height:1.7">
                         <?php if ($seededMsg === null): ?>
-                            No account on this store still uses a password from the project's
-                            README. Nothing to do.
+                            No account still uses a README password.
                         <?php else: ?>
                             <?= e($seededMsg) ?>
                             <?php if ($seeded['admins'] !== [] && admin_can('admins.edit')): ?>
@@ -73,13 +78,9 @@ return [
                     </div>
                     <div class="ad-muted" style="font-size:13px;margin-top:6px;line-height:1.7">
                         <?php if (!$installer['present']): ?>
-                            The installer has been deleted from the server. Nothing to do.
+                            Deleted from the server.
                         <?php else: ?>
-                            It is still in the document root. It refuses to run - it checks the database
-                            itself, not just a lock file, so it cannot reset your administrator account,
-                            rewrite the database credentials or clear the catalogue. Even so, delete
-                            <code class="ad-mono">install.php</code> from the server: nothing on a live
-                            store needs it.
+                            Still in the document root. It refuses to run, but delete it.
                         <?php endif; ?>
                     </div>
                 </div>
@@ -93,17 +94,13 @@ return [
                     </div>
                     <div class="ad-muted" style="font-size:13px;margin-top:6px;line-height:1.7">
                         <?php if ($keyOk): ?>
-                            Stored SMTP passwords and courier API secrets are encrypted with a key unique
-                            to this installation (<code class="ad-mono">config/app.key.php</code>).
-                            Back that file up: without it, every saved secret has to be re-entered.
+                            Encrypted with <code class="ad-mono">config/app.key.php</code>. Back it up, or
+                            every saved secret is lost.
                         <?php else: ?>
                             <strong>This copy cannot store secrets.</strong>
-                            <code class="ad-mono">config/</code> is not writable and no
-                            <code class="ad-mono">SIK_APP_KEY</code> is set, so there is nowhere to keep the
-                            encryption key. Rather than fall back to a value an attacker could work out,
-                            the app refuses: saving an SMTP password or a courier secret will not stick.
-                            Make <code class="ad-mono">config/</code> writable once, load any page, then
-                            set it back to read-only.
+                            A saved SMTP password or courier secret will not stick. Make
+                            <code class="ad-mono">config/</code> writable once, load any page, then set it
+                            back to read-only.
                         <?php endif; ?>
                     </div>
                 </div>

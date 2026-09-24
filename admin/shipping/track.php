@@ -266,7 +266,9 @@ require ADMIN_PATH . '/includes/header.php';
                            <?= $q === '' && $shipmentId === 0 ? 'autofocus' : '' ?>>
                 </span>
                 <button type="submit" class="ad-btn ad-btn--primary"><?= icon('search', 'w-4 h-4') ?> Track</button>
-                <p class="trk-search__hint">Phone numbers match however they are typed: +91 98765-43210, 098765 43210 and 9876543210 are the same.</p>
+                <?php // The matcher strips spaces, dashes and a +91 prefix before comparing,
+                      // so "+91 98765-43210", "098765 43210" and "9876543210" are one number. ?>
+                <p class="trk-search__hint">Phone numbers match however they are typed.</p>
             </form>
         </div>
     </div>
@@ -444,7 +446,7 @@ require ADMIN_PATH . '/includes/header.php';
 
             <?php if ($siblings !== []): ?>
                 <div class="ad-card__foot" style="justify-content:flex-start;align-items:center">
-                    <span class="ad-muted" style="font-size:12.5px">Also on this order:</span>
+                    <span class="ad-muted" style="font-size:var(--ad-text-xs)">Also on this order:</span>
                     <?php foreach ($siblings as $other): ?>
                         <a class="ad-btn ad-btn--sm" href="<?= e($trackUrl((int) $other['id'])) ?>">
                             <span class="ad-mono"><?= e((string) ($other['awb'] ?: 'Shipment #' . (int) $other['id'])) ?></span>
@@ -498,7 +500,7 @@ require ADMIN_PATH . '/includes/header.php';
                         </div>
                     <?php else: ?>
                         <?php // The service refuses to track without an AWB; say why here rather than after a click. ?>
-                        <span class="ad-muted" style="font-size:12.5px">No AWB yet, so nothing to ask the courier.</span>
+                        <span class="ad-muted" style="font-size:var(--ad-text-xs)">No AWB yet, so nothing to ask the courier.</span>
                     <?php endif; ?>
                 <?php endif; ?>
             </div>

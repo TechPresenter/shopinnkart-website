@@ -206,10 +206,12 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Return &amp; exchange requests</div>
+            <?php /* The distinction the subtitle has to protect: approving a request is a
+                     message to the customer, nothing more. The order does not move and no
+                     stock comes back until someone runs "Process a return" below, once the
+                     parcel is physically on the dock. */ ?>
             <div class="ad-card__sub">
-                Raised by customers from their order page. Approving emails them pickup instructions;
-                it does <strong>not</strong> move the order or restock anything — do that below once
-                the parcel is physically back.
+                Approving only emails the customer. It does <strong>not</strong> restock or move the order.
             </div>
         </div>
     </div>
@@ -254,16 +256,16 @@ require ADMIN_PATH . '/includes/header.php';
                             </td>
                             <td>
                                 <span class="sik-badge sik-badge--soft"><?= e(ucfirst((string) $request['type'])) ?></span>
-                                <div style="font-size:12.5px;margin-top:4px">
+                                <div style="font-size:var(--ad-text-sm);margin-top:4px">
                                     <?= e(return_reason_label((string) $request['reason'])) ?>
                                 </div>
                             </td>
-                            <td style="max-width:260px;font-size:12.5px">
+                            <td style="max-width:260px;font-size:var(--ad-text-sm)">
                                 <?= (string) ($request['comment'] ?? '') !== ''
                                     ? nl2br(e(mb_strimwidth((string) $request['comment'], 0, 220, '…')))
                                     : '<span class="ad-muted">—</span>' ?>
                             </td>
-                            <td style="white-space:nowrap;font-size:12.5px">
+                            <td style="white-space:nowrap;font-size:var(--ad-text-sm)">
                                 <?= e(format_datetime($request['created_at'])) ?>
                             </td>
                             <td>
@@ -315,8 +317,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div>
                 <div class="ad-card__title">Process a return</div>
                 <div class="ad-card__sub">
-                    Restores every unit to stock, rolls back any coupon use, and marks the payment
-                    refunded when you choose Refunded.
+                    Restores stock and rolls back any coupon use.
                 </div>
             </div>
         </div>
@@ -381,7 +382,7 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="ad-card">
     <div class="ad-card__head">
         <div class="ad-card__title">Returned &amp; refunded orders</div>
-        <span class="ad-muted" style="font-size:12.5px"><?= number_format($total) ?> total</span>
+        <span class="ad-muted" style="font-size:var(--ad-text-xs)"><?= number_format($total) ?> total</span>
     </div>
     <div class="ad-card__body ad-card__body--flush">
         <?php if ($rows === []): ?>

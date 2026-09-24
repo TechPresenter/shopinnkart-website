@@ -164,10 +164,11 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="ad-card">
     <div class="ad-card__head">
         <div class="ad-card__title">Coverage by record type</div>
+        <?php /* Drafts are excluded on purpose: a draft is not in anybody's index, so counting it
+                 as a gap would invent work that does not need doing. */ ?>
         <div class="ad-card__sub">
-            Published records only &mdash; a draft is not in anybody&rsquo;s index, so counting it as a gap
-            would be inventing work. <?= number_format($redirects) ?> redirect<?= $redirects === 1 ? '' : 's' ?>
-            are active.
+            Published records only &middot; <?= number_format($redirects) ?>
+            active redirect<?= $redirects === 1 ? '' : 's' ?>
         </div>
     </div>
 
@@ -213,8 +214,7 @@ require ADMIN_PATH . '/includes/header.php';
 
     <div class="ad-card__foot">
         <span class="ad-muted">
-            &ldquo;No keywords&rdquo; is reported but not flagged: Google has ignored the keywords tag since
-            2009, and a blank one costs nothing.
+            Keywords are counted, not flagged: Google has ignored that tag since 2009.
         </span>
     </div>
 </div>
@@ -224,8 +224,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div class="ad-card__title">Meta titles used more than once</div>
             <div class="ad-card__sub">
-                Two published records with the same title are two pages competing for the same search.
-                Usually a template filled both in.
+                Two pages competing for one search &mdash; usually a template.
             </div>
         </div>
         <div class="ad-card__body ad-card__body--flush">

@@ -219,10 +219,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Two-step sign in</h2>
-                    <div class="ad-card__sub">
-                        A code from an authenticator app on top of the password, so a leaked or
-                        guessed password is not enough on its own.
-                    </div>
+                    <div class="ad-card__sub">A code on top of the password.</div>
                 </div>
                 <?= $policy === 'optional'
                     ? '<span class="sik-status sik-status--amber">Optional</span>'
@@ -237,10 +234,9 @@ return [
                     <div class="sik-alert sik-alert--info">
                         <?= icon('info', 'w-5 h-5') ?>
                         <div>
-                            You are not using two-step sign in yet, so you cannot require it of anyone else.
-                            Set it up on
+                            Set two-step up on
                             <a href="<?= e(admin_url('account/index.php')) ?>"><strong>My Security</strong></a>
-                            first &mdash; that is the check that stops a requirement nobody can satisfy.
+                            first.
                         </div>
                     </div>
                 <?php endif; ?>
@@ -248,8 +244,7 @@ return [
                 <?php if (!app_key_available()): ?>
                     <div class="sik-alert sik-alert--error">
                         <?= icon('alert', 'w-5 h-5') ?>
-                        <div>The application key cannot be read, so new secrets cannot be stored.
-                             Two-step sign in cannot be required until that is fixed.</div>
+                        <div>The application key cannot be read, so two-step cannot be required.</div>
                     </div>
                 <?php endif; ?>
 
@@ -271,11 +266,7 @@ return [
                                     Every admin must use it
                                 </option>
                             </select>
-                            <span class="sik-help">
-                                Nothing happens to sessions that are already open. An admin it applies to is
-                                taken to a setup screen the next time they sign in, and cannot go anywhere
-                                else until they finish.
-                            </span>
+                            <span class="sik-help">Applies at the next sign-in; open sessions are untouched.</span>
                         </div>
 
                         <div class="ad-field">
@@ -288,11 +279,7 @@ return [
                                 <input type="checkbox" name="sec_2fa_email_otp" value="1"<?= mfa_email_otp_enabled() ? ' checked' : '' ?>>
                                 <span>Offer a six-digit code by email as the customer fallback</span>
                             </label>
-                            <span class="sik-help">
-                                Customers are never forced. The emailed code is a fallback for shoppers who
-                                have no authenticator app; admins do not get it, because an admin's inbox is
-                                usually where the password reset lands too.
-                            </span>
+                            <span class="sik-help">Customers are never forced. Admins never get the emailed code.</span>
                             <?php if ($emailOnly > 0): ?>
                                 <!-- Unticking either box takes the second factor off these accounts
                                      altogether - they have no authenticator app to fall back to, so
@@ -303,10 +290,10 @@ return [
                                     <div>
                                         <strong><?= (int) $emailOnly ?></strong>
                                         customer<?= $emailOnly === 1 ? '' : 's' ?>
-                                        use<?= $emailOnly === 1 ? 's' : '' ?> the emailed code as their only
-                                        second factor. Unticking either box above leaves
+                                        ha<?= $emailOnly === 1 ? 's' : 've' ?> no app to fall back to.
+                                        Unticking either box leaves
                                         <?= $emailOnly === 1 ? 'that account' : 'those accounts' ?>
-                                        on the password alone &mdash; they have no app to fall back to.
+                                        on the password alone.
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -323,11 +310,6 @@ return [
                                        style="width:100px" value="<?= (int) mfa_trust_days() ?>">
                                 <span style="font-size:13px">days before that browser is asked again</span>
                             </div>
-                            <span class="sik-help">
-                                A trust is recorded per browser and can be revoked from My Security. It dies
-                                on any password change, and &ldquo;keep me signed in&rdquo; does not replace it:
-                                a remembered browser still proves the second factor once.
-                            </span>
                         </div>
 
                         <div>
@@ -359,14 +341,7 @@ return [
                         <div>
                             <button type="submit" class="ad-btn ad-btn--sm"<?= $selfOn ? '' : ' disabled' ?>>Save roles</button>
                         </div>
-                        <span class="sik-help">
-                            A role you could not create yourself is shown but cannot be changed &mdash;
-                            the same &ldquo;nobody manages up&rdquo; rule the rest of the panel uses.
-                            Without the confirmation above, a requirement will not be switched on over admins
-                            who have not enrolled; they are not locked out, but they are made to set it up
-                            before they can work, and <code>php bin/reset-admin-2fa.php &lt;email&gt;</code> is
-                            the only way round it.
-                        </span>
+                        <span class="sik-help">A role above your own is shown but locked.</span>
                     </form>
                 <?php endif; ?>
 
@@ -374,7 +349,7 @@ return [
                 <div style="border-top:1px solid var(--ad-border,#e5e7eb);padding-top:16px">
                     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
                         <strong style="font-size:13.5px">Who is using it</strong>
-                        <span class="ad-muted" style="font-size:12.5px">
+                        <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                             <?= count($admins) - count($without) ?> of <?= count($admins) ?> admins enrolled
                         </span>
                     </div>
@@ -404,7 +379,7 @@ return [
                                     <td style="text-align:right">
                                         <?php if ($on && $canEdit && (int) $row['id'] !== (int) $me['id'] && admin_can_manage_admin($row)): ?>
                                             <details>
-                                                <summary style="cursor:pointer;font-size:12.5px">Reset</summary>
+                                                <summary style="cursor:pointer;font-size:var(--ad-text-sm)">Reset</summary>
                                                 <form method="post" style="display:grid;gap:8px;margin-top:8px;min-width:230px">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="action" value="2fa_reset">
@@ -439,6 +414,16 @@ return [
                     <div style="display:grid;gap:8px;margin-top:8px">
                         <p>Everyone who enrols gets ten single-use backup codes, shown once. That is the
                            first answer, and the one that needs nobody else.</p>
+                        <p>Without &ldquo;go ahead even if admins have not enrolled&rdquo;, a role requirement
+                           will not be switched on over admins who have not enrolled yet. With it, they are
+                           not locked out &mdash; they are made to set it up before they can work, and
+                           <code class="ad-mono">php bin/reset-admin-2fa.php &lt;email&gt;</code> is the only
+                           way round that.</p>
+                        <p>A trust is recorded per browser, can be revoked from My Security, and dies on any
+                           password change. &ldquo;Keep me signed in&rdquo; does not replace it: a remembered
+                           browser still proves the second factor once.</p>
+                        <p>Admins never get the emailed fallback code, because an admin&rsquo;s inbox is
+                           usually where the password reset lands too.</p>
                         <p>After that, any Super Admin can reset a colleague's second factor with the
                            <strong>Reset</strong> button above. It asks for your own password, is written to
                            the security log, and the account is emailed &mdash; a silent reset would be a

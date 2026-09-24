@@ -92,12 +92,20 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="sik-alert sik-alert--info">
             <?= icon('info', 'w-5 h-5') ?>
             <div>
-                Describe what is in the picture, in a sentence you would say out loud &mdash; this is what a
-                shopper using a screen reader hears instead of the image. &ldquo;Warm white curtain lights
-                hung across a window&rdquo;, not &ldquo;lights buy online best price&rdquo;.
-                A product&rsquo;s main image is not listed here: the storefront uses the product name for it.
+                Describe the picture for a shopper who hears it instead of seeing it.
+                Main images are not listed &mdash; the storefront uses the product name.
             </div>
         </div>
+
+        <details>
+            <summary>What makes a good description</summary>
+            <p>
+                Write the sentence you would say out loud: &ldquo;Warm white curtain lights hung across a
+                window&rdquo;, not &ldquo;lights buy online best price&rdquo;. Alt text is not an SEO field
+                first &mdash; it is what a shopper using a screen reader hears instead of the picture, and
+                a keyword list is useless to the person it exists for.
+            </p>
+        </details>
     </div>
 
     <?php if ($images === []): ?>

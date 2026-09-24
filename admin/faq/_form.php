@@ -49,7 +49,7 @@ $categories = $categories ?? [];
                         <?php if (isset($errors['answer'])): ?>
                             <span class="sik-error"><?= e($errors['answer']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Plain text. The storefront renders it inside the accordion body.</span>
+                            <span class="sik-help">Plain text, shown in the accordion body.</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -74,7 +74,7 @@ $categories = $categories ?? [];
                         <?php if (isset($errors['category'])): ?>
                             <span class="sik-error"><?= e($errors['category']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Pick an existing group or type a new name to start one.</span>
+                            <span class="sik-help">Type a new name to start a group.</span>
                         <?php endif; ?>
                     </div>
 
@@ -86,7 +86,7 @@ $categories = $categories ?? [];
                         <?php if (isset($errors['sort_order'])): ?>
                             <span class="sik-error"><?= e($errors['sort_order']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Lower numbers come first inside the category.</span>
+                            <span class="sik-help">Lower numbers come first in the category.</span>
                         <?php endif; ?>
                     </div>
 
@@ -98,10 +98,10 @@ $categories = $categories ?? [];
                                 $faq['status'] ?? 'active'
                             ) ?>
                         </select>
+                        <?php // The help line here said "Inactive questions are hidden from the
+                              // storefront FAQ page", which is the Inactive option restated. ?>
                         <?php if (isset($errors['status'])): ?>
                             <span class="sik-error"><?= e($errors['status']) ?></span>
-                        <?php else: ?>
-                            <span class="sik-help">Inactive questions are hidden from the storefront FAQ page.</span>
                         <?php endif; ?>
                     </div>
                 </div>

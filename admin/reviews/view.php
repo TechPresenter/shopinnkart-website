@@ -224,7 +224,7 @@ require ADMIN_PATH . '/includes/header.php';
                         </form>
                     <?php endif; ?>
 
-                    <span class="ad-muted" style="font-size:12.5px">
+                    <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                         Approving or rejecting recalculates the product rating immediately.
                     </span>
                 </div>
@@ -244,7 +244,7 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
                     <span style="color:#F59E0B"><?= rating_stars((float) $review['rating_avg']) ?></span>
-                    <span class="ad-muted" style="font-size:12.5px">
+                    <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                         <?= number_format((float) $review['rating_avg'], 2) ?> from
                         <?= number_format((int) $review['rating_count']) ?> approved review(s)
                     </span>

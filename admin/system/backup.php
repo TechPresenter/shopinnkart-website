@@ -488,15 +488,16 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="sik-alert sik-alert--<?= $backupIsStale ? 'warning' : 'info' ?>">
     <?= icon($backupIsStale ? 'alert' : 'info', 'w-5 h-5') ?>
     <div>
+        <?php /* The stale line names the cron path because "set up a schedule" without
+                 the command is advice nobody can act on from this screen. The other
+                 line stays because an operator who thinks this IS their backup strategy
+                 loses the store with the disk. */ ?>
         <?php if ($backupIsStale): ?>
             <strong>No backup in the last <?= (int) $alertHours ?> hours.</strong>
-            Take one now, and put <code class="ad-mono">bin/backup.php</code> on a nightly cron so it
-            stops depending on somebody remembering.
+            Take one, then put <code class="ad-mono">bin/backup.php</code> on a nightly cron.
         <?php else: ?>
-            <strong>This is a safety net, not a backup strategy.</strong>
-            The dump lives on the same disk as the site, so it does not survive a drive failure or a
-            compromised server. Download a copy somewhere else, and keep whatever snapshot or
-            off-site backup your host provides.
+            <strong>A safety net, not a backup strategy.</strong>
+            The dump sits on the same disk as the site. Download a copy elsewhere.
         <?php endif; ?>
     </div>
 </div>
@@ -519,11 +520,15 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="sik-alert sik-alert--warning">
         <?= icon('alert', 'w-5 h-5') ?>
         <div>
-            The backups sit <strong>inside the document root</strong>, kept from being served by an
-            <code class="ad-mono">.htaccess</code> rule. That rule is one server misconfiguration away
-            from being ignored. If your host lets you write above <code class="ad-mono">public_html</code>,
-            put the full path in <a href="<?= e(admin_url('security/settings.php#backups')) ?>">Security
-            Settings &rsaquo; Backups</a> and the files move out of the web's reach entirely.
+            <?php /* One .htaccess deny rule is the only thing between these files and
+                     the web. A host that ignores .htaccess, or a rewritten vhost, serves
+                     the lot. Moving the folder above the document root removes the
+                     dependency rather than hardening it. */ ?>
+            Backups sit <strong>inside the document root</strong>, held back by one
+            <code class="ad-mono">.htaccess</code> rule. Move them above
+            <code class="ad-mono">public_html</code> in
+            <a href="<?= e(admin_url('security/settings.php#backups')) ?>">Security Settings
+            &rsaquo; Backups</a>.
         </div>
     </div>
 <?php endif; ?>
@@ -543,9 +548,8 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Create a backup</div>
-            <div class="ad-card__sub">
-                Every table is dumped with its structure and its rows, in pure PHP &mdash; no mysqldump required.
-            </div>
+            <?php // Pure PHP, so no mysqldump binary and no shell access are needed. ?>
+            <div class="ad-card__sub">Every table, structure and rows, in pure PHP.</div>
         </div>
     </div>
     <form method="post" action="<?= e($selfUrl) ?>">
@@ -555,12 +559,12 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__body">
             <div class="sik-alert sik-alert--info">
                 <?= icon('info', 'w-5 h-5') ?>
+                <?php /* The dump runs inside this request: a big catalogue can take a
+                         minute or more, and closing the tab kills it part-written. */ ?>
                 <div>
-                    The current database is <strong><?= e(format_bytes($dbSize)) ?></strong> across
-                    <?= number_format($tableCount) ?> tables. A large catalogue with a long order history
-                    can take a minute or more &mdash; leave the tab open until the page reloads.
-                    The finished file contains password hashes and customer addresses, so treat it
-                    exactly like the database itself.
+                    <strong><?= e(format_bytes($dbSize)) ?></strong> across
+                    <?= number_format($tableCount) ?> tables. Leave the tab open until the page
+                    reloads. The file holds password hashes and customer addresses.
                 </div>
             </div>
 
@@ -568,7 +572,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <label class="sik-label" for="backupNote">Note (optional)</label>
                 <input class="sik-input" type="text" id="backupNote" name="note" maxlength="255"
                        placeholder="e.g. Before the Diwali price update">
-                <span class="sik-help">Shown in the list so you know which backup is which.</span>
+                <span class="sik-help">Shown in the backup list.</span>
             </div>
 
             <div class="ad-field">
@@ -581,9 +585,12 @@ require ADMIN_PATH . '/includes/header.php';
                             ? 'the application key (config/app.key.php)'
                             : 'the backup passphrase set ' . ($configured === 'env' ? 'in the environment' : 'in Security Settings') ?>.
                         <span class="sik-help" style="display:block">
+                            <?php /* Blunt on purpose: with no passphrase configured the dump
+                                     is sealed with the app key, so the key file IS the backup.
+                                     Losing it loses every dump taken this way at once. */ ?>
                             <?= $configured === 'none'
-                                ? 'Nothing to remember. But the dump dies with the key file: lose config/app.key.php and this backup is noise.'
-                                : 'The same passphrase the nightly cron job uses.' ?>
+                                ? 'Lose config/app.key.php and this backup is noise.'
+                                : 'The same passphrase the nightly cron uses.' ?>
                         </span>
                     </span>
                 </label>
@@ -592,9 +599,11 @@ require ADMIN_PATH . '/includes/header.php';
                     <span>
                         <strong>Protect this one with a passphrase I type now</strong>
                         <span class="sik-help" style="display:block">
-                            For the copy you are about to take off this server. It can be restored
-                            anywhere with the passphrase and nothing else &mdash; and it cannot be
-                            restored at all without it. Nobody can reset it for you.
+                            <?php /* For the copy that leaves the server: it needs nothing from
+                                     this installation but the passphrase, which also means there
+                                     is no recovery path if the passphrase is lost. */ ?>
+                            Restores anywhere with the passphrase, nowhere without it. Nobody can
+                            reset it.
                         </span>
                     </span>
                 </label>
@@ -617,10 +626,9 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Does backing up work on this server?</div>
-            <div class="ad-card__sub">
-                Dumps one small table, encrypts it, checksums it and reads it back &mdash; about a second,
-                and it answers the question without dumping the whole catalogue.
-            </div>
+            <?php // One small table, dumped, encrypted, checksummed and read back: the whole
+                  // pipeline exercised in about a second, without touching the catalogue. ?>
+            <div class="ad-card__sub">One small table, round-tripped. About a second.</div>
         </div>
         <form method="post" action="<?= e($selfUrl) ?>">
             <?= csrf_field() ?>
@@ -651,7 +659,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Existing backups</div>
-            <div class="ad-card__sub">Newest first. Download the ones you want to keep off this server.</div>
+            <div class="ad-card__sub">Newest first. Download the ones you want off this server.</div>
         </div>
     </div>
     <div class="ad-card__body ad-card__body--flush">
@@ -802,10 +810,9 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <div class="ad-card__title">Other files in the backups folder</div>
-                <div class="ad-card__sub">
-                    Nothing in the list above points at these. They are usually dumps taken by hand
-                    over SSH, or by an older version of the store.
-                </div>
+                <?php // No `backups` row points at these - normally hand-taken SSH dumps, or
+                      // files left by an older version of the store. ?>
+                <div class="ad-card__sub">Files no backup row points at.</div>
             </div>
         </div>
         <div class="ad-card__body" style="display:grid;gap:14px">
@@ -817,9 +824,8 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--error">
                     <strong><?= count($plaintext) ?> of these
                     <?= count($plaintext) === 1 ? 'is a plain SQL dump' : 'are plain SQL dumps' ?>.</strong>
-                    A plain dump is every password hash, every customer address and every payment
-                    secret in one readable file. The folder is denied over HTTP, but that is the
-                    only thing standing in front of it. Encrypt them or delete them.
+                    Every password hash, customer address and payment secret, readable, behind
+                    nothing but an HTTP deny rule. Encrypt them or delete them.
                 </div>
             <?php endif; ?>
 
@@ -908,19 +914,23 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Restore</div>
-            <div class="ad-card__sub">Put a backup back. Read the list before you do.</div>
+            <div class="ad-card__sub">Put a backup back.</div>
         </div>
     </div>
     <div class="ad-card__body" style="display:grid;gap:14px">
+        <?php /* The five caveats from backup_restore_caveats() used to render here in
+                 full - 182 words of callout above the form, which is where a warning
+                 goes to be skimmed past. The one that can destroy the shop (DROP TABLE
+                 does not roll back) is now six words at the top; the other four are
+                 limits you hit once you have already decided to restore, so they sit in
+                 the <details> at the foot of this card. The function is untouched: the
+                 CLI still prints the whole list. */ ?>
         <div class="sik-alert sik-alert--warning">
             <?= icon('alert', 'w-5 h-5') ?>
             <div>
-                <strong>What a restore here can and cannot do</strong>
-                <ul style="margin:8px 0 0 0;padding-left:20px;line-height:1.7">
-                    <?php foreach (backup_restore_caveats() as $caveat): ?>
-                        <li><?= e($caveat) ?></li>
-                    <?php endforeach; ?>
-                </ul>
+                <strong>There is no undo.</strong>
+                Every table in <code class="ad-mono"><?= e(DB_NAME) ?></code> is dropped and rebuilt
+                from the file. Everything written since it was taken is gone.
             </div>
         </div>
 
@@ -949,11 +959,11 @@ require ADMIN_PATH . '/includes/header.php';
                     <label class="sik-label" for="restoreTables">Only these tables (optional)</label>
                     <input class="sik-input" type="text" id="restoreTables" name="tables"
                            placeholder="products, product_images" style="max-width:520px">
-                    <span class="sik-help">
-                        Comma separated. Leave empty to restore everything. Naming one table is the
-                        recovery you usually want after a bad bulk edit &mdash; and it is the only
-                        version of this that finishes quickly on a big database.
-                    </span>
+                    <?php /* Naming one table is the recovery people actually want after a
+                             bad bulk edit, and on a large database it is the only variant
+                             that finishes inside one request. Said in the <details> below
+                             rather than here, where it was four lines under one input. */ ?>
+                    <span class="sik-help">Comma separated. Blank restores everything.</span>
                 </div>
 
                 <div class="ad-field">
@@ -966,10 +976,8 @@ require ADMIN_PATH . '/includes/header.php';
                     <input type="checkbox" name="safety" value="1" checked style="margin-top:4px">
                     <span>
                         <strong>Take a safety backup first</strong>
-                        <span class="sik-help" style="display:block">
-                            The only way back to how things are right now. Leave it on unless the
-                            database is already too broken to dump.
-                        </span>
+                        <?php // Off only when the database is already too broken to dump. ?>
+                        <span class="sik-help" style="display:block">The only way back. Leave it on.</span>
                     </span>
                 </label>
 
@@ -1001,8 +1009,25 @@ require ADMIN_PATH . '/includes/header.php';
             </form>
         <?php endif; ?>
 
-        <div style="font-size:13.5px;line-height:1.7">
-            <p style="margin:0 0 10px 0">
+        <?php /* The one <details> this card gets. Everything in it is real, and none of
+                 it is needed before the operator picks a file: the five caveats, the
+                 encrypted-on-disk / plain-on-download distinction, and the by-hand
+                 import. Closed by default, so the form is the first thing on screen. */ ?>
+        <details>
+            <summary>What a restore can and cannot do</summary>
+            <?php // <ul> and <p> are direct children so admin.css's details typography
+                  // applies; the <pre> is deliberately outside that 40ch measure. ?>
+            <ul style="padding-left:20px">
+                <?php foreach (backup_restore_caveats() as $caveat): ?>
+                    <li><?= e($caveat) ?></li>
+                <?php endforeach; ?>
+            </ul>
+            <p>
+                Naming one table restores only that table. After a bad bulk edit that is usually
+                the recovery you want, and on a large database it is the only one that finishes
+                inside a single request.
+            </p>
+            <p>
                 The file on the server is <strong>encrypted</strong>
                 <?= $configured === 'none'
                     ? "with this installation's application key (<code class=\"ad-mono\">config/app.key.php</code>)"
@@ -1013,19 +1038,16 @@ require ADMIN_PATH . '/includes/header.php';
                 <?= $configured === 'none' ? 'the key file' : 'the passphrase' ?>: a dump left on the
                 server cannot be restored without it.
             </p>
-            <p style="margin:0 0 10px 0">
-                To restore the downloaded copy by hand instead, import it into an empty database with
-                phpMyAdmin, or from a shell:
-            </p>
+            <p>To restore that downloaded copy by hand, import it into an empty database:</p>
             <?php // No overflow-x:auto: the restore command line scrolled 121-151px sideways at
                   // 360-390px. admin.css wraps pre.ad-mono, and an inline rule outranked it. ?>
             <pre class="ad-mono" style="margin:0;padding:12px;background:#F9FAFB;border:1px solid var(--ad-border);
                  border-radius:8px">mysql -u &lt;user&gt; -p <?= e(DB_NAME) ?> &lt; shopinnkart-YYYYmmdd-HHiiss.sql</pre>
-            <p class="ad-muted" style="margin:10px 0 0 0">
-                Each table is dropped and recreated on import, and foreign key checks are switched off
-                for the run, so the order the tables appear in does not matter.
+            <p>
+                Each table is dropped and recreated on import, and foreign key checks are switched
+                off for the run, so the order the tables appear in does not matter.
             </p>
-        </div>
+        </details>
     </div>
 </div>
 

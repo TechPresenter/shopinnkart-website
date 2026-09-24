@@ -309,9 +309,10 @@ require ADMIN_PATH . '/includes/header.php';
                 Showing <?= (int) $pagination['from'] ?>&ndash;<?= (int) $pagination['to'] ?>
                 of <?= (int) $pagination['total'] ?> &middot;
             <?php endif; ?>
-            Entries are dropped <?= (int) $retention ?> days after they were last hit, and the table is
-            capped at <?= number_format($ceiling) ?> rows so a scanner cannot fill it. No IP address,
-            browser or visitor id is stored here.
+            <?php /* The cap exists so a scanner hammering random URLs cannot fill the table. */ ?>
+            Dropped <?= (int) $retention ?> days after the last hit &middot;
+            capped at <?= number_format($ceiling) ?> rows &middot;
+            no IP, browser or visitor id stored.
         </span>
 
         <?php if ($canEdit): ?>

@@ -375,7 +375,6 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
             <div class="ad-card" data-insp="content" style="margin:0">
                 <div class="ad-card__head">
                     <div class="ad-card__title">Placement</div>
-                    <div class="ad-card__sub">Which page the section belongs to, and what it renders.</div>
                 </div>
                 <div class="ad-card__body">
                     <div class="ad-row ad-row--2">
@@ -418,10 +417,10 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                         <?php if (isset($errors['section_key'])): ?>
                             <span class="sik-error"><?= e($errors['section_key']) ?></span>
                         <?php else: ?>
+                            <?php // Also the handle the lazy-load endpoint fetches the section by. ?>
                             <span class="sik-help">
-                                Unique across the whole builder. It becomes the anchor
-                                <span class="ad-mono">#w-<?= e(($section['section_key'] ?? '') !== '' ? $section['section_key'] : 'your-key') ?></span>
-                                on the storefront and the handle the lazy-load endpoint uses.
+                                Unique. Becomes the anchor
+                                <span class="ad-mono">#w-<?= e(($section['section_key'] ?? '') !== '' ? $section['section_key'] : 'your-key') ?></span>.
                             </span>
                         <?php endif; ?>
                     </div>
@@ -446,7 +445,6 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                             <label class="sik-label" for="whAccent">Accent words</label>
                             <input class="sik-input" type="text" id="whAccent" name="title_accent" maxlength="150"
                                    value="<?= e($section['title_accent'] ?? '') ?>" placeholder="SELLERS">
-                            <span class="sik-help">Rendered right after the title in the accent colour.</span>
                         </div>
                     </div>
 
@@ -461,7 +459,7 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                         <label class="sik-label" for="whDescription">Description</label>
                         <textarea class="sik-textarea" id="whDescription" name="description" rows="3"
                                   placeholder="Longer copy, used by the widget types that have room for it."><?= e($section['description'] ?? '') ?></textarea>
-                        <span class="sik-help">Basic HTML is allowed; scripts and event handlers are stripped on save.</span>
+                        <span class="sik-help">Basic HTML. Scripts and event handlers are stripped on save.</span>
                     </div>
 
                     <div class="ad-row ad-row--2">
@@ -478,7 +476,7 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                             <?php if (isset($errors['link_url'])): ?>
                                 <span class="sik-error"><?= e($errors['link_url']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Relative paths resolve against the store URL. Both fields are needed for the link to render.</span>
+                                <span class="sik-help">Both fields are needed for the link to render.</span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -493,10 +491,7 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
             <div class="ad-card" data-insp="content" style="margin:0">
                 <div class="ad-card__head">
                     <div class="ad-card__title">Rows</div>
-                    <div class="ad-card__sub">
-                        Build the section out of rows. Leave this empty and the section
-                        renders exactly as its widget type always has.
-                    </div>
+                    <div class="ad-card__sub">Leave empty and the widget type renders as it always has.</div>
                 </div>
                 <div class="ad-card__body">
                     <?php /* The marker that says "this post is about rows". A save from
@@ -512,7 +507,7 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
 
                     <p class="ad-insp__empty hrx-none" data-rows-empty
                        <?= $sectionRows === [] ? '' : 'hidden' ?>>
-                        No rows yet. Add one to build this section out of nested rows.
+                        No rows yet.
                     </p>
 
                     <!-- Reorder outcomes are announced: a drag that silently failed
@@ -531,8 +526,8 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                                  where the rows are built. */ ?>
                         <span class="sik-help" style="margin:0">
                             Up to <?= HOMEPAGE_ROWS_MAX ?> rows, <?= HOMEPAGE_ROW_ITEMS_MAX ?> items each,
-                            and about <?= homepage_rows_item_budget(HOMEPAGE_ROWS_MAX) ?> items in the
-                            section altogether - a bigger save is refused rather than half-applied.
+                            <?= homepage_rows_item_budget(HOMEPAGE_ROWS_MAX) ?> items in all. Bigger saves
+                            are refused, not half-applied.
                         </span>
                     </div>
 
@@ -547,19 +542,21 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
             <!-- =========================== Custom HTML ========================== -->
             <div class="ad-card" data-insp="content" style="margin:0" data-when-type="html"
                  <?= $type === 'html' ? '' : 'hidden' ?>>
+                <?php // The card only renders while widget_type is "html", so a subtitle
+                      // saying "only used by the Custom HTML widget type" said nothing. ?>
                 <div class="ad-card__head">
                     <div class="ad-card__title">Custom HTML</div>
-                    <div class="ad-card__sub">Only used by the Custom HTML widget type.</div>
                 </div>
                 <div class="ad-card__body">
                     <div class="ad-field">
                         <label class="sik-label" for="whHtml">Markup</label>
                         <textarea class="sik-textarea ad-mono" id="whHtml" name="custom_html" rows="10"
-                                  style="min-height:220px;font-size:12.5px"
+                                  style="min-height:220px;font-size:var(--ad-text-sm)"
                                   placeholder="&lt;h2&gt;Anything you like&lt;/h2&gt;"><?= e($section['custom_html'] ?? '') ?></textarea>
+                        <?php // Layout tags, links, images and tables survive the sanitiser. ?>
                         <span class="sik-help">
-                            Sanitised on save: <code>&lt;script&gt;</code>, inline event handlers and
-                            <code>javascript:</code> URLs are removed. Layout tags, links, images and tables survive.
+                            Sanitised on save: scripts, event handlers and
+                            <code>javascript:</code> URLs are removed.
                         </span>
                     </div>
                 </div>
@@ -569,7 +566,6 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
             <div class="ad-card" data-insp="content" style="margin:0">
                 <div class="ad-card__head">
                     <div class="ad-card__title">Data source</div>
-                    <div class="ad-card__sub">Where the items in this section come from.</div>
                 </div>
                 <div class="ad-card__body">
                     <div class="ad-row ad-row--2">
@@ -578,7 +574,7 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                             <select class="sik-select" id="whSource" name="data_source" data-data-source>
                                 <?= admin_options(homepage_data_sources(), $source) ?>
                             </select>
-                            <span class="sik-help">Product widgets honour this. Hero, ticker, trust, stats and testimonials read their own tables.</span>
+                            <span class="sik-help">Hero, ticker, trust, stats and testimonials ignore this.</span>
                         </div>
 
                         <div class="ad-field" data-source-row <?= in_array($source, homepage_lookup_sources(), true) ? '' : 'hidden' ?>>
@@ -622,7 +618,9 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                                 <?php endforeach; ?>
                             </div>
                         </div>
-                        <span class="sik-help">Saved into the section's settings as <span class="ad-mono">product_ids</span>, in the order shown. Only used while the source is "Hand-picked products".</span>
+                        <?php // Saved into the section's settings as `product_ids`, in the order shown.
+                              // The list is read only while data_source is "manual". ?>
+                        <span class="sik-help">Used only while the source is &ldquo;Hand-picked products&rdquo;.</span>
                     </div>
 
                     <div class="ad-row ad-row--3">
@@ -766,7 +764,7 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                                 <?php if (isset($errors['autoplay_speed'])): ?>
                                     <span class="sik-error"><?= e($errors['autoplay_speed']) ?></span>
                                 <?php else: ?>
-                                    <span class="sik-help">Time each slide holds before advancing. Ignored while autoplay is off.</span>
+                                    <span class="sik-help">Ignored while autoplay is off.</span>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -852,10 +850,10 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                         <span class="ad-switch__track"></span>
                         <span>Load on scroll</span>
                     </label>
-                    <span class="sik-help" style="margin-top:-6px">
-                        Renders an empty shell and fetches the contents over AJAX when it scrolls into view.
-                        Good for heavy sections near the bottom; leave off for anything above the fold.
-                    </span>
+                    <?php // Renders an empty shell and fetches the contents over AJAX when the
+                          // shell scrolls into view - worth it for a heavy section near the
+                          // foot of the page, a visible delay for one above the fold. ?>
+                    <span class="sik-help" style="margin-top:-6px">Leave off for anything above the fold.</span>
                 </div>
                 <div class="ad-card__foot">
                     <a class="ad-btn" href="<?= e(admin_url('homepage/?zone=' . urlencode((string) ($section['zone'] ?? 'home')))) ?>">Cancel</a>
@@ -870,9 +868,9 @@ $blankItem = homepage_rows_normalise([['items' => [['type' => 'image']]]], $blan
                 <div class="ad-card" data-insp="none" style="margin:0">
                     <div class="ad-card__head"><div class="ad-card__title">Preview</div></div>
                     <div class="ad-card__body">
-                        <p class="ad-muted" style="font-size:12.5px;margin-bottom:10px">
-                            Opens the storefront scrolled to this section. Inactive or out-of-schedule
-                            sections are not rendered, so the anchor will not resolve.
+                        <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-bottom:10px">
+                            Opens the storefront at this section. Inactive or scheduled-out sections
+                            are not rendered, so the anchor will not resolve.
                         </p>
                         <a class="ad-btn ad-btn--block" target="_blank" rel="noopener"
                            href="<?= e(homepage_preview_url($section)) ?>">

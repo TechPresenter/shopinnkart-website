@@ -220,7 +220,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card">
         <div class="ad-card__head">
             <div class="ad-card__title">By shipping method</div>
-            <span class="ad-muted" style="font-size:12.5px">
+            <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                 <?= e(money($totals['shipping'])) ?> collected
             </span>
         </div>

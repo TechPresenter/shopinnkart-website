@@ -51,9 +51,6 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Response headers &amp; Content Security Policy</h2>
-                    <div class="ad-card__sub">
-                        What every page tells the browser it is allowed to do.
-                    </div>
                 </div>
                 <?= $mode === 'enforce'
                     ? '<span class="sik-status sik-status--green">Enforced</span>'
@@ -63,15 +60,6 @@ return [
             </div>
 
             <div class="ad-card__body" style="display:grid;gap:14px">
-                <div class="ad-muted" style="font-size:13px;line-height:1.7">
-                    Sent on every page, always:
-                    <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>,
-                    <code>Referrer-Policy</code>, <code>Cross-Origin-Opener-Policy</code> and a
-                    <code>Permissions-Policy</code> that keeps the camera and location off but leaves the
-                    <strong>microphone on for voice search</strong>. Account, admin and API responses also
-                    get <code>no-store</code>, so a shared computer cannot press Back into someone's order.
-                </div>
-
                 <?php if ($canEdit): ?>
                     <form method="post" class="ad-form" style="display:grid;gap:14px">
                         <?= csrf_field() ?>
@@ -90,13 +78,7 @@ return [
                                     Off - send no policy at all
                                 </option>
                             </select>
-                            <span class="sik-help">
-                                A CSP is the difference between one injected <code>&lt;script&gt;</code> being a
-                                defaced page and it being a stolen session. Start in <strong>Report only</strong>,
-                                use the shop and the admin for a day, then switch to <strong>Enforce</strong>.
-                                The storefront still uses inline scripts, so the policy allows those today - it is
-                                not the strictest policy possible, it is the strictest one this code can run under.
-                            </span>
+                            <span class="sik-help">Start in Report only for a day, then Enforce.</span>
                         </div>
 
                         <div class="ad-field">
@@ -107,10 +89,7 @@ return [
                             <?php if (isset($errors['sec_csp_report_uri'])): ?>
                                 <span class="sik-error"><?= e($errors['sec_csp_report_uri']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">
-                                    Leave empty unless you run a collector. Without one, violations are visible in the
-                                    browser console only - which is enough for the day of testing described above.
-                                </span>
+                                <span class="sik-help">Only if you run an external collector.</span>
                             <?php endif; ?>
                         </div>
 
@@ -123,8 +102,25 @@ return [
                 <?php endif; ?>
 
                 <details style="font-size:13px">
-                    <summary style="cursor:pointer;font-weight:600">The policy being sent</summary>
-                    <pre class="ad-mono" style="white-space:pre-wrap;word-break:break-word;margin-top:8px;font-size:12px"><?= e(str_replace('; ', ";\n", $policy)) ?></pre>
+                    <summary style="cursor:pointer;font-weight:600">What is sent, and why Report only first</summary>
+                    <div style="display:grid;gap:10px;margin-top:8px">
+                        <p>These headers are what every page tells the browser it is allowed to do.</p>
+                        <p>Sent on every page, always: <code>X-Content-Type-Options</code>,
+                           <code>X-Frame-Options</code>, <code>Referrer-Policy</code>,
+                           <code>Cross-Origin-Opener-Policy</code> and a <code>Permissions-Policy</code> that
+                           keeps the camera and location off but leaves the
+                           <strong>microphone on for voice search</strong>. Account, admin and API responses
+                           also get <code>no-store</code>, so a shared computer cannot press Back into
+                           someone&rsquo;s order.</p>
+                        <p>A CSP is the difference between one injected <code>&lt;script&gt;</code> being a
+                           defaced page and it being a stolen session. Report only blocks nothing, so a day of
+                           real use tells you what Enforce would break before it breaks it.</p>
+                        <p>The storefront still prints inline scripts, so the policy allows those today. It is
+                           not the strictest policy possible, it is the strictest one this code can run under
+                           &mdash; <a href="#csp-reports">What the policy would block</a> measures the way out.</p>
+                        <p class="sik-label" style="margin:0">The policy being sent</p>
+                        <pre class="ad-mono" style="white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px"><?= e(str_replace('; ', ";\n", $policy)) ?></pre>
+                    </div>
                 </details>
             </div>
         </div>

@@ -55,9 +55,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Password policy</h2>
-                    <div class="ad-card__sub">
-                        What a new password has to be. Existing passwords are not affected until they are changed.
-                    </div>
+                    <div class="ad-card__sub">Applies to new passwords only.</div>
                 </div>
                 <span class="sik-status sik-status--<?= $algo === PASSWORD_BCRYPT ? 'amber' : 'green' ?>">
                     <?= e($algo === PASSWORD_BCRYPT ? 'bcrypt' : 'argon2id') ?>

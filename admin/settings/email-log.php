@@ -179,10 +179,9 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="sik-alert sik-alert--warning">
         <?= icon('alert', 'w-5 h-5') ?>
         <div>
-            <strong>Mail transport is set to "Log to file".</strong>
-            Messages are written to <code>storage/logs/mail/</code> as .eml files and are
-            <em>not</em> delivered to anybody. Switch to SMTP on the
-            <a href="<?= e(settings_url('email')) ?>">Email settings</a> screen before going live.
+            <strong>Nothing is being delivered to anybody.</strong>
+            Mail is written to <code>storage/logs/mail/</code> as .eml files. Switch to SMTP on
+            <a href="<?= e(settings_url('email')) ?>">Email settings</a> before going live.
         </div>
     </div>
 <?php elseif ($transport['transport'] === 'smtp' && $transport['host'] === ''): ?>

@@ -88,21 +88,18 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Session length</h2>
-                    <div class="ad-card__sub">
-                        Sign-in cookies end with the browser now. These are the limits on top of that.
-                    </div>
+                    <div class="ad-card__sub">Cookies end with the browser. These are the limits on top.</div>
                 </div>
             </div>
 
             <div class="ad-card__body" style="display:grid;gap:14px">
                 <?php // Sessions that were already open when this shipped carry no
                       // generation stamp. They are adopted once and then checked
-                      // like any other, so switching it on signed nobody out. ?>
-                <p class="ad-muted" style="font-size:12.5px;margin:0">
-                    Sessions that were already open when this was switched on keep working until they
-                    idle out, expire, or the account&rsquo;s password changes &mdash; nobody was signed out by the deploy.
-                </p>
-
+                      // like any other, so switching it on signed nobody out: an
+                      // adopted session still ends when it idles out, expires or
+                      // the account's password changes. That was worth saying on
+                      // screen the week it deployed and is only noise now, so it
+                      // lives here instead. ?>
                 <?php if ($canEdit): ?>
                     <form method="post" class="ad-form" style="display:grid;gap:12px">
                         <?= csrf_field() ?>
@@ -111,7 +108,7 @@ return [
                         <h3 style="font-size:13px;font-weight:700;margin:0">Admins</h3>
                         <?php $field('sec_session_idle_admin', 'Signed out after doing nothing for', (int) ($adminIdle / 60), 'minutes', $errors); ?>
                         <?php $field('sec_session_absolute_admin', 'And after at most', (int) ($adminAbsolute / 3600), 'hours', $errors); ?>
-                        <p class="sik-help" style="margin:0">Admins never get "keep me signed in", whatever the setting below says.</p>
+                        <p class="sik-help" style="margin:0">Admins never get "keep me signed in".</p>
 
                         <h3 style="font-size:13px;font-weight:700;margin:10px 0 0">Customers</h3>
                         <?php $field('sec_session_idle_customer', 'Signed out after doing nothing for', (int) ($customerIdle / 60), 'minutes', $errors); ?>
@@ -123,8 +120,7 @@ return [
                         </label>
                         <?php $field('sec_remember_days', 'A remembered device lasts', auth_remember_days(), 'days', $errors); ?>
                         <p class="sik-help" style="margin:0">
-                            <?= (int) $remembered ?> device(s) are remembered right now. Changing a password
-                            forgets every one of that customer's devices.
+                            <?= (int) $remembered ?> remembered. A password change forgets a customer's devices.
                         </p>
 
                         <div>

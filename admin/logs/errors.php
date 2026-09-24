@@ -135,9 +135,8 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="sik-alert sik-alert--warning">
         <?= icon('alert', 'w-5 h-5') ?>
         <div>
-            <?= number_format($last24h) ?> error<?= $last24h === 1 ? '' : 's' ?> logged in the last 24 hours.
-            The same entries are also in <code>/storage/logs/app-<?= e(date('Y-m-d')) ?>.log</code>
-            if you need the raw file.
+            <?= number_format($last24h) ?> error<?= $last24h === 1 ? '' : 's' ?> in the last 24 hours.
+            Raw file: <code>/storage/logs/app-<?= e(date('Y-m-d')) ?>.log</code>
         </div>
     </div>
 <?php endif; ?>
@@ -191,8 +190,11 @@ require ADMIN_PATH . '/includes/header.php';
             <?php if ($canDelete): ?>
                 <div class="ad-bulk" data-bulk-bar>
                     <strong><span data-bulk-count>0</span> selected</strong>
-                    <span class="ad-muted" style="font-size:12.5px">
-                        Marking keeps the entry and stamps it with your name &mdash; do it once the cause is fixed.
+                    <?php // Marking is not deleting: the row stays, stamped with the admin's
+                          // name and time, so the log still shows what happened and who
+                          // signed it off. The confirm dialog repeats it at the click. ?>
+                    <span class="ad-muted" style="font-size:var(--ad-text-xs)">
+                        Keeps the entry, stamps your name.
                     </span>
                     <button type="submit" class="ad-btn ad-btn--sm" style="margin-left:auto"
                             <?= admin_confirm_attrs('The entries are kept and stamped with your name.', ['title' => 'Mark these as resolved?', 'label' => 'Mark resolved', 'tone' => 'warning']) ?>>

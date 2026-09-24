@@ -310,7 +310,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <?= admin_options(['active' => 'Menu active', 'inactive' => 'Menu inactive'], $menu['status']) ?>
             </select>
             <button type="submit" class="ad-btn ad-btn--sm"><?= icon('check', 'w-4 h-4') ?> Save menu</button>
-            <span class="ad-muted" style="font-size:12.5px">
+            <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                 <?= e($locations[$location]['sub']) ?>
             </span>
         </form>
@@ -528,7 +528,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php if (isset($errors['reference_id'])): ?>
                             <span class="sik-error"><?= e($errors['reference_id']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">The link resolves to that row's current slug, so renaming it never breaks the menu.</span>
+                            <span class="sik-help">Resolves to that row's current slug, so renaming never breaks it.</span>
                         <?php endif; ?>
                     </div>
 
@@ -553,7 +553,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php if (isset($errors['url'])): ?>
                             <span class="sik-error"><?= e($errors['url']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Relative paths resolve against the store URL. Absolute links, mailto: and tel: pass through untouched.</span>
+                            <span class="sik-help">Absolute links, <span class="ad-mono">mailto:</span> and <span class="ad-mono">tel:</span> pass through untouched.</span>
                         <?php endif; ?>
                     </div>
 
@@ -565,7 +565,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?php if (isset($errors['sort_order'])): ?>
                             <span class="sik-error"><?= e($errors['sort_order']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Position among its siblings. The arrows in the list above renumber the whole group for you.</span>
+                            <span class="sik-help">The arrows above renumber the whole group for you.</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -584,11 +584,10 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <div class="ad-card__title">Icon</div>
-                        <div class="ad-card__sub">
-                            The glyph beside this item in the header bar, its mega panel and the
-                            mobile drawer. Nothing about it is written into the storefront code —
-                            what you pick here is what renders.
-                        </div>
+                        <?php // Nothing about the glyph is hard-coded in the storefront: the
+                              // header bar, the mega panel and the mobile drawer all render
+                              // whatever is picked here. ?>
+                        <div class="ad-card__sub">The glyph beside this item, wherever the menu renders.</div>
                     </div>
                 </div>
                 <div class="ad-card__body">
@@ -673,8 +672,8 @@ require ADMIN_PATH . '/includes/header.php';
                                 <span class="sik-error"><?= e($errors['icon_visibility']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    This hides only the picture. To take the whole item off a surface use
-                                    <strong>Visibility &rsaquo; Devices</strong> in the sidebar.
+                                    Hides the picture only. <strong>Visibility &rsaquo; Devices</strong>
+                                    drops the whole item.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -683,12 +682,13 @@ require ADMIN_PATH . '/includes/header.php';
                             <label class="sik-label" for="miIconFile">Upload a custom icon</label>
                             <input class="sik-input" type="file" id="miIconFile" name="icon_file"
                                    accept=".svg,.png,.webp,image/svg+xml,image/png,image/webp">
+                            <?php /* An uploaded SVG is rewritten from a safe allowlist on the way
+                                     in and drawn through <img>, so it cannot carry script. The same
+                                     <img> is why it cannot inherit currentColor the way the built-in
+                                     set does - hence the warning, which has to stay: an operator who
+                                     expects a recoloured icon gets a stray palette in the header. */ ?>
                             <span class="sik-help">
-                                SVG, PNG or WebP, square, drawn to fill a 24&times;24 box. An uploaded SVG is
-                                rewritten from a safe allowlist on the way in and drawn through
-                                <span class="ad-mono">&lt;img&gt;</span>, so it cannot carry script — but it
-                                also cannot inherit the menu&rsquo;s colour the way the built-in set does:
-                                it will paint itself in whatever colours the file contains.
+                                Square, drawn for 24&times;24. An uploaded SVG keeps its own colours.
                             </span>
                         </div>
                     </div>
@@ -700,11 +700,10 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <div class="ad-card__title">Badge</div>
-                        <div class="ad-card__sub">
-                            A short chip beside the label. Pick a preset to fill the fields in,
-                            then change anything you like — nothing here stores &ldquo;this is a HOT
-                            badge&rdquo;, only the text, the colours and the shape.
-                        </div>
+                        <?php // A preset only writes text, colours and shape into the fields.
+                              // Nothing stores "this is a HOT badge", so editing after picking
+                              // one is ordinary editing. ?>
+                        <div class="ad-card__sub">A short chip beside the label. Presets fill the fields in.</div>
                     </div>
                 </div>
                 <div class="ad-card__body">
@@ -741,7 +740,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php if (isset($errors['badge'])): ?>
                                 <span class="sik-error"><?= e($errors['badge']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Empty means no badge. One or two words — the chip never wraps.</span>
+                                <span class="sik-help">Empty means no badge. The chip never wraps.</span>
                             <?php endif; ?>
                         </div>
                         <div class="ad-field">
@@ -769,7 +768,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php if (isset($errors['badge_color'])): ?>
                                 <span class="sik-error"><?= e($errors['badge_color']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Fills a solid chip; tints a soft one; draws the border on an outline.</span>
+                                <span class="sik-help">Fills a solid chip, tints a soft one, outlines an outline.</span>
                             <?php endif; ?>
                         </div>
                         <div class="ad-field">
@@ -785,8 +784,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 <span class="sik-error"><?= e($errors['badge_text_color']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    Leave blank and the store picks it: the chip is 11px, so the badge colour
-                                    is darkened until the text clears WCAG AA rather than being printed as typed.
+                                    Blank: darkened until 11px text clears WCAG AA.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -812,9 +810,9 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php if (isset($errors['badge_animation'])): ?>
                                 <span class="sik-error"><?= e($errors['badge_animation']) ?></span>
                             <?php else: ?>
+                                <?php // A bar of pulsing chips is noise: nothing stands out. ?>
                                 <span class="sik-help">
-                                    One slow breath of opacity, nothing else. Use it on one item at most —
-                                    a bar of pulsing chips is noise, and it stops nothing standing out.
+                                    One slow breath of opacity. Use it on one item at most.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -827,11 +825,9 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <div class="ad-card__title">Mega panel</div>
-                        <div class="ad-card__sub">
-                            Only applies to a top-level item that has children. The panel is one
-                            vertical column at every width; which children it lists, in what order,
-                            is edited on the Panel Content screen.
-                        </div>
+                        <?php // One vertical column at every width. Which children it lists,
+                              // and in what order, is the Panel Content screen's job. ?>
+                        <div class="ad-card__sub">Top-level items with children only.</div>
                     </div>
                     <?php if ($isEdit && (int) $formItem['is_mega'] === 1): ?>
                         <a class="ad-btn ad-btn--sm"
@@ -850,8 +846,7 @@ require ADMIN_PATH . '/includes/header.php';
                           // category's own picture. Off: the children are a plain dropdown.
                           // Either way it is one column of links. ?>
                     <p class="sik-help" style="margin:-8px 0 14px">
-                        On, the panel gets a &ldquo;Shop all&rdquo; header row with the category&rsquo;s
-                        picture; off, the children are a plain dropdown.
+                        Off, the children are a plain dropdown.
                     </p>
 
                     <div class="ad-row ad-row--2">
@@ -863,10 +858,10 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php if (isset($errors['mega_columns'])): ?>
                                 <span class="sik-error"><?= e($errors['mega_columns']) ?></span>
                             <?php else: ?>
+                                <?php // Kept rather than dropped because the saved values are still
+                                      // in the menu rows; hiding the field would hide them too. ?>
                                 <span class="sik-help">
-                                    Not rendered — the storefront panel is a single column at every
-                                    width, so this number changes nothing on the store. Kept because
-                                    the saved values are still in the menu.
+                                    Not rendered: the panel is one column at every width.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -879,8 +874,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 <span class="sik-error"><?= e($errors['mega_image_url']) ?></span>
                             <?php else: ?>
                                 <span class="sik-help">
-                                    Where the promo tile goes when it is clicked. Leave it blank and the
-                                    tile leads to this item&rsquo;s own page.
+                                    Blank sends the tile to this item&rsquo;s own page.
                                 </span>
                             <?php endif; ?>
                         </div>
@@ -903,11 +897,13 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php endif; ?>
                         </div>
                         <input type="hidden" name="remove_mega_image" id="miRemoveMega" value="0">
+                        <?php /* The tile sits below the category list and stays put while a long
+                                 list scrolls past it. It carries no text of its own, so whatever
+                                 the picture says is all it says. Worth keeping on screen: people
+                                 confuse it with the thumbnail at the TOP of the panel, which is
+                                 the category's own picture from Admin > Categories. */ ?>
                         <span class="sik-help">
-                            The tile sits below the category list, and stays put while a long list
-                            scrolls past it. It carries no text of its own — whatever the picture
-                            says, it says. This is not the thumbnail at the top of the panel: that
-                            one is the picture uploaded against the category in Admin &gt; Categories.
+                            Sits below the category list. Not the panel&rsquo;s top thumbnail.
                         </span>
                     </div>
 
@@ -920,10 +916,11 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php if (isset($errors['mega_promo'])): ?>
                         <span class="sik-error"><?= e($errors['mega_promo']) ?></span>
                     <?php else: ?>
+                        <?php // Deliberately off even where an image was saved before the tile
+                              // existed: an upload from a year ago should not reappear in the
+                              // navigation on its own. ?>
                         <p class="sik-help" style="margin:6px 0 0">
-                            Off by default, including for the panels that already had an image saved
-                            against them before the tile existed — an upload from a year ago should
-                            not reappear in the navigation on its own.
+                            Off by default, even where an image is already saved.
                         </p>
                     <?php endif; ?>
 
@@ -948,9 +945,10 @@ require ADMIN_PATH . '/includes/header.php';
                                 </div>
                             <?php endforeach; ?>
                         </div>
+                        <?php // Saved as a comma-separated id list, so a chosen set survives
+                              // until the rail comes back. ?>
                         <span class="sik-help">
-                            Not rendered — the panel has no product rail. Saved as a comma-separated
-                            id list, so a chosen set survives until the rail comes back.
+                            Not rendered: the panel has no product rail.
                         </span>
                     </div>
                 </div>
@@ -1075,7 +1073,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <select class="sik-select" id="miAuth" name="auth_visibility">
                             <?= admin_options(menu_auth_visibility(), $formItem['auth_visibility']) ?>
                         </select>
-                        <span class="sik-help">Use this for "Sign in" and "My account" links so only the right visitor sees them.</span>
+                        <span class="sik-help">For &ldquo;Sign in&rdquo; and &ldquo;My account&rdquo; links.</span>
                     </div>
                 </div>
             </div>

@@ -965,7 +965,48 @@
         wireOpenModal(modal, { returnFocus: null });
     }
 
+    /**
+     * Give the dialog its SEMANTICS, rather than assuming the markup has them.
+     *
+     * MEASURED by the verifier on blog/categories.php - the one admin screen
+     * whose modal is its primary control - role, aria-modal and
+     * aria-labelledby all came back null. admin_modal_open() writes all three,
+     * but the two pages that ship a modal today were written before that
+     * helper existed and adoptOpenModal() only ever gave them the trap and
+     * `inert`. A screen reader therefore met a focus-trapped region it could
+     * not name and was never told was a dialog, while the fixture the phase
+     * was tested against - built with the helper - passed.
+     *
+     * Applied on the way IN, so it covers every hand-written modal at once,
+     * now and later, and is a no-op wherever the helper already did the work.
+     * Nothing is overwritten: an explicit role, an aria-label, or an
+     * aria-labelledby that resolves is left exactly as the author wrote it.
+     */
+    let modalTitleSeq = 0;
+    function nameModal(modal) {
+        if (!modal.getAttribute('role')) modal.setAttribute('role', 'dialog');
+        if (!modal.getAttribute('aria-modal')) modal.setAttribute('aria-modal', 'true');
+
+        const named = modal.getAttribute('aria-labelledby');
+        if (named && document.getElementById(named)) return;
+        if (modal.getAttribute('aria-label')) return;
+
+        // The helper's own title first, then whatever the head leads with -
+        // blog/categories.php heads its modal with a bare <strong>.
+        const head = modal.querySelector('.ad-modal__title')
+            || modal.querySelector('.ad-modal__head h1, .ad-modal__head h2, .ad-modal__head h3,'
+                                 + ' .ad-modal__head h4, .ad-modal__head strong, .ad-modal__head b,'
+            // settings/shipping.php heads its two modals with this instead,
+            // and already names them by hand - listed so the next page that
+            // copies that shape is named without anyone having to notice.
+                                 + ' .ad-modal__head .ad-card__title');
+        if (!head) return;                       // nothing to name it with
+        if (!head.id) head.id = 'adModalTitle' + (++modalTitleSeq);
+        modal.setAttribute('aria-labelledby', head.id);
+    }
+
     function wireOpenModal(modal, opts) {
+        nameModal(modal);
         const panel = modal.querySelector('.ad-modal__panel') || modal;
         const trap = modalTrap(modal);
         modal.addEventListener('keydown', trap);

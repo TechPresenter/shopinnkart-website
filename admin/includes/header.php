@@ -56,6 +56,38 @@ $collapsed = ($_COOKIE['sik_admin_sidebar'] ?? setting('admin_sidebar_collapsed'
     <title><?= e($pageTitle) ?> &middot; <?= e($storeName) ?> Admin</title>
 
     <?= brand_favicon_links() ?>
+
+    <?php
+    /* The typeface, put in flight with the document.
+
+       The admin sets --ad-font to "Plus Jakarta Sans" and loads app.css, which
+       declares the faces - but every one of them is `font-display: optional`,
+       which has no swap period: a face not in hand by first paint is not used
+       for that page view at all. A webfont inside @font-face is only
+       discovered once the stylesheet has been fetched AND parsed AND a glyph
+       needs it, and app.css is the third stylesheet in this head. The
+       storefront solves that with the same two preloads (includes/header.php);
+       the admin had none, so unless the operator had just been round the shop
+       in the same cache, every admin screen rendered in the Segoe UI fallback
+       while claiming Jakarta.
+
+       BOTH subsets, not just latin. latin-ext owns U+20AD-20C0, and U+20B9 in
+       that range is the rupee sign: measured on this install, the admin
+       dashboard prints it 49 times, the orders list 25, the product list 27.
+       Preloading only `latin` would set every one of those amounts with its
+       first glyph in the fallback and the digits in Jakarta. Playfair is still
+       not preloaded anywhere - the admin never sets it.
+
+       asset() is deliberately NOT used: it appends ?v=<filemtime>, and app.css
+       asks for these files as ../fonts/<name>.woff2 with no query, so a
+       preload of a different URL is a second download rather than a head
+       start. crossorigin is required even same-origin - a font is fetched in
+       CORS mode, and a preload without it is discarded and fetched twice. */
+    foreach (['plus-jakarta-sans-latin.woff2', 'plus-jakarta-sans-latin-ext.woff2'] as $adFontFile): ?>
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="<?= e(ASSET_URL . '/fonts/' . $adFontFile) ?>">
+    <?php endforeach; ?>
+
     <?php
     /* utilities.css, not tailwind.css. The admin referenced 22 tailwind
        classes (the w- and h- icon sizes, `hidden`, `md:inline`, `text-sm`,

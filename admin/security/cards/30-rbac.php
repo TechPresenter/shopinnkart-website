@@ -89,9 +89,8 @@ return [
                 <div>
                     <h2 class="ad-card__title">Who holds the keys</h2>
                     <div class="ad-card__sub">
-                        The permissions that can be used to reach everything else, and every active
-                        account that currently has them. Edit them in
-                        <a href="<?= e(admin_url('admins/roles.php')) ?>">Admin Users &rsaquo; Roles</a>.
+                        Who can reach everything else.
+                        <a href="<?= e(admin_url('admins/roles.php')) ?>">Edit roles</a>.
                     </div>
                 </div>
                 <?= $superCount === 1
@@ -165,13 +164,12 @@ return [
             </div>
 
             <div class="ad-card__foot">
-                <span class="ad-muted" style="font-size:12.5px">
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                     <?php if ($superCount <= 1): ?>
-                        Only one Super Admin can sign in. If that account is lost, nobody can manage roles,
-                        settings or admin users &mdash; promote a second one.
+                        <strong>One Super Admin.</strong> Lose that account and nobody can manage roles,
+                        settings or admins &mdash; promote a second.
                     <?php else: ?>
-                        Every account above can be used to reach the rest of the panel. Fewer names on these
-                        rows is the safer shape; an admin who no longer needs one should lose it.
+                        Fewer names on these rows is safer.
                     <?php endif; ?>
                 </span>
             </div>

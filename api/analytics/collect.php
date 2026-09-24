@@ -30,7 +30,7 @@
  *   t   signed page token (required, always)
  *   k   pv | hb | end | ev
  *   pv  u path, r referrer, w viewport width, tp maxTouchPoints, m mobile hint,
- *       p platform hint, l language, s sequence (bfcache re-show)
+ *       p platform hint, s sequence (bfcache re-show)
  *   hb  q seq, e engaged ms (absolute for this pageview), d engaged delta,
  *       s max scroll %
  *   end as hb, plus lcp / inp / cls / fcp / ttfb
@@ -85,9 +85,18 @@ function an_done(): void
 /**
  * Refuse, count it, and answer 204 anyway.
  *
- * The rate limiter is on THIS path only. Good traffic never touches it, so a
- * page view costs no limiter query; a flood of forged beacons stops costing us
- * even the counter write after 600 refusals a minute from one address.
+ * The rate limiter is on THIS path only, so good traffic never touches it and
+ * a real page view costs no limiter query.
+ *
+ * WHAT THE CAP DOES AND DOES NOT BUY. Past 600 refusals a minute from one
+ * address it stops the `an_state` counter write - but rate_limit_attempt()
+ * itself is an upsert plus a read on every call, capped or not. So a forged
+ * beacon costs 2 statements under the cap and 1 write above it, never zero.
+ * Measured: 300 forged beacons from one address wrote no analytics row and
+ * left the store serving normally; the cost is a `rate_limits` row being
+ * incremented, which is one indexed upsert. If a real flood ever makes that
+ * matter, the answer is to sample the limiter rather than to remove it -
+ * removing it puts the an_state write back on every forged beacon instead.
  */
 function an_refuse(string $reason): void
 {
@@ -273,6 +282,36 @@ function an_handle_pageview(array $token, array $context): void
     if ($inserted === 0) {
         // Duplicate nonce+seq: this page view is already counted. The session
         // counters must not move a second time either.
+        //
+        // AND NEITHER MAY A SESSION ROW SURVIVE. an_session_for_hit() runs
+        // above this insert because a page view needs a session id, so a
+        // replay that lands INSIDE the 30-minute window harmlessly finds the
+        // original session - but one that lands outside it finds nothing and
+        // CREATES a session, which the ignored insert then leaves behind with
+        // no page view on it. A token is good for 24 hours, so replaying one
+        // genuine beacon every 31 minutes minted about 46 phantom sessions,
+        // each of them a bounce in every report. Measured, not theorised:
+        // five out-of-window replays produced six sessions and one page view.
+        //
+        // `pageviews` = 0 in the WHERE is the safety catch: it can only ever
+        // remove the empty row this request just made, never one that a
+        // concurrent beacon has already attached itself to.
+        //
+        // One residue, stated rather than hidden: for a CONSENTED visitor the
+        // session creation above also bumped an_visitors.sessions, and that
+        // increment is not rolled back here. It is dormant in the owner's
+        // anonymous mode, where an_visitors is never written at all.
+        // A plain return, not an_refuse(): a duplicate beacon is usually one of
+        // OURS - sendBeacon retried on a flaky connection - and charging that
+        // a limiter upsert plus a counter write would put two writes on the
+        // normal retry path to diagnose something that is not a problem.
+        if (!empty($session['created'])) {
+            Database::query(
+                'DELETE FROM `an_sessions` WHERE `id` = :id AND `pageviews` = 0',
+                ['id' => $session['id']]
+            );
+        }
+
         return;
     }
 

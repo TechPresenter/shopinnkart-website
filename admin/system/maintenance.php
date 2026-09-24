@@ -268,9 +268,11 @@ require ADMIN_PATH . '/includes/header.php';
             <div>
                 <div class="ad-card__title">PHP extensions</div>
                 <div class="ad-card__sub">
+                    <?php // The "Used for" column already says which feature each one carries,
+                          // so the failure line only has to say where to turn them on. ?>
                     <?= $extensionFailures === 0
-                        ? 'Everything the application needs is loaded.'
-                        : $extensionFailures . ' missing — the features below will fail until they are enabled in php.ini.' ?>
+                        ? 'All loaded.'
+                        : $extensionFailures . ' missing. Enable them in php.ini.' ?>
                 </div>
             </div>
         </div>
@@ -323,8 +325,8 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__title">Directory writability</div>
                 <div class="ad-card__sub">
                     <?= $writableFailures === 0
-                        ? 'Every runtime folder can be written to.'
-                        : 'Fix the permissions (0775) on the folders marked below.' ?>
+                        ? 'All writable.'
+                        : 'Set 0775 on the folders marked below.' ?>
                 </div>
             </div>
         </div>
@@ -384,17 +386,15 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <div>
                 <div class="ad-card__title">Cache</div>
-                <div class="ad-card__sub">
-                    Menus, homepage widget data and the sidebar counters are cached to
-                    <code>/storage/cache</code>.
-                </div>
+                <div class="ad-card__sub">Menus, widget data and sidebar counters, in <code>/storage/cache</code>.</div>
             </div>
         </div>
         <div class="ad-card__body">
+            <?php // Every admin write busts the cache already. The button exists for changes
+                  // made outside the panel - a direct database edit, an import, a cron job. ?>
             <p style="font-size:13.5px;line-height:1.6">
-                Currently holding <strong><?= e(format_bytes($cacheBytes)) ?></strong>.
-                Every admin write already busts it, so this button is for the times a change
-                came from outside the panel &mdash; a direct database edit, for instance.
+                Holding <strong><?= e(format_bytes($cacheBytes)) ?></strong>. Admin writes already
+                bust it; use this after a change made outside the panel.
             </p>
         </div>
         <form method="post" action="<?= e($selfUrl) ?>" class="ad-card__foot">
@@ -415,9 +415,7 @@ require ADMIN_PATH . '/includes/header.php';
         </div>
         <div class="ad-card__body">
             <?php if ($staleLogs === []): ?>
-                <p style="font-size:13.5px;line-height:1.6">
-                    Nothing to prune &mdash; no log file is older than 30 days.
-                </p>
+                <p style="font-size:13.5px;line-height:1.6">Nothing older than 30 days.</p>
             <?php else: ?>
                 <p style="font-size:13.5px;line-height:1.6">
                     <strong><?= count($staleLogs) ?> file(s)</strong> totalling
@@ -425,8 +423,10 @@ require ADMIN_PATH . '/includes/header.php';
                     Oldest: <?= e(basename($staleLogs[0]['path'])) ?>
                     (<?= e(format_date($staleLogs[0]['modified'], 'd M Y')) ?>).
                 </p>
-                <p class="ad-muted" style="font-size:12.5px;margin-top:8px">
-                    Database rows in the error log are untouched &mdash; clear those from the Error Log screen.
+                <?php // Kept: this button touches files only, and an operator who assumes it
+                      // also empties the error_log table will go looking for a bug. ?>
+                <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-top:8px">
+                    Error log rows in the database are untouched.
                 </p>
             <?php endif; ?>
         </div>
@@ -449,9 +449,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Notification queue</div>
-            <div class="ad-card__sub">
-                Order and account emails are queued, never sent inline, so checkout never waits on a mail server.
-            </div>
+            <div class="ad-card__sub">Queued, never sent inline, so checkout never waits on a mail server.</div>
         </div>
         <form method="post" action="<?= e($selfUrl) ?>">
             <?= csrf_field() ?>
@@ -492,7 +490,7 @@ require ADMIN_PATH . '/includes/header.php';
             </div>
         <?php elseif ($queuePending === 0 && $queueSent === 0 && $queueFailed === 0): ?>
             <p class="ad-muted" style="margin-top:12px;font-size:13px">
-                The queue is empty. It fills up as orders are placed and accounts are created.
+                Empty. It fills as orders and accounts come in.
             </p>
         <?php endif; ?>
     </div>

@@ -120,7 +120,7 @@ function report_filter_bar(string $report, array $filters): string
     }
 
     $html .= '<span style="flex:1"></span>'
-        . '<span class="ad-muted" style="font-size:12.5px">' . e($filters['label']) . '</span>'
+        . '<span class="ad-muted" style="font-size:var(--ad-text-xs)">' . e($filters['label']) . '</span>'
         . '<a class="ad-btn ad-btn--sm ad-btn--primary" href="' . e($exportUrl) . '">'
         . icon('download', 'w-4 h-4') . ' Export CSV</a>'
         . '</form>';

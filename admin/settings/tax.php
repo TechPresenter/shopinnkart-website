@@ -18,20 +18,20 @@ require_once ADMIN_PATH . '/settings/_layout.php';
 $spec = [
     'tax_enabled' => [
         'type' => 'bool', 'label' => 'Charge tax',
-        'help' => 'Off removes the tax line from the cart, checkout and invoices entirely.',
+        'help' => 'Off removes the tax line from cart, checkout and invoices.',
     ],
     'tax_inclusive' => [
         'type' => 'bool', 'label' => 'Product prices already include tax',
-        'help' => 'On extracts the tax from the price shown. Off adds it on top at checkout.',
+        'help' => 'On extracts tax from the shown price; off adds it at checkout.',
     ],
     'default_tax_rate' => [
         'type' => 'number', 'label' => 'Default rate (%)', 'required' => true,
         'min_value' => 0, 'max_value' => 100, 'step' => '0.01',
-        'help' => 'Used for any product that does not set its own tax_rate.',
+        'help' => 'Used when a product sets none.',
     ],
     'tax_label' => [
         'type' => 'text', 'label' => 'Tax label', 'required' => true, 'max' => 30,
-        'help' => 'Printed next to the tax line, e.g. GST or VAT.',
+        'help' => 'e.g. GST or VAT.',
     ],
 ];
 
@@ -94,9 +94,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Tax rules</div>
-                    <div class="ad-card__sub">
-                        A product's own tax rate always wins; the default below covers the rest.
-                    </div>
+                    <div class="ad-card__sub">A product's own rate always wins.</div>
                 </div>
             </div>
             <div class="ad-card__body" style="display:grid;gap:16px">
@@ -108,14 +106,17 @@ require ADMIN_PATH . '/includes/header.php';
                     <?= settings_field('tax_label', $spec, $values, $errors) ?>
                 </div>
 
-                <div class="sik-alert sik-alert--info" style="margin:0">
-                    <?= icon('info', 'w-5 h-5') ?>
-                    <div>
-                        With inclusive pricing the number on the product card is what the shopper pays;
-                        the tax is separated out on the invoice. With exclusive pricing the tax is added
-                        at checkout, so the cart total is higher than the sum of the listed prices.
-                    </div>
-                </div>
+                <details>
+                    <summary>Inclusive or exclusive?</summary>
+                    <p>
+                        Inclusive: the product card price is what the shopper pays, and the tax is
+                        separated out on the invoice.
+                    </p>
+                    <p>
+                        Exclusive: the tax is added at checkout, so the cart total is higher than the
+                        sum of the listed prices.
+                    </p>
+                </details>
             </div>
             <?= settings_save_bar('Changes apply to new carts immediately.') ?>
         </div>
@@ -232,7 +233,7 @@ require ADMIN_PATH . '/includes/header.php';
                     </table>
                 </div>
 
-                <p class="ad-muted" style="font-size:12.5px;margin-top:14px">
+                <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-top:14px">
                     <?php if ($enabled && $inclusive): ?>
                         Inclusive: the cart total stays <?= e(money($sample)) ?> and
                         <?= e(money($tax)) ?> of it is reported as <?= e($taxLabel) ?>.
@@ -245,8 +246,8 @@ require ADMIN_PATH . '/includes/header.php';
                 </p>
             </div>
             <div class="ad-card__foot">
-                <span class="ad-muted" style="font-size:12.5px;margin-right:auto">
-                    Cart-level coupon discounts are spread proportionally across lines before tax is worked out.
+                <span class="ad-muted" style="font-size:var(--ad-text-xs);margin-right:auto">
+                    Cart-level coupon discounts are spread across lines before tax.
                 </span>
             </div>
         </div>

@@ -393,7 +393,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card" id="addresses">
             <div class="ad-card__head">
                 <div class="ad-card__title">Saved addresses</div>
-                <span class="ad-muted" style="font-size:12.5px"><?= $listRange('ap', 'address', 'addresses') ?></span>
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)"><?= $listRange('ap', 'address', 'addresses') ?></span>
             </div>
             <div class="ad-card__body<?= $addresses === [] ? ' ad-card__body--flush' : '' ?>">
                 <?php if ($addresses === []): ?>
@@ -438,7 +438,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card" id="wishlist">
             <div class="ad-card__head">
                 <div class="ad-card__title">Wishlist</div>
-                <span class="ad-muted" style="font-size:12.5px"><?= $listRange('wp', 'product', 'products') ?></span>
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)"><?= $listRange('wp', 'product', 'products') ?></span>
             </div>
             <div class="ad-card__body ad-card__body--flush">
                 <?php if ($wishlist === []): ?>
@@ -497,7 +497,7 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card" id="reviews">
             <div class="ad-card__head">
                 <div class="ad-card__title">Reviews written</div>
-                <span class="ad-muted" style="font-size:12.5px"><?= $listRange('rp', 'review', 'reviews') ?></span>
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)"><?= $listRange('rp', 'review', 'reviews') ?></span>
             </div>
             <div class="ad-card__body ad-card__body--flush">
                 <?php if ($reviews === []): ?>
@@ -723,14 +723,14 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card">
             <div class="ad-card__head">
                 <div class="ad-card__title">Recent sign-ins</div>
-                <span class="ad-muted" style="font-size:12.5px">
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                     <?= $loginCount > count($logins)
                         ? 'Latest ' . count($logins) . ' of ' . number_format($loginCount)
                         : number_format($loginCount) . ' recorded' ?>
                 </span>
             </div>
             <div class="ad-card__body<?= $logins === [] ? ' ad-card__body--flush' : '' ?>"
-                 style="<?= $logins === [] ? '' : 'display:grid;gap:11px;font-size:12.5px' ?>">
+                 style="<?= $logins === [] ? '' : 'display:grid;gap:11px;font-size:var(--ad-text-sm)' ?>">
                 <?php if ($logins === []): ?>
                     <?= admin_empty('No sign-in records', 'Nothing has been logged for this account.', null, null, 'clock') ?>
                 <?php else: ?>

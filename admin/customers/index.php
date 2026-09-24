@@ -222,7 +222,7 @@ require ADMIN_PATH . '/includes/header.php';
 
     <?php if ($pagination['last'] > 1): ?>
         <div class="ad-card__foot" style="justify-content:space-between;align-items:center">
-            <span class="ad-muted" style="font-size:12.5px">
+            <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                 Showing <?= number_format($pagination['from']) ?>&ndash;<?= number_format($pagination['to']) ?>
                 of <?= number_format($pagination['total']) ?>
             </span>

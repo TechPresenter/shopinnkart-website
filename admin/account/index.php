@@ -228,9 +228,10 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <h2 class="ad-card__title">Your ten backup codes</h2>
+                        <?php // The point of the second factor is lost if the codes live on the
+                              // same device as the authenticator app, hence "away from". ?>
                         <div class="ad-card__sub">
-                            Shown once, now. Print them or put them in a password manager &mdash;
-                            not on the phone that holds the authenticator app.
+                            Shown once. Store them away from the phone with the app.
                         </div>
                     </div>
                 </div>
@@ -250,7 +251,7 @@ require ADMIN_PATH . '/includes/header.php';
                         </button>
                         <button type="button" class="ad-btn ad-btn--sm" onclick="window.print()">Print</button>
                     </div>
-                    <p style="font-size:12.5px;color:var(--ad-muted);margin-top:12px">
+                    <p style="font-size:var(--ad-text-sm);color:var(--ad-muted);margin-top:12px">
                         Each code works once. Reloading this page will not show them again.
                     </p>
                 </div>
@@ -263,8 +264,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <h2 class="ad-card__title">Two-step sign in</h2>
                     <div class="ad-card__sub">
-                        A six-digit code from an app on your phone, on top of your password.
-                        It is what stops a stolen password being enough.
+                        A six-digit code from your phone, on top of your password.
                     </div>
                 </div>
                 <?= $enabled
@@ -317,13 +317,12 @@ require ADMIN_PATH . '/includes/header.php';
                                     <input class="sik-input ad-mono<?= isset($errors['code']) ? ' is-invalid' : '' ?>"
                                            id="disableCode" name="code" type="text" autocomplete="one-time-code"
                                            maxlength="13" placeholder="000000">
+                                    <?php // Why a code is demanded to REMOVE the code: otherwise somebody
+                                          // holding only the stolen password could switch the second
+                                          // factor off and be left with exactly what they stole. The
+                                          // help line saying so is gone; the label is enough. ?>
                                     <?php if (isset($errors['code'])): ?>
                                         <span class="sik-error"><?= e($errors['code']) ?></span>
-                                    <?php else: ?>
-                                        <span class="sik-help">
-                                            Asked for on purpose: somebody who only has your password must not be
-                                            able to take the second factor off.
-                                        </span>
                                     <?php endif; ?>
                                 </div>
                                 <div>
@@ -340,8 +339,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php if ($required): ?>
                         <div class="sik-alert sik-alert--warning">
                             <?= icon('alert', 'w-5 h-5') ?>
-                            <div>Your role requires two-step sign in. You will be asked to set it up
-                                 the next time you sign in, so you may as well do it now.</div>
+                            <div>Your role requires this. You will be asked at your next sign-in.</div>
                         </div>
                     <?php endif; ?>
 
@@ -364,9 +362,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <?= icon('copy', 'w-4 h-4') ?> Copy
                                     </button>
                                 </div>
-                                <span class="sik-help">
-                                    This key is the secret. It is drawn on this server and never sent anywhere else.
-                                </span>
+                                <span class="sik-help">Drawn on this server; never sent anywhere else.</span>
                             </li>
                             <li>Enter the six digits the app shows.</li>
                         </ol>
@@ -394,10 +390,12 @@ require ADMIN_PATH . '/includes/header.php';
                     </div>
                 <?php endif; ?>
 
-                <p style="font-size:12.5px;color:var(--ad-muted);margin:0">
-                    <strong>Text messages are not offered.</strong> This store has no SMS provider, and in
-                    India sending one needs a DLT-registered sender ID and template. An authenticator app
-                    is free, works offline and cannot be SIM-swapped.
+                <?php /* Why there is no SMS option, kept off the screen: the store has no SMS
+                         provider, and in India sending one needs a DLT-registered sender ID and
+                         an approved template. An authenticator app is free, works offline and
+                         cannot be SIM-swapped, so there is nothing to add by building it. */ ?>
+                <p style="font-size:var(--ad-text-sm);color:var(--ad-muted);margin:0">
+                    <strong>Text messages are not offered.</strong> Use an authenticator app.
                 </p>
             </div>
         </div>
@@ -408,8 +406,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <h2 class="ad-card__title">Trusted browsers</h2>
                     <div class="ad-card__sub">
-                        Browsers that proved the second factor and may skip it for
-                        <?= (int) mfa_trust_days() ?> days. Revoke any you do not recognise.
+                        Skipping the code for <?= (int) mfa_trust_days() ?> days. Revoke any you do not recognise.
                     </div>
                 </div>
             </div>
@@ -511,7 +508,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div>
                         <button type="submit" class="ad-btn ad-btn--primary">Change password</button>
                     </div>
-                    <p style="font-size:12.5px;color:var(--ad-muted);margin:0">
+                    <p style="font-size:var(--ad-text-sm);color:var(--ad-muted);margin:0">
                         Your other sessions are signed out; this one stays open.
                     </p>
                 </form>

@@ -60,9 +60,6 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">HTTPS and HSTS</h2>
-                    <div class="ad-card__sub">
-                        Passwords, card details and session cookies must never travel in the clear.
-                    </div>
                 </div>
                 <?= $isHttps
                     ? '<span class="sik-status sik-status--green">This page is on HTTPS</span>'
@@ -76,10 +73,8 @@ return [
                     <div class="sik-alert sik-alert--warning">
                         <?= icon('alert-triangle', 'w-5 h-5') ?>
                         <div>
-                            You are reading this over plain HTTP on <code><?= e($host) ?></code>.
-                            Install a certificate at your host first (Hostinger issues a free one),
-                            open the site on <code>https://</code>, and only then set
-                            <strong>Always redirect</strong> below.
+                            <strong>You are reading this over plain HTTP</strong> on <code><?= e($host) ?></code>.
+                            Install a certificate first, then set <strong>Always redirect</strong> below.
                         </div>
                     </div>
                 <?php endif; ?>
@@ -102,10 +97,7 @@ return [
                                     Off - do not redirect and never send HSTS
                                 </option>
                             </select>
-                            <span class="sik-help">
-                                Localhost, 127.0.0.1 and private LAN addresses are always exempt, whatever this says,
-                                so switching it on cannot lock you out of a development copy.
-                            </span>
+                            <span class="sik-help">Localhost and private LAN are always exempt.</span>
                         </div>
 
                         <div class="ad-field">
@@ -114,12 +106,7 @@ return [
                             </label>
                             <input class="sik-input" type="number" min="0" max="31536000" step="60"
                                    id="sec_hsts_max_age" name="sec_hsts_max_age" value="<?= e_attr((string) $maxAge) ?>">
-                            <span class="sik-help">
-                                This is HSTS. 0 turns it off. Start at <strong>300</strong> (five minutes); once the
-                                site has run happily on HTTPS for a day or two, raise it to <strong>31536000</strong>
-                                (one year). A browser that has been told this cannot be told otherwise until the
-                                time runs out - which is the point, and the reason not to start high.
-                            </span>
+                            <span class="sik-help">0 is off. Start at 300, then 31536000.</span>
                         </div>
 
                         <label class="ad-check" style="display:flex;gap:9px;align-items:flex-start">
@@ -127,8 +114,7 @@ return [
                             <span>
                                 <strong>Apply to every subdomain</strong><br>
                                 <span class="ad-muted" style="font-size:13px">
-                                    Only tick this once <em>every</em> subdomain - mail, cpanel, webmail, staging -
-                                    is on HTTPS. Otherwise they become unreachable for the duration above.
+                                    Only once <em>every</em> subdomain is on HTTPS. Otherwise they become unreachable.
                                 </span>
                             </span>
                         </label>
@@ -145,6 +131,21 @@ return [
                         HSTS: <strong><?= $maxAge > 0 ? e((string) $maxAge) . 's' : 'off' ?></strong>.
                     </div>
                 <?php endif; ?>
+
+                <details style="font-size:13px">
+                    <summary style="cursor:pointer;font-weight:600">What HSTS locks in</summary>
+                    <div style="display:grid;gap:8px;margin-top:8px">
+                        <p>Passwords, card details and session cookies must never travel in the clear, and
+                           HTTPS is what stops them.</p>
+                        <p>The seconds above are how long a browser remembers that this site is HTTPS only.
+                           A browser that has been told cannot be told otherwise until the time runs out
+                           &mdash; which is the point, and the reason to start at 300 rather than a year.</p>
+                        <p>Raise it to 31536000 once the site has run happily on HTTPS for a day or two.
+                           Certificates are your host&rsquo;s to issue; Hostinger gives one free.</p>
+                        <p>&ldquo;Apply to every subdomain&rdquo; covers mail, cpanel, webmail and staging too.
+                           Any of them still on plain HTTP becomes unreachable for the whole duration.</p>
+                    </div>
+                </details>
             </div>
         </div>
         <?php

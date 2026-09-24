@@ -263,11 +263,15 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card__head">
             <h2 class="ad-card__title">Structured data types</h2>
         </div>
+        <?php /* An enabled type is still only emitted in the contexts it supports, and only when the
+                 store actually holds the fields that type requires - see schema_sample(), which builds
+                 each preview from real rows so an empty catalogue gets "nothing to build one from"
+                 rather than a specimen. The "Appears on" column already shows the where; the screen
+                 does not need to say the rest in prose. */ ?>
         <div class="ad-card__body">
             <p class="sik-help" style="margin-top:0">
-                A type that is switched on is still only emitted where it belongs and only when the store
-                genuinely has the fields it requires. Nothing here invents data: switching a type on does
-                not create a rating, an address or a price that is not already in the database.
+                Switching a type on never invents data &mdash; no rating, address or price
+                the store does not already hold.
             </p>
         </div>
 
@@ -333,14 +337,14 @@ require ADMIN_PATH . '/includes/header.php';
 
         <?php if ($canEdit): ?>
             <div class="ad-card__foot">
-                <span class="ad-muted" style="margin-right:auto;font-size:12.5px">
-                    Test a live page with Google's Rich Results test before and after a change.
+                <span class="ad-muted" style="margin-right:auto;font-size:var(--ad-text-xs)">
+                    Verify a live page with the Rich Results test.
                 </span>
                 <button type="submit" class="ad-btn ad-btn--primary"><?= icon('check', 'w-4 h-4') ?> Save types</button>
             </div>
         <?php else: ?>
             <div class="ad-card__foot">
-                <span class="ad-muted" style="font-size:12.5px">
+                <span class="ad-muted" style="font-size:var(--ad-text-xs)">
                     You have read-only access to settings. Ask a Super Admin for <code>settings.edit</code>.
                 </span>
             </div>
@@ -352,10 +356,11 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head"><h2 class="ad-card__title">Custom JSON-LD</h2></div>
     <div class="ad-card__body">
         <?php if (!$canScripts): ?>
+            <?php /* Same permission as the storefront's custom JavaScript box, and for the same reason:
+                     both publish arbitrary markup in the store's name. */ ?>
             <p class="sik-help" style="margin-top:0">
-                Custom JSON-LD is published markup in the store's name, so editing it needs the
-                <code>settings.scripts</code> permission (or Super Admin) &mdash; the same permission as the
-                storefront's custom JavaScript. You can see what is published; you cannot change it here.
+                Editing needs the <code>settings.scripts</code> permission.
+                You can read what is published, not change it.
             </p>
         <?php endif; ?>
 
@@ -457,15 +462,14 @@ require ADMIN_PATH . '/includes/header.php';
                     <label class="sik-label" for="cs_json">JSON-LD <span class="req">*</span></label>
                     <textarea class="sik-textarea<?= isset($errors['json_ld']) ? ' is-invalid' : '' ?>"
                               id="cs_json" name="json_ld" rows="10" spellcheck="false"
-                              style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"
+                              style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--ad-text-sm)"
                               placeholder='{"@context":"https://schema.org","@type":"Event","name":"Diwali sale"}'><?= e((string) ($editing['json_ld'] ?? '')) ?></textarea>
                     <?php if (isset($errors['json_ld'])): ?>
                         <span class="sik-error"><?= e($errors['json_ld']) ?></span>
                     <?php else: ?>
                         <span class="sik-help">
-                            One object, or a list of them. Each needs an <code>@type</code>. Up to
-                            <?= (int) (SCHEMA_CUSTOM_MAX_BYTES / 1024) ?> KB. It is printed as data, never executed,
-                            and a block that stops parsing is skipped rather than published broken.
+                            One object or a list. Each needs an <code>@type</code>.
+                            Max <?= (int) (SCHEMA_CUSTOM_MAX_BYTES / 1024) ?> KB.
                         </span>
                     <?php endif; ?>
                 </div>
@@ -507,8 +511,8 @@ require ADMIN_PATH . '/includes/header.php';
                             <span class="sik-error"><?= e($errors['entity_slug']) ?></span>
                         <?php else: ?>
                             <span class="sik-help">
-                                The slug is the last part of the page's address, e.g.
-                                <code>/product/<strong>warm-white-fairy-lights</strong></code>.
+                                The last part of the address, e.g.
+                                <code>warm-white-fairy-lights</code>.
                             </span>
                         <?php endif; ?>
                     </div>
@@ -526,6 +530,15 @@ require ADMIN_PATH . '/includes/header.php';
                     <span class="ad-switch__track"></span>
                     <span>Publish this block</span>
                 </label>
+
+                <details style="margin-top:14px">
+                    <summary>How a custom block is published</summary>
+                    <p>
+                        The JSON is printed into the page as data and never executed. A block that stops
+                        parsing &mdash; because the record it names was edited, say &mdash; is skipped for
+                        that page rather than published broken, and this screen flags it as not published.
+                    </p>
+                </details>
             </div>
 
             <div class="ad-card__foot">

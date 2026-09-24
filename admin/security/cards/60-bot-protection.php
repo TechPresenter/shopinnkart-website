@@ -147,10 +147,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Bot protection</h2>
-                    <div class="ad-card__sub">
-                        Keeps scripts off sign-up, sign-in, forgot-password, contact, the newsletter,
-                        reviews and coupon codes - without putting a puzzle in front of ordinary customers.
-                    </div>
+                    <div class="ad-card__sub">Keeps scripts off the public forms.</div>
                 </div>
                 <span class="sik-status sik-status--<?= e($status[0]) ?>"><?= e($status[1]) ?></span>
             </div>
@@ -178,16 +175,18 @@ return [
                         <span class="sik-label">When to challenge</span>
                         <div style="display:grid;gap:8px">
                             <?php foreach ([
-                                'adaptive' => ['Adaptive (recommended)', 'Only after repeated failures from one address, or above a submission rate no person reaches. An ordinary customer never sees a puzzle.'],
-                                'always'   => ['Always', 'Every protected form carries the challenge. Only useful while you are actually being hit.'],
-                                'off'      => ['Off', 'No honeypot, no timing check, no rate ceiling on these forms. The endpoint rate limits still apply.'],
+                                'adaptive' => ['Adaptive (recommended)', ''],
+                                'always'   => ['Always', ''],
+                                'off'      => ['Off', 'No honeypot, no timing check, no rate ceiling.'],
                             ] as $value => [$label, $help]): ?>
                                 <label class="sik-check" style="align-items:flex-start">
                                     <input type="radio" name="sec_bot_mode" value="<?= e_attr($value) ?>"
                                            <?= $mode === $value ? 'checked' : '' ?>>
                                     <span>
                                         <strong><?= e($label) ?></strong>
-                                        <span class="sik-help" style="display:block"><?= e($help) ?></span>
+                                        <?php if ($help !== ''): ?>
+                                            <span class="sik-help" style="display:block"><?= e($help) ?></span>
+                                        <?php endif; ?>
                                     </span>
                                 </label>
                             <?php endforeach; ?>
@@ -208,7 +207,6 @@ return [
                             <?php endforeach; ?>
                         </select>
                         <span class="sik-help">
-                            The keys are yours to create - we cannot make them for you.
                             <?php foreach ($providers as $key => $meta): ?>
                                 <?= $key === $provider ? '<a href="' . e($meta['keys_at']) . '" target="_blank" rel="noopener">Get ' . e($meta['label']) . ' keys</a>' : '' ?>
                             <?php endforeach; ?>
@@ -238,7 +236,7 @@ return [
                             <?php if (isset($errors['sec_bot_secret'])): ?>
                                 <span class="sik-error"><?= e($errors['sec_bot_secret']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Encrypted before it is stored, and never shown again.</span>
+                                <span class="sik-help">Encrypted, and never shown again.</span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -314,7 +312,9 @@ return [
                 <details style="font-size:13px">
                     <summary style="cursor:pointer;font-weight:600">What runs with no provider configured</summary>
                     <div style="display:grid;gap:8px;margin-top:8px">
-                        <p>Three checks that need no vendor, no keys and no JavaScript:</p>
+                        <p>Protected forms are sign-up, sign-in, forgot-password, contact, the newsletter,
+                           reviews and coupon codes. Three checks guard them with no vendor, no keys and no
+                           JavaScript:</p>
                         <ul style="margin:0;padding-left:18px;display:grid;gap:4px">
                             <li><strong>A honeypot field</strong> - hidden from people and from screen readers. Bots fill it in.</li>
                             <li><strong>A minimum time on the form</strong> - signed, so the timestamp cannot be back-dated.</li>
@@ -323,6 +323,11 @@ return [
                         </ul>
                         <p>Configuring a provider adds a real challenge on top for the clients those three distrust.
                            Without one, a distrusted client is asked to slow down instead.</p>
+                        <p><strong>Adaptive</strong> challenges only after repeated failures from one address,
+                           or above a submission rate no person reaches, so an ordinary customer never sees a
+                           puzzle. <strong>Always</strong> is only worth it while you are actually being hit.
+                           <strong>Off</strong> leaves the endpoint rate limits, and nothing else.</p>
+                        <p>The provider keys are yours to create; we cannot make them for you.</p>
                     </div>
                 </details>
             </div>

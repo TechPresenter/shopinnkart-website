@@ -322,7 +322,7 @@ require ADMIN_PATH . '/includes/header.php';
                         ) ?>
                     <?php endforeach; ?>
                     <?php if ((int) ($funnel['cancelled'] ?? 0) > 0): ?>
-                        <p class="ad-muted" style="font-size:12.5px;margin-top:12px">
+                        <p class="ad-muted" style="font-size:var(--ad-text-xs);margin-top:12px">
                             <?= number_format((int) $funnel['cancelled']) ?> of these orders were cancelled along the way.
                         </p>
                     <?php endif; ?>
@@ -369,7 +369,7 @@ require ADMIN_PATH . '/includes/header.php';
                     </table>
                 </div>
             </div>
-            <div class="ad-card__foot ad-muted" style="font-size:12.5px">
+            <div class="ad-card__foot ad-muted" style="font-size:var(--ad-text-xs)">
                 Based on <?= number_format((int) ($timings['delivered_count'] ?? 0)) ?> delivered order<?= (int) ($timings['delivered_count'] ?? 0) === 1 ? '' : 's' ?>.
             </div>
         </div>

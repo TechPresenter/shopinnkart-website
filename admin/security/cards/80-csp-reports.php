@@ -142,10 +142,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">What the policy would block</h2>
-                    <div class="ad-card__sub">
-                        Violations reported by real browsers, grouped. This is the list that has to be quiet
-                        before Enforce is safe.
-                    </div>
+                    <div class="ad-card__sub">This list must be quiet before Enforce.</div>
                 </div>
                 <?= $mode === 'enforce'
                     ? '<span class="sik-status sik-status--green">Enforced</span>'
@@ -188,13 +185,16 @@ return [
                     </div>
                 </div>
 
+                <?php // Reports arrive at csp_report_endpoint(), capped at
+                      // sec_csp_report_max per address per hour and at
+                      // sec_csp_group_cap distinct groups, so one misbehaving
+                      // browser extension cannot flood the table. That is why
+                      // the screen no longer explains the caps: they are the
+                      // reason the list stays readable, not a decision the
+                      // operator makes. ?>
                 <div class="ad-muted" style="font-size:13px;line-height:1.7">
-                    Reports arrive at <code class="ad-mono"><?= e(csp_report_endpoint()) ?></code>, capped at
-                    <?= (int) setting_int('sec_csp_report_max', 60) ?> per address per hour and at
-                    <?= (int) setting_int('sec_csp_group_cap', 400) ?> distinct groups, so one misbehaving browser
-                    extension cannot flood the table. <strong>A blocked <code>chrome-extension://</code> or ad-network
-                    URL is one visitor's browser, not your shop</strong> - only the first-party rows matter for the
-                    decision below.
+                    <strong>Only the first-party rows matter here.</strong>
+                    A <code>chrome-extension://</code> row is a visitor's own browser.
                 </div>
 
                 <?php if ($groups === []): ?>

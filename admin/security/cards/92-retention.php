@@ -103,10 +103,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Data retention</h2>
-                    <div class="ad-card__sub">
-                        How long logs are kept. Everything here holds an IP address, an email address
-                        or something a customer typed.
-                    </div>
+                    <div class="ad-card__sub">Every one of these logs holds personal data.</div>
                 </div>
                 <span class="sik-status sik-status--<?= $expired > 0 ? 'amber' : 'green' ?>">
                     <?= number_format($expired) ?> expired
@@ -117,13 +114,11 @@ return [
                 <div class="sik-alert sik-alert--info">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        Nothing is deleted by loading this page. The windows are enforced by
-                        <code class="ad-mono">php <?= e(ROOT_PATH) ?>/bin/prune-logs.php --quiet</code>,
-                        which belongs on a nightly cron next to the backup.
+                        Nothing is deleted here. A nightly cron does it:
+                        <code class="ad-mono">php <?= e(ROOT_PATH) ?>/bin/prune-logs.php --quiet</code>
                         <?php if ($last !== null): ?>
-                            Last run <?= e(time_ago((string) ($last['at'] ?? ''))) ?>
-                            (<?= number_format((int) ($last['total'] ?? 0)) ?> rows,
-                            by <?= e((string) ($last['by'] ?? 'cron')) ?>).
+                            Last run <?= e(time_ago((string) ($last['at'] ?? ''))) ?>,
+                            <?= number_format((int) ($last['total'] ?? 0)) ?> rows.
                         <?php else: ?>
                             <strong>It has never run.</strong>
                         <?php endif; ?>

@@ -38,22 +38,22 @@ $spec = [
         'type'    => 'bool',
         'label'   => 'Show popup modals',
         'default' => '1',
-        'help'    => 'Master switch for every centre-screen popup. Off means active_popups() '
-            . 'returns none, so no popup markup reaches the page at all.',
+        // Off makes active_popups() return none, so no popup markup reaches
+        // the page at all - it is not a CSS hide.
+        'help'    => 'Master switch for every centre-screen popup.',
     ],
     'popins_enabled' => [
         'type'    => 'bool',
         'label'   => 'Show pop-ins',
         'default' => '1',
-        'help'    => 'The small corner cards - free-shipping nudges, stock alerts. '
-            . 'Independent of the popup switch above.',
+        'help'    => 'The small corner cards, independent of the switch above.',
     ],
     'ticker_enabled' => [
         'type'    => 'bool',
         'label'   => 'Show the announcement ticker',
         'default' => '1',
-        'help'    => 'The scrolling strip above the header. It only appears when Marketing → '
-            . 'Announcements also has a live row.',
+        // No help line: the card subtitle says what the strip is, and the
+        // line under the fields says whether a live announcement exists.
     ],
     'ticker_speed' => [
         'type'      => 'number',
@@ -61,15 +61,15 @@ $spec = [
         'default'   => '40',
         'min_value' => 10,
         'max_value' => 240,
-        'help'      => 'Seconds for one full pass of the strip, so a larger number scrolls slower. '
-            . 'The storefront clamps anything under 10 seconds.',
+        'help'      => 'Larger scrolls slower. Under 10 seconds is clamped.',
     ],
     'mobile_bottom_nav' => [
         'type'    => 'bool',
         'label'   => 'Show the mobile bottom bar',
         'default' => '1',
-        'help'    => 'The fixed Home / Shop / Cart / Account bar under 768px. Turning it off also '
-            . 'drops the body padding that reserves room for it.',
+        // Off also drops the body padding that reserves room for the bar, so
+        // the page does not keep a strip of empty space at the bottom.
+        'help'    => 'Home / Shop / Cart / Account, under 768px.',
     ],
     // back_to_top_enabled and floating_whatsapp used to be two booleans here.
     // Each floating button is now a row in `floating_buttons` whose `status` is
@@ -80,15 +80,13 @@ $spec = [
         'type'    => 'bool',
         'label'   => 'Show floating action buttons',
         'default' => '1',
-        'help'    => 'Master switch for the whole floating stack. Off renders none of them, '
-            . 'whatever each row says. The buttons themselves live in Content → Floating Buttons.',
+        'help'    => 'Off renders none of them, whatever each row says.',
     ],
     'recently_viewed_enabled' => [
         'type'    => 'bool',
         'label'   => 'Track recently viewed products',
         'default' => '1',
-        'help'    => 'Off stops product pages recording the visit and hides the "Recently viewed" '
-            . 'row everywhere it is used.',
+        'help'    => 'Off stops recording, and hides the "Recently viewed" row.',
     ],
 
     // ---- wishlist --------------------------------------------------------
@@ -96,15 +94,17 @@ $spec = [
         'type'    => 'bool',
         'label'   => 'Wishlist enabled',
         'default' => '1',
-        'help'    => 'Off is a real off: the header icon, the card and product-page buttons, the '
-            . '/wishlist page (404) and every api/wishlist/* endpoint (403) all refuse together.',
+        // What "off" reaches - icon, card and PDP buttons, /wishlist (404)
+        // and every api/wishlist/* endpoint (403) - is in the card subtitle,
+        // where it is said once instead of once per switch.
     ],
     'wishlist_show_header' => [
         'type'    => 'bool',
         'label'   => 'Heart icon in the header',
         'default' => '1',
-        'help'    => 'Also governs the wishlist cell in the phone bottom bar and the wishlist row in '
-            . 'the account menu. Appearance → Header can hide the header action on its own as well.',
+        // Appearance > Header can hide the header action on its own as well,
+        // so an icon missing with this switch on is worth checking there.
+        'help'    => 'Also the phone bottom bar and the account menu.',
     ],
     'wishlist_show_card' => [
         'type'    => 'bool',
@@ -126,8 +126,9 @@ $spec = [
             'prompt'  => 'Must sign in first — the buttons become links to the login page',
             'hidden'  => 'No wishlist at all — controls hidden, endpoints refuse',
         ],
-        'help'    => 'One control rather than a pair that could contradict each other: '
-            . '"Must sign in first" is the login requirement.',
+        // One control rather than a pair that could contradict each other:
+        // "Must sign in first" IS the login requirement, so there is no
+        // second "require login" switch to disagree with it.
     ],
 
     // ---- compare ---------------------------------------------------------
@@ -135,14 +136,14 @@ $spec = [
         'type'    => 'bool',
         'label'   => 'Compare enabled',
         'default' => '1',
-        'help'    => 'Off hides the header icon, the card and product-page buttons and the floating '
-            . 'compare bar, answers 404 on /compare and 403 from every api/compare/* endpoint.',
+        // Off also hides the floating compare bar and answers 404 on
+        // /compare and 403 from every api/compare/* endpoint.
     ],
     'compare_show_header' => [
         'type'    => 'bool',
         'label'   => 'Compare icon in the header',
         'default' => '1',
-        'help'    => 'Also governs the Compare row in the mobile drawer and the account menu.',
+        'help'    => 'Also the mobile drawer and the account menu.',
     ],
     'compare_show_card' => [
         'type'    => 'bool',
@@ -177,8 +178,7 @@ $spec = [
         // Store edits. Rendered here too because this is where an admin looks
         // for it; the group override keeps it a single row, not a copy.
         'group'     => 'store',
-        'help'      => 'Every value in the 2–6 range takes effect as typed. Also on the Store tab — same setting, '
-            . 'not a second one.',
+        'help'      => 'Also on the Store tab — the same setting, not a copy.',
     ],
 ];
 
@@ -252,11 +252,11 @@ $dormant = [
  * that does not exist, on the one page whose whole point is not to promise
  * behaviour the shop does not have.
  */
+// The replacement, not a sentence about it: the column is headed "Replaced by",
+// and each row's own `status` in Content > Floating Buttons is now its switch.
 $retired = [
-    'back_to_top_enabled' => 'Replaced by the Back to top row in Content → Floating Buttons, whose '
-        . '`status` is now its switch.',
-    'floating_whatsapp'   => 'Replaced by the WhatsApp row in Content → Floating Buttons, whose '
-        . '`status` is now its switch.',
+    'back_to_top_enabled' => 'The Back to top row in Content → Floating Buttons.',
+    'floating_whatsapp'   => 'The WhatsApp row in Content → Floating Buttons.',
 ];
 $retired = array_intersect_key($retired, $storedWidgets);
 
@@ -286,15 +286,14 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <div class="ad-card__title"><?= icon('bell', 'w-4 h-4') ?> Popups &amp; pop-ins</div>
                     <div class="ad-card__sub">
-                        The kill switches. Each one stops its own display mode before any markup is
-                        rendered — individual popups keep their own status in Marketing → Popups.
+                        Kill switches. Individual popups keep their own status in Marketing → Popups.
                     </div>
                 </div>
             </div>
             <div class="ad-card__body" style="display:grid;gap:4px">
                 <?= settings_fields(['popups_enabled', 'popins_enabled'], $spec, $values, $errors) ?>
 
-                <p class="ad-muted" style="font-size:12.5px;margin:6px 0 0">
+                <p class="ad-muted" style="font-size:var(--ad-text-xs);margin:6px 0 0">
                     <?= $livePopups ?> active popup<?= $livePopups === 1 ? '' : 's' ?>
                     and <?= $livePopins ?> active pop-in<?= $livePopins === 1 ? '' : 's' ?> exist right now.
                     <a href="<?= e(admin_url('popups/')) ?>">Manage them</a>.
@@ -313,14 +312,13 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__body" style="display:grid;gap:4px">
                 <?= settings_fields(['ticker_enabled', 'ticker_speed'], $spec, $values, $errors) ?>
 
-                <p class="ad-muted" style="font-size:12.5px;margin:6px 0 0">
+                <p class="ad-muted" style="font-size:var(--ad-text-xs);margin:6px 0 0">
                     <?php if ($liveAnnouncements === 0): ?>
                         No announcement row is live, so the strip stays hidden whatever this switch says.
                     <?php else: ?>
                         <?= $liveAnnouncements ?> announcement<?= $liveAnnouncements === 1 ? ' is' : 's are' ?> live.
                     <?php endif; ?>
-                    The messages themselves have no admin screen yet — they are edited directly in the
-                    <code>announcements</code> table.
+                    The messages have no admin screen yet; edit the <code>announcements</code> table.
                 </p>
             </div>
         </div>
@@ -330,19 +328,18 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title"><?= icon('smartphone', 'w-4 h-4') ?> Floating &amp; mobile helpers</div>
-                    <div class="ad-card__sub">The controls that sit on top of the page instead of inside it.</div>
+                    <div class="ad-card__sub">The controls that sit on top of the page.</div>
                 </div>
             </div>
             <div class="ad-card__body" style="display:grid;gap:4px">
                 <?= settings_fields(['mobile_bottom_nav', 'floating_buttons_enabled'], $spec, $values, $errors) ?>
 
-                <p class="ad-muted" style="font-size:12.5px;margin:6px 0 0">
+                <p class="ad-muted" style="font-size:var(--ad-text-xs);margin:6px 0 0">
                     <?= $floatingActive ?> of <?= count($floatingRows) ?> floating buttons are enabled.
-                    <a href="<?= e(admin_url('floating/')) ?>">Open the builder</a> to set each one's icon,
-                    label, tooltip, colour, size, corner, order and device visibility.
+                    <a href="<?= e(admin_url('floating/')) ?>">Open the builder</a>.
                     <?php if ($whatsappNumber === ''): ?>
-                        No store WhatsApp number is saved, so a WhatsApp button with an empty number of
-                        its own stays hidden (<a href="<?= e(settings_url('general')) ?>">add one</a>).
+                        No store WhatsApp number is saved, so a WhatsApp button without its own number
+                        stays hidden (<a href="<?= e(settings_url('general')) ?>">add one</a>).
                     <?php endif; ?>
                 </p>
             </div>
@@ -354,9 +351,7 @@ require ADMIN_PATH . '/includes/header.php';
                 <div>
                     <div class="ad-card__title"><?= icon('heart', 'w-4 h-4') ?> Wishlist</div>
                     <div class="ad-card__sub">
-                        Switching the feature off does not just hide buttons — /wishlist answers 404
-                        and the api/wishlist/* endpoints answer 403, so there is no live endpoint
-                        sitting behind a hidden control.
+                        A real off: /wishlist answers 404, api/wishlist/* answers 403.
                     </div>
                 </div>
             </div>
@@ -378,7 +373,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title"><?= icon('compare', 'w-4 h-4') ?> Product comparison</div>
-                    <div class="ad-card__sub">Same rules as the wishlist, plus how many products fit side by side.</div>
+                    <div class="ad-card__sub">Same rules as the wishlist, plus how many fit side by side.</div>
                 </div>
             </div>
             <div class="ad-card__body" style="display:grid;gap:4px">
@@ -414,11 +409,11 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Stored but not implemented</div>
-                    <div class="ad-card__sub">
-                        These two keys are seeded by the schema and read by no storefront code.
-                        They are disabled rather than editable so the screen cannot promise
-                        behaviour the shop does not have.
-                    </div>
+                    <?php
+                    // Disabled rather than editable: a live-looking switch would promise
+                    // behaviour the storefront does not have.
+                    ?>
+                    <div class="ad-card__sub">Seeded by the schema, read by no storefront code.</div>
                 </div>
             </div>
             <div class="ad-card__body" style="display:grid;gap:4px">
@@ -435,10 +430,9 @@ require ADMIN_PATH . '/includes/header.php';
                             <input class="sik-input" type="number" value="<?= e_attr($row['value']) ?>"
                                    disabled style="opacity:.55;cursor:not-allowed;max-width:160px">
                         <?php endif; ?>
+                        <?php // Left in place rather than deleted so the seed data and this screen agree. ?>
                         <span class="sik-help">
-                            <code><?= e($key) ?></code> — no consumer in the storefront, so its value
-                            has no effect. Left in place rather than deleted so the seed data and this
-                            screen agree.
+                            <code><?= e($key) ?></code> — no consumer, so its value has no effect.
                         </span>
                     </div>
                 <?php endforeach; ?>
@@ -450,10 +444,9 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <div class="ad-card__title">Retired keys</div>
+                        <?php // Shown so the settings group has no invisible rows. ?>
                         <div class="ad-card__sub">
-                            Still stored by this installation, read by nothing, and edited nowhere —
-                            a newer control replaced each of them. Shown so the group has no invisible
-                            rows; safe to leave exactly as they are.
+                            Read by nothing, replaced by a newer control. Safe to leave.
                         </div>
                     </div>
                 </div>
@@ -482,8 +475,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div>
                         <div class="ad-card__title">Also filed under “widgets”</div>
                         <div class="ad-card__sub">
-                            Stored in the same settings group but owned by another feature screen.
-                            Shown here so nothing in the group is invisible; edit them where they live.
+                            Same settings group, owned by another screen. Edit them where they live.
                         </div>
                     </div>
                 </div>
@@ -510,9 +502,8 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--info" style="margin:0">
                     <?= icon('info', 'w-5 h-5') ?>
                     <div>
-                        Turning a switch off removes the markup, not just the visual — there is no
-                        hidden element left behind for a script to reveal. Saving clears the page
-                        cache, so the storefront reflects the change on the next request.
+                        Off removes the markup, not just the look. Saving clears the page cache, so
+                        the storefront changes on the next request.
                     </div>
                 </div>
             </div>

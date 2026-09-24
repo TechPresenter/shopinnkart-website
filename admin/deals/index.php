@@ -193,7 +193,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <div class="ad-cellflex">
                                             <img class="ad-thumb" src="<?= e(img_url($deal['product_image'])) ?>"
                                                  alt="" width="34" height="34" loading="lazy">
-                                            <span class="ad-cellflex__name" style="font-size:12.5px">
+                                            <span class="ad-cellflex__name" style="font-size:var(--ad-text-sm)">
                                                 <?= e(str_limit((string) $deal['product_name'], 34)) ?>
                                             </span>
                                         </div>

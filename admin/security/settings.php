@@ -69,7 +69,7 @@ require ADMIN_PATH . '/includes/header.php';
 <?php if (!$canEdit): ?>
     <div class="sik-alert sik-alert--info">
         <?= icon('info', 'w-5 h-5') ?>
-        <div>You have read-only access. Ask a Super Admin for the <code>security.edit</code> permission to change anything here.</div>
+        <div>Read-only. Ask a Super Admin for <code>security.edit</code> to change anything here.</div>
     </div>
 <?php endif; ?>
 

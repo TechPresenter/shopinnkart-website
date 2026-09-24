@@ -642,7 +642,7 @@ require ADMIN_PATH . '/includes/header.php';
                                             </div>
                                         <?php endif; ?>
                                     </td>
-                                    <td style="font-size:12.5px">
+                                    <td style="font-size:var(--ad-text-sm)">
                                         <?= e((string) $entry['recipient']) ?>
                                         <?php if ((string) $entry['recipient_type'] === 'admin'): ?>
                                             <span class="sik-badge sik-badge--soft">admin</span>
@@ -656,7 +656,7 @@ require ADMIN_PATH . '/includes/header.php';
                                     <td>
                                         <span class="sik-status sik-status--<?= e($tone) ?>"><?= e(ucfirst($entryStatus)) ?></span>
                                     </td>
-                                    <td style="white-space:nowrap;font-size:12.5px">
+                                    <td style="white-space:nowrap;font-size:var(--ad-text-sm)">
                                         <?= e(format_datetime($entry['sent_at'] ?: $entry['created_at'])) ?>
                                     </td>
                                 </tr>
@@ -687,7 +687,7 @@ require ADMIN_PATH . '/includes/header.php';
                                     <td><?= e(strtoupper((string) $event['gateway'])) ?></td>
                                     <td><?= e(money((float) $event['amount'])) ?></td>
                                     <td><?= e(ucfirst((string) $event['status'])) ?></td>
-                                    <td style="white-space:nowrap;font-size:12.5px"><?= e(format_datetime($event['created_at'])) ?></td>
+                                    <td style="white-space:nowrap;font-size:var(--ad-text-sm)"><?= e(format_datetime($event['created_at'])) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                             </tbody>
@@ -1020,7 +1020,7 @@ require ADMIN_PATH . '/includes/header.php';
                             <span class="ad-mono"><?= e((string) ($liveShipment['awb'] ?? '')) ?: 'not assigned' ?></span>
                         </div>
                     </div>
-                    <p class="ad-muted" style="margin:10px 0 12px;font-size:12.5px">
+                    <p class="ad-muted" style="margin:10px 0 12px;font-size:var(--ad-text-xs)">
                         Managed by the courier integration - tracking updates arrive automatically.
                     </p>
                     <a class="ad-btn ad-btn--block" href="<?= e(admin_url('shipping/book.php?order=' . $orderId)) ?>">
@@ -1045,7 +1045,7 @@ require ADMIN_PATH . '/includes/header.php';
                            href="<?= e(admin_url('shipping/book.php?order=' . $orderId)) ?>">
                             <?= icon('truck', 'w-4 h-4') ?> Book with a courier
                         </a>
-                        <p class="ad-muted" style="margin:0 0 10px;font-size:12.5px">Or record a parcel sent some other way:</p>
+                        <p class="ad-muted" style="margin:0 0 10px;font-size:var(--ad-text-xs)">Or record a parcel sent some other way:</p>
                     <?php endif; ?>
                     <form class="ad-form" method="post" action="<?= e(admin_url('orders/update-shipping.php')) ?>"
                           data-guard-unsaved>

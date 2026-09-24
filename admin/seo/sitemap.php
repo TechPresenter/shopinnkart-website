@@ -43,23 +43,24 @@ $spec = [
     ],
     'sitemap_include_images' => [
         'type' => 'bool', 'label' => 'List product images', 'group' => 'seo',
-        'help' => 'An image sitemap tells Google which pictures belong to which product page.',
+        'help' => 'Tells Google which pictures belong to which product page.',
     ],
+    // Off by default on purpose: the product page is still the right answer to a
+    // search for that product, and dropping it from the sitemap loses the ranking
+    // the moment stock runs out - which is the worst possible moment to lose it.
     'sitemap_exclude_oos' => [
         'type' => 'bool', 'label' => 'Leave out products that are out of stock', 'group' => 'seo',
-        'help' => 'Off by default: the page is still the right answer to a search for that product, '
-                . 'and removing it loses the ranking the moment stock runs out.',
+        'help' => 'Off by default: removing a page loses its ranking.',
     ],
     'sitemap_urls_per_file' => [
         'type' => 'number', 'label' => 'URLs per file', 'group' => 'seo',
         'min_value' => 100, 'max_value' => SITEMAP_MAX_URLS,
-        'help' => 'The sitemap format allows at most ' . number_format(SITEMAP_MAX_URLS)
-                . ' per file. Lower it if your files are slow to download.',
+        'help' => 'The format allows ' . number_format(SITEMAP_MAX_URLS) . ' at most.',
     ],
     'sitemap_cache_ttl' => [
         'type' => 'number', 'label' => 'Cache the built XML for (seconds)', 'group' => 'seo',
         'min_value' => 0, 'max_value' => 86400,
-        'help' => '0 rebuilds on every request. Saving anything in the admin clears it anyway.',
+        'help' => '0 rebuilds every request. Any admin save clears it.',
     ],
 ];
 
@@ -253,12 +254,18 @@ require ADMIN_PATH . '/includes/header.php';
         </table>
     </div>
 
-    <div class="ad-card__foot">
-        <p class="sik-help" style="margin:0">
-            Anything carrying <code>noindex</code>, any inactive row and any unpublished post is left out:
-            a sitemap is the list of pages you want indexed, and listing one you have told crawlers to skip
-            is reported by Search Console as a contradiction.
+    <div class="ad-card__body">
+        <p class="sik-help" style="margin:0 0 8px">
+            Anything set to <code>noindex</code>, inactive or unpublished is left out.
         </p>
+        <details>
+            <summary>Why those pages are missing</summary>
+            <p>
+                A sitemap is the list of pages you want indexed. Listing one you have also told crawlers
+                to skip is a contradiction, and Search Console reports it as an error against the file
+                rather than ignoring it.
+            </p>
+        </details>
     </div>
 </div>
 
@@ -275,13 +282,19 @@ require ADMIN_PATH . '/includes/header.php';
     </div>
     <div class="ad-card__body">
         <?php if ($remote === null): ?>
-            <p class="sik-help" style="margin:0">
-                Not run. This is the only part of the page that uses the network: it asks the store for the
-                index, robots.txt and one URL from each section, with half a second allowed for each answer
-                and <?= e((string) (int) SITEMAP_HEALTH_BUDGET) ?> seconds for the lot. On a single-worker
-                server (the local PHP one, or php-fpm with one child) the store cannot answer itself while it
-                is rendering this page, and the check will honestly report that it got no answer.
+            <p class="sik-help" style="margin:0 0 8px">
+                Not run &mdash; the only part of this page that uses the network.
             </p>
+            <details>
+                <summary>What it checks, and when it cannot</summary>
+                <p>
+                    It asks the store for the index, robots.txt and one URL from each section: half a
+                    second per answer, <?= e((string) (int) SITEMAP_HEALTH_BUDGET) ?> seconds for the lot.
+                    On a single-worker server &mdash; the local PHP one, or php-fpm with one child &mdash;
+                    the store cannot answer itself while it is rendering this page, and the check reports
+                    that it got no answer rather than pretending otherwise.
+                </p>
+            </details>
         <?php else: ?>
             <?php if ($remote['checked'] === []): ?>
                 <p class="sik-error" style="margin:0">Nothing was checked.</p>
@@ -333,16 +346,17 @@ require ADMIN_PATH . '/includes/header.php';
                 'sitemap_exclude_oos', 'sitemap_urls_per_file', 'sitemap_cache_ttl',
             ], $spec, $values, $errors) ?>
         </div>
-        <?= settings_save_bar('A section with nothing in it is left out of the index entirely.') ?>
+        <?= settings_save_bar('An empty section is left out of the index.') ?>
     </form>
 
     <div class="ad-card">
         <div class="ad-card__head"><h2 class="ad-card__title">Search engines</h2></div>
         <div class="ad-card__body">
+            <?php /* No API key, and none is pretended. Google retired its old "ping" URL, so there is
+                     nothing left to automate: the honest version is the address to paste and a link
+                     straight to the right screen in each engine's own console. */ ?>
             <p class="sik-help" style="margin-top:0">
-                There is no API key here and none is pretended: submitting a sitemap is something you do once,
-                signed in to your own account. Google retired its old "ping" URL, so the honest version is the
-                address to paste and a link straight to the right screen.
+                No API key: you submit a sitemap once, signed in to your own account.
             </p>
 
             <div class="ad-field">
@@ -404,9 +418,10 @@ require ADMIN_PATH . '/includes/header.php';
                                maxlength="60" spellcheck="false"
                                value="<?= e_attr($verification['file']) ?>"
                                placeholder="google1a2b3c4d5e6f7g.html">
+                        <?php /* gsc_verification_write() only accepts a name of Google's own shape, and
+                                 writes the exact contents Google looks for. */ ?>
                         <span class="sik-help">
-                            Paste the filename Google gave you. We write that exact file, with the exact
-                            contents Google looks for. Only a name of that shape is accepted.
+                            Paste the filename Google gave you. We create it.
                         </span>
                     </div>
                     <button type="submit" class="ad-btn ad-btn--sm"><?= icon('upload', 'w-4 h-4') ?> Create file</button>
@@ -446,10 +461,11 @@ require ADMIN_PATH . '/includes/header.php';
             <?php endif; ?>
         </form>
 
+        <?php /* The disallow list is code, not a setting, on purpose: those paths are a property of how
+                 the store is routed, and an admin who could edit them could de-index the whole catalogue
+                 by accident. Only the operator's own extra rules are editable, and they are appended. */ ?>
         <p class="sik-help">
-            The disallow list is code, not a setting: those paths are a property of how the store is routed,
-            and an admin who could edit them could de-index the whole catalogue by accident. Your own extra
-            rules are appended, and are editable on
+            This list is fixed. Your own extra rules are appended &mdash; edit them on
             <a href="<?= e(admin_url('settings/seo.php')) ?>">Settings &rsaquo; SEO</a>.
         </p>
 

@@ -942,7 +942,15 @@ function create_order(array $input): array
             // notify_order_placed() below is the customer's confirmation and
             // already carries the invoice — sending both is one message too many.
             update_order_status((int) $orderRow['id'], ORDER_STATUS_CONFIRMED, 'COD order auto-confirmed', 'system', false);
-            $orderRow = get_order((int) $orderRow['id']);
+            // `?? $orderRow`, exactly like the invoice re-read below. A re-read
+            // is a REFRESH of a row that is already committed, so a null from
+            // it means the read failed, never that the order is gone - and
+            // letting $orderRow become null hands null to every side effect
+            // that follows. Each of those is inside a try/catch and turned it
+            // into a logged warning, so the hole stayed invisible until the
+            // analytics purchase hook (which is typed `array`) met it and
+            // ended a COMMITTED checkout with a fatal instead.
+            $orderRow = get_order((int) $orderRow['id']) ?? $orderRow;
         }
     } catch (Throwable $e) {
         ErrorHandler::log('warning', 'Post-order gateway hook failed: ' . $e->getMessage());
@@ -966,13 +974,24 @@ function create_order(array $input): array
     // Analytics, last and outside the transaction. The revenue recorded is
     // read back from the committed order row, never from the cart and never
     // from the browser - a purchase total the client can influence is a
-    // revenue figure nobody can defend. analytics_record_purchase() has a
-    // try/catch of its own, and events.php refuses to write at all while a
-    // transaction is open, so there is no path from a counter back to the
-    // order. The order is already placed by the time this line runs; the worst
-    // an analytics failure can do is lose the row it was about to write.
-    if (analytics_library()) {
-        analytics_record_purchase($orderRow);
+    // revenue figure nobody can defend. events.php refuses to write at all
+    // while a transaction is open, so there is no path from a counter back to
+    // the order. The order is already placed by the time this line runs; the
+    // worst an analytics failure may do is lose the row it was about to write.
+    //
+    // WRAPPED LIKE EVERY OTHER POST-COMMIT SIDE EFFECT, and not because the
+    // function is careless. analytics_record_purchase() does have a try/catch
+    // of its own - but it is declared `array $order` under strict_types, so a
+    // null argument throws BEFORE the body runs and that inner catch never
+    // sees it. The result was a fatal on a checkout whose order was already
+    // committed and paid: the customer is charged and shown an error page.
+    // An unguarded call here is a counter deciding whether a sale succeeded.
+    try {
+        if (analytics_library()) {
+            analytics_record_purchase($orderRow);
+        }
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Analytics purchase hook failed: ' . $e->getMessage(), $e->getFile(), $e->getLine());
     }
 
     return ['ok' => true, 'message' => 'Order placed successfully.', 'order' => $orderRow, 'errors' => []];

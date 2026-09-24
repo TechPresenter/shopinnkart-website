@@ -65,7 +65,8 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             <?php if (isset($errors['code'])): ?>
                                 <span class="sik-error"><?= e($errors['code']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Stored in upper case. Customers may type it either way.</span>
+                                <?php // Stored upper-cased; the lookup at the cart is case-insensitive. ?>
+                                <span class="sik-help">Customers may type it in any case.</span>
                             <?php endif; ?>
                         </div>
 
@@ -89,7 +90,7 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                         <?php if (isset($errors['description'])): ?>
                             <span class="sik-error"><?= e($errors['description']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">Shown on the cart page next to the applied coupon.</span>
+                            <span class="sik-help">Shown on the cart beside the applied coupon.</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -123,7 +124,7 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             <?php if (isset($errors['minimum_order'])): ?>
                                 <span class="sik-error"><?= e($errors['minimum_order']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Cart subtotal needed before the code applies. 0 = no minimum.</span>
+                                <span class="sik-help">Cart subtotal, before discount. 0 = no minimum.</span>
                             <?php endif; ?>
                         </div>
 
@@ -135,7 +136,8 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             <?php if (isset($errors['maximum_discount'])): ?>
                                 <span class="sik-error"><?= e($errors['maximum_discount']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Caps a percentage discount. Blank = uncapped.</span>
+                                <?php // The label "Maximum discount" already says it caps the percentage. ?>
+                                <span class="sik-help">Blank = uncapped.</span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -145,7 +147,7 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
             <div class="ad-card" style="margin:0">
                 <div class="ad-card__head">
                     <div class="ad-card__title">Schedule &amp; limits</div>
-                    <div class="ad-card__sub">Leave a date blank to leave that end of the window open.</div>
+                    <div class="ad-card__sub">Blank leaves that end of the window open.</div>
                 </div>
                 <div class="ad-card__body">
                     <div class="ad-row ad-row--2">
@@ -179,7 +181,8 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             <?php if (isset($errors['usage_limit'])): ?>
                                 <span class="sik-error"><?= e($errors['usage_limit']) ?></span>
                             <?php else: ?>
-                                <span class="sik-help">Across all customers. Blank = unlimited.</span>
+                                <?php // "Total redemptions" already means across all customers. ?>
+                                <span class="sik-help">Blank = unlimited.</span>
                             <?php endif; ?>
                         </div>
 
@@ -204,18 +207,22 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                the same catalogue rules validate_coupon() applies at checkout, so
                an offer shown to a shopper cannot be refused in the basket. */
             $offerPlacements = array_filter(array_map('trim', explode(',', (string) ($coupon['offer_placements'] ?? ''))));
+            /* One short line each, and none at all where the label already says it:
+               "Homepage" and "Cart and checkout" described themselves. The header
+               strip's countdown, the scratch panel and the product-page filtering are
+               the three the label cannot tell you. */
             $placementList = [
-                'header'  => ['Announcement strip', 'The bar above the header, with a live countdown to the end date.'],
-                'home'    => ['Homepage', 'The offer strip and any offer slider on the homepage.'],
-                'scratch' => ['Scratch card', 'Hidden under a scratch panel on the homepage until a shopper reveals it.'],
-                'product' => ['Product pages', 'The "Offers on this item" panel, on products the coupon can apply to.'],
-                'cart'    => ['Cart and checkout', 'Offered for one-tap apply while the shopper is paying.'],
+                'header'  => ['Announcement strip', 'Above the header, with a countdown.'],
+                'home'    => ['Homepage', ''],
+                'scratch' => ['Scratch card', 'Hidden until a shopper scratches it.'],
+                'product' => ['Product pages', 'Only on products it can apply to.'],
+                'cart'    => ['Cart and checkout', ''],
             ];
             ?>
             <div class="ad-card" style="margin:0 0 16px">
                 <div class="ad-card__head">
                     <div class="ad-card__title">Show as an offer</div>
-                    <div class="ad-card__sub">Off by default. A coupon still works when it is typed in, whether or not the store advertises it.</div>
+                    <div class="ad-card__sub">Off by default. The code works whether or not it is advertised.</div>
                 </div>
                 <div class="ad-card__body" style="display:grid;gap:16px">
 
@@ -226,8 +233,10 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             <span class="ad-switch__track"></span>
                             <span>Advertise this coupon on the storefront</span>
                         </label>
+                        <?php // The first half restated the switch. What the switch cannot say is
+                              // that public_offers() still filters on expiry, redemptions and
+                              // status, so this can be on and the offer still never appear. ?>
                         <div class="sik-help" style="margin-top:5px">
-                            Turning this on shows the code, the discount and the end date to every visitor.
                             An expired, fully-redeemed or inactive coupon is never shown, whatever this says.
                         </div>
                     </div>
@@ -237,9 +246,10 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                         <input class="sik-input" type="text" id="offerTitle" name="offer_title" maxlength="120"
                                value="<?= e((string) ($coupon['offer_title'] ?? '')) ?>"
                                placeholder="Left empty: built from the discount, e.g. &quot;10% off on orders over &#8377;599&quot;">
+                        <?php // A hand-written headline that disagrees with the discount is worse
+                              // than the plain generated one, hence "unless it is wrong". ?>
                         <div class="sik-help" style="margin-top:5px">
-                            The one line a shopper reads. Leave it blank unless the generated wording is wrong -
-                            a headline that disagrees with the discount is worse than a plain one.
+                            Leave blank unless the generated wording is wrong.
                         </div>
                     </div>
 
@@ -252,7 +262,9 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                                            <?= in_array($placementKey, $offerPlacements, true) ? 'checked' : '' ?>>
                                     <span>
                                         <strong><?= e($placementMeta[0]) ?></strong>
-                                        <span class="sik-help" style="display:block"><?= e($placementMeta[1]) ?></span>
+                                        <?php if ($placementMeta[1] !== ''): ?>
+                                            <span class="sik-help" style="display:block"><?= e($placementMeta[1]) ?></span>
+                                        <?php endif; ?>
                                     </span>
                                 </label>
                             <?php endforeach; ?>
@@ -265,7 +277,7 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                                style="max-width:140px"
                                value="<?= (int) ($coupon['offer_sort'] ?? 0) ?>">
                         <div class="sik-help" style="margin-top:5px">
-                            Lower shows first. The announcement strip only ever carries the first one.
+                            Lower shows first; the strip carries only the first.
                         </div>
                     </div>
                 </div>
@@ -284,8 +296,10 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             <span class="ad-switch__track"></span>
                             <span>First order only</span>
                         </label>
+                        <?php // A guest can never satisfy this: with no account there is no
+                              // order history to check, so validate_coupon() refuses outright. ?>
                         <div class="sik-help" style="margin-top:5px">
-                            The customer must be signed in and have no previous orders.
+                            Signed-in customers with no previous orders.
                         </div>
                     </div>
 
@@ -316,8 +330,8 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                             </select>
                             <?php if (isset($errors['restrict_categories'])): ?>
                                 <span class="sik-error"><?= e($errors['restrict_categories']) ?></span>
-                            <?php else: ?>
-                                <span class="sik-help">Ctrl / Cmd click to select more than one.</span>
+                            <?php // The multi-select's own affordance teaches ctrl/cmd-click; the
+                                  // line said nothing the widget does not. ?>
                             <?php endif; ?>
                         </div>
 
@@ -346,9 +360,7 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                         <?php if (isset($errors['restrict_users'])): ?>
                             <span class="sik-error"><?= e($errors['restrict_users']) ?></span>
                         <?php else: ?>
-                            <span class="sik-help">
-                                One registered email per line. Every address must already have an account.
-                            </span>
+                            <span class="sik-help">One registered email per line.</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -367,7 +379,7 @@ $currencySymbol = (string) setting('currency_symbol', CURRENCY_SYMBOL);
                                 $coupon['status'] ?? 'active'
                             ) ?>
                         </select>
-                        <span class="sik-help">Inactive codes are rejected at the cart even inside their window.</span>
+                        <span class="sik-help">Inactive codes are rejected even inside their window.</span>
                     </div>
 
                     <?php if ($isEdit): ?>

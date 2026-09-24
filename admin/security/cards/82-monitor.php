@@ -135,7 +135,7 @@ return [
                        value="<?= e_attr((string) (old($key, null) ?? setting_int($key, $default))) ?>">
                 <?php if (isset($errors[$key])): ?>
                     <span class="sik-error"><?= e($errors[$key]) ?></span>
-                <?php else: ?>
+                <?php elseif ($help !== ''): ?>
                     <span class="sik-help"><?= e($help) ?></span>
                 <?php endif; ?>
             </div>
@@ -146,9 +146,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Suspicious activity</h2>
-                    <div class="ad-card__sub">
-                        When the security log stops being a log and becomes an email.
-                    </div>
+                    <div class="ad-card__sub">When the log becomes an email.</div>
                 </div>
                 <?= $enabled
                     ? '<span class="sik-status sik-status--green">Watching</span>'
@@ -176,8 +174,7 @@ return [
                         <?= icon('clock', 'w-5 h-5') ?>
                         <div>
                             <strong>Nothing is sweeping on a schedule.</strong>
-                            Opening the security log runs the detectors as a fallback, but that only helps while
-                            somebody is looking. Add this to cron:
+                            Opening the security log is only a fallback. Add this to cron:
                             <code class="ad-mono" style="display:block;margin-top:6px;word-break:break-all">*/5 * * * * <?= e(PHP_BINARY) ?> <?= e(ROOT_PATH) ?>/bin/security-monitor.php --quiet</code>
                         </div>
                     </div>
@@ -187,9 +184,8 @@ return [
                     <div class="sik-alert sik-alert--warning">
                         <?= icon('mail', 'w-5 h-5') ?>
                         <div>
-                            Alerts are set to email, but no notification address is configured. Set one in
-                            <a href="<?= e(admin_url('settings/general.php')) ?>">Settings &rsaquo; General</a>,
-                            or nothing will be sent.
+                            No notification address, so nothing will be sent. Set one in
+                            <a href="<?= e(admin_url('settings/general.php')) ?>">Settings &rsaquo; General</a>.
                         </div>
                     </div>
                 <?php endif; ?>
@@ -207,10 +203,7 @@ return [
                             <input type="checkbox" name="sec_monitor_enabled" value="1" <?= $enabled ? 'checked' : '' ?>>
                             <span>
                                 <strong>Watch for suspicious activity</strong>
-                                <span class="sik-help" style="display:block">
-                                    Reads the events the app already writes. It never blocks anybody by itself -
-                                    that is what the IP rules are for.
-                                </span>
+                                <span class="sik-help" style="display:block">It never blocks anybody.</span>
                             </span>
                         </label>
 
@@ -219,33 +212,33 @@ return [
                             <span>
                                 <strong>Email me when something trips</strong>
                                 <span class="sik-help" style="display:block">
-                                    To the store notification address<?= $recipients === '' ? '' : ' (' . e($recipients) . ')' ?>.
-                                    One email per subject per cooldown window, never one per event.
+                                    To <?= $recipients === '' ? 'the store notification address' : e($recipients) ?>.
                                 </span>
                             </span>
                         </label>
 
+                        <?php // Every number here sits above what the store's own limits already
+                              // allow, and "What is being watched" below prints the reasoning for
+                              // each one from security_monitor_rules(). Repeating that as a help
+                              // line under each of ten inputs put ~160 words between the operator
+                              // and the numbers they came to change, so the depth stays in the
+                              // panel and only the surprising ones are left inline. ?>
                         <div class="ad-grid ad-grid--2" style="gap:12px">
                             <?php $field('sec_alert_login_ip', 'Failed sign-ins from one address / 15 min', 30,
-                                'The app already refuses this address at 20. Passing 30 means it was refused and kept going.', $errors); ?>
+                                'Above the 20 the app already refuses at.', $errors); ?>
                             <?php $field('sec_alert_login_account', 'Failed sign-ins on one account / 15 min', 12,
-                                'The per-account ceiling is 5. Reaching 12 means the guessing is spread across addresses.', $errors); ?>
-                            <?php $field('sec_alert_lockouts', 'Throttle refusals store-wide / 15 min', 10,
-                                'Either a spray across many accounts, or limits set too tight for a shared office.', $errors); ?>
-                            <?php $field('sec_alert_csrf', 'CSRF failures from one address / 15 min', 15,
-                                'One stale tab is one failure. Fifteen is a script posting to forms it never loaded.', $errors); ?>
-                            <?php $field('sec_alert_rbac', 'Permission denials for one admin / hour', 5,
-                                'The menu hides what a role cannot open, so an honest admin cannot reach this by clicking.', $errors); ?>
+                                'Above the per-account ceiling of 5.', $errors); ?>
+                            <?php $field('sec_alert_lockouts', 'Throttle refusals store-wide / 15 min', 10, '', $errors); ?>
+                            <?php $field('sec_alert_csrf', 'CSRF failures from one address / 15 min', 15, '', $errors); ?>
+                            <?php $field('sec_alert_rbac', 'Permission denials for one admin / hour', 5, '', $errors); ?>
                             <?php $field('sec_alert_webhook', 'Payment callbacks with a bad signature / hour', 3,
-                                'A correctly configured gateway never sends one. Any of these needs looking at today.', $errors); ?>
+                                'A working gateway never sends one.', $errors); ?>
                             <?php $field('sec_alert_mfa', 'Two-step failures on one account / 15 min', 8,
-                                'Whoever is doing this already got past the password.', $errors); ?>
+                                'Whoever this is already has the password.', $errors); ?>
                             <?php $field('sec_alert_token_reuse', 'Revoked tokens presented again / hour', 1,
-                                'One is already too many: a token that was taken away has come back.', $errors); ?>
-                            <?php $field('sec_alert_probe', 'Installer / control-panel probes from one address / hour', 5,
-                                'Background noise on any public site. Only worth an alert when it keeps up.', $errors); ?>
-                            <?php $field('sec_alert_404', 'Missing pages asked for by one address / 15 min', 40,
-                                'A real shopper hits a handful from old bookmarks. Forty is a directory scanner.', $errors); ?>
+                                'One is already too many.', $errors); ?>
+                            <?php $field('sec_alert_probe', 'Installer / control-panel probes from one address / hour', 5, '', $errors); ?>
+                            <?php $field('sec_alert_404', 'Missing pages asked for by one address / 15 min', 40, '', $errors); ?>
                         </div>
 
                         <div class="ad-grid ad-grid--2" style="gap:12px">
@@ -258,9 +251,7 @@ return [
                                 <?php if (isset($errors['sec_monitor_cooldown'])): ?>
                                     <span class="sik-error"><?= e($errors['sec_monitor_cooldown']) ?></span>
                                 <?php else: ?>
-                                    <span class="sik-help">
-                                        An attack that lasts two hours is two alerts, not one every five minutes.
-                                    </span>
+                                    <span class="sik-help">Two hours of attack is two alerts.</span>
                                 <?php endif; ?>
                             </div>
                             <div class="ad-field">
@@ -272,10 +263,9 @@ return [
                                 <?php if (isset($errors['sec_events_retention_days'])): ?>
                                     <span class="sik-error"><?= e($errors['sec_events_retention_days']) ?></span>
                                 <?php else: ?>
-                                    <span class="sik-help">
-                                        0 keeps everything. The cron sweep prunes past this, in slices, so it never
-                                        holds the table the whole site writes to.
-                                    </span>
+                                    <?php // The cron sweep prunes past this in slices, so it never holds
+                                          // the table the whole site writes to. ?>
+                                    <span class="sik-help">0 keeps everything.</span>
                                 <?php endif; ?>
                             </div>
                         </div>

@@ -76,12 +76,11 @@ $spec += [
     'border_radius' => [
         'type' => 'number', 'label' => 'Corner radius (px)', 'required' => true,
         'min_value' => 0, 'max_value' => 32,
-        'help' => 'Drives cards, inputs and buttons. 0 gives square corners throughout.',
+        'help' => '0 gives square corners throughout.',
     ],
     'container_width' => [
         'type' => 'number', 'label' => 'Container width (px)', 'required' => true,
         'min_value' => 960, 'max_value' => 1920,
-        'help' => 'Maximum content width on large screens.',
     ],
     'card_style' => [
         'type' => 'select', 'label' => 'Card style', 'required' => true,
@@ -97,7 +96,7 @@ $spec += [
             'standard' => 'Standard', 'minimal' => 'Minimal', 'premium' => 'Premium',
             'compact' => 'Compact', 'horizontal' => 'Horizontal',
         ],
-        'help' => 'Default layout for product grids that do not pick their own.',
+        'help' => 'For grids that do not pick their own.',
     ],
     'header_style' => [
         'type' => 'select', 'label' => 'Header', 'required' => true,
@@ -110,7 +109,7 @@ $spec += [
     'font_family' => [
         'type' => 'select', 'label' => 'Font family', 'required' => true,
         'options' => array_combine(array_keys($themeFonts), array_keys($themeFonts)),
-        'help' => 'No webfonts are downloaded, so a family the visitor does not have falls back to the next in the stack.',
+        'help' => 'No webfonts; a missing family falls back.',
     ],
     'enable_animations' => [
         'type' => 'bool', 'label' => 'Enable entrance animations',
@@ -119,20 +118,21 @@ $spec += [
     'theme_mode_default' => [
         'type' => 'select', 'label' => 'Default colour mode', 'required' => true,
         'options' => ['system' => 'Follow the shopper\'s device', 'light' => 'Light', 'dark' => 'Dark'],
-        'help' => 'What a first-time visitor sees. Anyone who picks a mode with the switch keeps it on later visits.',
+        'help' => 'What a first-time visitor sees; their choice then sticks.',
     ],
+    // Where the switch appears, which the help line no longer says: in the
+    // header on desktop, and in the menu drawer on phones.
     'theme_toggle_enabled' => [
         'type' => 'bool', 'label' => 'Show the light / dark switch',
-        'help' => 'In the header on desktop and in the menu drawer on phones. Off locks every visitor to the default above.',
+        'help' => 'Off locks every visitor to the default above.',
     ],
     'custom_css' => [
         'type' => 'code', 'label' => 'Custom CSS', 'rows' => 8,
-        'help' => 'Injected into the storefront head after the theme tokens. Tags are stripped on output.',
+        'help' => 'Injected after the theme tokens. Tags are stripped.',
     ],
     'custom_js' => [
         'type' => 'code', 'label' => 'Custom JavaScript', 'rows' => 8,
-        'help' => 'Runs on every storefront page, on this site\'s own origin and session. '
-            . 'Treat it as admin-level access, not a styling tweak.',
+        'help' => 'Admin-level access, not a styling tweak.',
     ],
     'admin_primary' => [
         'type' => 'color', 'label' => 'Admin accent', 'required' => true, 'group' => 'admin_theme',
@@ -142,7 +142,7 @@ $spec += [
     ],
     'admin_sidebar_collapsed' => [
         'type' => 'bool', 'label' => 'Collapse the sidebar by default', 'group' => 'admin_theme',
-        'help' => 'Only the default for a browser that has not set its own preference.',
+        'help' => 'Only the default until a browser sets its own.',
     ],
 ];
 
@@ -175,8 +175,7 @@ if (!$canScripts) {
     // but not editable, and never writable (see the save branch below).
     foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
         $spec[$scriptKey]['attr'] = 'disabled readonly';
-        $spec[$scriptKey]['help'] = 'Read-only: changing code that runs on the storefront needs the '
-            . 'settings.scripts permission.';
+        $spec[$scriptKey]['help'] = 'Read-only: needs the settings.scripts permission.';
     }
 }
 
@@ -397,7 +396,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Storefront colours</div>
-                    <div class="ad-card__sub">Written into the storefront head as CSS custom properties.</div>
+                    <div class="ad-card__sub">Applied across the whole storefront.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -428,7 +427,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Shape &amp; layout</div>
-                    <div class="ad-card__sub">Applies to cards, buttons and the page container.</div>
+                    <div class="ad-card__sub">Cards, buttons and the page container.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -454,7 +453,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Light &amp; dark mode</div>
-                    <div class="ad-card__sub">Both palettes are designed; the colours above drive light mode.</div>
+                    <div class="ad-card__sub">Dark mode is designed, not auto-inverted.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -469,7 +468,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Custom code</div>
-                    <div class="ad-card__sub">Escape hatch for a tweak that does not deserve a settings field.</div>
+                    <div class="ad-card__sub">For a tweak with no settings field.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -482,12 +481,11 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="sik-alert sik-alert--warning" style="margin:0">
                     <?= icon('alert', 'w-5 h-5') ?>
                     <div>
-                        Both blocks are printed on every storefront page, on this site's own origin and
-                        session &mdash; JavaScript here can do anything a signed-in admin browsing the shop
-                        could do. A syntax error breaks the shop for real visitors, so test on a copy first.
+                        <strong>JavaScript here can do anything a signed-in admin can.</strong>
+                        Both blocks run on every storefront page, checkout included; a syntax error
+                        breaks the shop for real visitors.
                         <?php if (!$canScripts): ?>
-                            <br><strong>You have read-only access to these two boxes</strong>
-                            (<code>settings.scripts</code> is needed to change them).
+                            <br><strong>Read-only for you</strong> (<code>settings.scripts</code> changes them).
                         <?php endif; ?>
                     </div>
                 </div>
@@ -508,7 +506,7 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
                 <?= settings_field('admin_sidebar_collapsed', $spec, $values, $errors) ?>
             </div>
-            <?= settings_save_bar('The preview updates as you type; nothing is stored until you save.') ?>
+            <?= settings_save_bar('Nothing is stored until you save.') ?>
         </div>
     </form>
 
@@ -517,7 +515,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Live preview</div>
-                    <div class="ad-card__sub">Unsaved values, drawn the way the storefront draws them.</div>
+                    <div class="ad-card__sub">Unsaved values, as the storefront draws them.</div>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -572,8 +570,7 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
 
                 <p class="ad-muted" style="font-size:12px;margin-top:12px">
-                    Container width and header behaviour cannot be shown at this size; everything else here
-                    is live.
+                    Container width and header behaviour are not previewed.
                 </p>
             </div>
         </div>
@@ -592,8 +589,8 @@ require ADMIN_PATH . '/includes/header.php';
                     <input type="hidden" name="action" value="reset">
 
                     <p class="ad-muted" style="font-size:13px;margin-bottom:12px">
-                        Restores the <?= count(THEME_DEFAULTS) ?> storefront theme values to what the store
-                        shipped with, including clearing custom CSS and JavaScript. Admin colours are not touched.
+                        Restores <?= count(THEME_DEFAULTS) ?> storefront values; empties custom CSS and
+                        JavaScript. Admin colours untouched.
                     </p>
                     <button type="submit" class="ad-btn ad-btn--danger ad-btn--block">
                         <?= icon('refresh', 'w-4 h-4') ?> Reset to defaults

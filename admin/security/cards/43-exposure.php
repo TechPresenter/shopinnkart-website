@@ -58,7 +58,7 @@ return [
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Exposed-file check</h2>
-                    <div class="ad-card__sub">Ask the live site for the files nobody should be able to download.</div>
+                    <div class="ad-card__sub">What an anonymous visitor can download.</div>
                 </div>
                 <?php if (is_array($result)): ?>
                     <?= $result['exposed'] === []
@@ -79,9 +79,8 @@ return [
                                 <?php endforeach; ?>
                             </ul>
                             <p style="margin:8px 0 0">
-                                Your host is ignoring <code>.htaccess</code>, or the folder was uploaded without it.
-                                Delete <code>.git</code> from the server, and ask your host to enable
-                                <code>AllowOverride All</code> for the site.
+                                Your host is ignoring <code>.htaccess</code>. Delete <code>.git</code> from the
+                                server and ask for <code>AllowOverride All</code>.
                             </p>
                         </div>
                     </div>
@@ -93,15 +92,13 @@ return [
                 <?php endif; ?>
 
                 <?php if (is_array($result) && $result['errors'] !== []): ?>
-                    <div class="ad-muted" style="font-size:12.5px">
+                    <div class="ad-muted" style="font-size:var(--ad-text-xs)">
                         Could not reach: <?= e(implode(', ', array_slice($result['errors'], 0, 5))) ?>
                     </div>
                 <?php endif; ?>
 
                 <div class="ad-muted" style="font-size:13px;line-height:1.7">
-                    Checks <?= (int) count($paths) ?> paths on <code class="ad-mono"><?= e(rtrim(SITE_URL, '/')) ?></code>,
-                    including <code>.git/config</code>, <code>config/db.local.php</code>,
-                    <code>database/schema.sql</code> and <code>vendor/</code>.
+                    <?= (int) count($paths) ?> paths on <code class="ad-mono"><?= e(rtrim(SITE_URL, '/')) ?></code>.
                 </div>
 
                 <?php if ($canEdit): ?>

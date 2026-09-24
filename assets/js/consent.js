@@ -87,10 +87,65 @@
         doc.head.appendChild(s);
     }
 
+    /* Are somebody else's tags running in THIS page right now? Either the
+       server printed them (marketing was already granted at render time, so
+       it sent no `tags` to inject) or loadTags() started them below. */
+    var tagsRunning = !!(C.granted && C.granted.marketing);
+
+    /* --- withdrawing ------------------------------------------------------
+       Refusing on a page where the tags are already running is the one thing
+       the gate cannot fully undo: a loaded script cannot be unloaded and a
+       sent request cannot be unsent. What can still be done is done at once -
+       Consent Mode goes back to denied, and the first-party ids those tags
+       wrote on OUR domain are deleted, so the identifier does not outlive the
+       permission. Without that, a visitor who accepted and then refused kept
+       `_ga` for two years, which is the opposite of what the banner said.
+
+       What remains is the rest of this page view: Clarity keeps recording
+       until the next navigation. Only a reload ends that, and a reload
+       mid-checkout costs the shopper their form. The next page view is clean.
+       --------------------------------------------------------------------- */
+    // Two shapes on purpose. The underscore names are prefixes, because GA4
+    // and Clarity append a stream id (`_ga_ABC123`, `_clck`). The bare ones
+    // are matched WHOLE - `SM` as a prefix would delete any cookie beginning
+    // with those two letters, which is somebody else's data.
+    var TAG_COOKIES = /^(?:_ga|_gid|_gat|_gcl_|_fbp|_fbc|_clck|_clsk|_uets)|^(?:CLID|MUID|ANONCHK|SM)$/;
+
+    function forgetTagCookies() {
+        // A cookie dies only to an expiry written with the same path AND
+        // domain it was set with, and we did not set these - so every
+        // plausible pair is tried. Deleting one that is not there is a no-op.
+        var host = location.hostname;
+        var paths = ['/', C.path];
+        var domains = ['', host, '.' + host];
+        var names = doc.cookie.split(';').map(function (c) { return c.split('=')[0].trim(); });
+
+        for (var i = 0; i < names.length; i++) {
+            if (!names[i] || !TAG_COOKIES.test(names[i])) { continue; }
+            for (var p = 0; p < paths.length; p++) {
+                for (var d = 0; d < domains.length; d++) {
+                    doc.cookie = names[i] + '=;expires=Thu, 01 Jan 1970 00:00:01 GMT;path=' + paths[p]
+                        + (domains[d] ? ';domain=' + domains[d] : '');
+                }
+            }
+        }
+    }
+
+    function denyRunningTags() {
+        if (window.gtag) {
+            window.gtag('consent', 'update', {
+                ad_storage: 'denied', ad_user_data: 'denied',
+                ad_personalization: 'denied', analytics_storage: 'denied'
+            });
+        }
+        try { forgetTagCookies(); } catch (e) { /* blocked cookie jar; nothing to undo */ }
+    }
+
     function loadTags() {
         var t = C.tags;
         if (!t) { return; }
         C.tags = null;                       // once only, however many clicks
+        tagsRunning = true;
 
         if (t.ga || t.gtm) {
             window.dataLayer = window.dataLayer || [];
@@ -153,11 +208,17 @@
 
     function store(a, m) {
         if (signal) { a = false; m = false; }     // the signal always wins
+        var wasMarketing = state.marketing;
         state.analytics = !!a;
         state.marketing = !!m;
         state.decided = true;
         writeCookie(state.analytics, state.marketing);
-        if (state.marketing) { loadTags(); }
+        if (state.marketing) {
+            loadTags();
+        } else if (wasMarketing || tagsRunning) {
+            // Changed their mind on a page where the tags are already live.
+            denyRunningTags();
+        }
         publish();
     }
 
@@ -266,16 +327,14 @@
     if (signal) {
         if (root) { root.classList.add('is-signal'); }
         // The server did not see a header but this browser says no: clear any
-        // stored grant so the next page view is clean as well.
+        // stored grant so the next page view is clean as well. The tags for
+        // this page view were already printed server-side before the property
+        // could be read - so their Consent Mode is denied and the identifiers
+        // they wrote are deleted, which is everything that can still be done.
         if (state.analytics || state.marketing) {
             state.analytics = state.marketing = false;
             writeCookie(false, false);
-            if (window.gtag) {
-                window.gtag('consent', 'update', {
-                    ad_storage: 'denied', ad_user_data: 'denied',
-                    ad_personalization: 'denied', analytics_storage: 'denied'
-                });
-            }
+            denyRunningTags();
         }
         state.decided = true;
     } else if (!state.decided) {

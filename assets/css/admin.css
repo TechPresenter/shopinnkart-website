@@ -241,7 +241,18 @@
     --ad-selected: color-mix(in srgb, var(--ad-primary) 16%, var(--ad-surface));
     --ad-scrim: rgba(0,0,0,.6); --ad-scrim-dense: rgba(0,0,0,.82);
     --ad-ink: #F4EEEF; --ad-ink-2: #D7CECF; --ad-muted: #B3A7A8; --ad-faint: #827778;
-    --ad-line: #362E2E; --ad-line-strong: #4C4243; --ad-line-input: #756869;           /* 3.38 */
+    --ad-line: #362E2E; --ad-line-strong: #4C4243;
+    /* MEASURED by the verifier on the LIVE control, not on the token table.
+       #756869 was chosen against canvas/surface/sunken and clears 3:1 on all
+       three - but A2 then put modals, menus, popovers and toasts on a FOURTH
+       background, --ad-elevated (#2A2223), and an input inside a dialog
+       measured 2.92 there: a 1.4.11 failure on the one surface the token was
+       never checked against. It only just cleared on --ad-surface-2 too
+       (3.14). #837677 holds every admin surface with a real margin:
+       canvas 4.43 / surface 4.14 / surface-2 3.84 / sunken 4.35 / elevated
+       3.57. This is the same class of defect A1 fixed for the light palette;
+       it came back on the surface A2 introduced. */
+    --ad-line-input: #837677;
     /* Gold as TEXT has to flip too: #92610A is a dark amber made for white
        paper and measures 3.38 on the dark surface. The bright step reads. */
     --ad-gold-ink: var(--ad-gold-2);
@@ -3471,3 +3482,169 @@ pre.ad-mono,
    The banner inherits .sik-alert from app.css; it only needs its spacing
    back, because it is no longer inside the flow the page header set up. */
 .ad-flash-noscript .sik-alert { margin-bottom: var(--ad-space-4); }
+
+/* ==========================================================================
+   48. SECONDARY COPY  (help lines, card subtitles, callouts)
+
+   "body text proper dikhe". On Settings > Shipping a field's help line set at
+   12px/1.5 in --ad-muted sat directly beneath a 13px/500 label in --ad-ink -
+   one pixel and one weight step apart - and nothing capped its width, so it
+   ran the full measure of a 1,900px screen. Label and explanation read as one
+   undifferentiated slab, and the eye could not find the structure in it.
+
+   Nothing is invented here. The sizes are the scale section 1 already
+   declares, the colour is the --ad-muted role, the leading is the scale's own
+   pairing for that size. What changes is the RANK, and it is carried by three
+   cues instead of one:
+
+     size     12px, against the label's 13px and a callout's 14px
+     rhythm   16px leading (--ad-lh-xs), the scale's pair for 12px, so a
+              wrapped help line stops setting like a paragraph of body copy
+     measure  capped, so a help line is the same length on a 1,900px screen
+              as it is on a laptop
+
+   MEASURED contrast (WCAG 2.1, scratchpad/B-contrast.php), for the exact ink
+   this section ships against every surface a card or a well puts behind it:
+
+     light  --ad-muted #6E5F60   surface 6.05  canvas 5.56  surface-2 5.74
+                                 sunken  5.29  elevated 6.05
+     dark   --ad-muted #B3A7A8   surface 7.73  canvas 8.27  surface-2 7.18
+                                 sunken  8.13  elevated 6.67
+
+   Every one clears 4.5:1 with room to spare, which is why the rank is bought
+   with size and measure rather than by fading the colour further.
+
+   THE CAP IS 40ch, AND THAT IS NOT A TYPO FOR 62. The target is a measure of
+   about 62 characters. `ch` is the advance of "0", which is one of the widest
+   glyphs in a proportional face: measured on this screen (scratchpad/
+   B-ch2.mjs, 1900px, Plus Jakarta Sans at 12px) "0" is 8.34px while a
+   character of real help copy averages 5.0px, so `62ch` is 516px and holds
+   103 characters - the full-width line this section exists to stop. The same
+   probe, walking the rendered text with a Range and grouping the client rects
+   by line, counted what each candidate actually holds:
+
+     62ch  516px  103 characters
+     48ch  400px   82
+     44ch  367px   74
+     40ch  333px   69     <- shipped
+     38ch  317px   62
+
+   40ch is 333px, and 62 characters of that page's own help copy measures
+   331.9px. It is the pixel width of the target measure, taken from the text
+   rather than from the unit's name.
+
+   `ch` and not a pixel width because it has to follow the text's own size -
+   the same rule caps a 14px paragraph at the same character count - and it
+   needs no breakpoint: at 390px and 768px every container in this admin is
+   already narrower than the cap, so the rule only ever bites on the wide
+   screen it was written for.
+   ========================================================================== */
+
+/* The three shapes secondary copy takes here: the help line under a field,
+   the subtitle under a card title, and .ad-help used as TEXT.
+
+   `:not(button)` is deliberate rather than defensive. .ad-help is already
+   taken, by the round help TOGGLE in section 45 that admin/includes/ui.php
+   renders beside a label; styling the bare class would reshape that control
+   into a line of prose. The screens use the same name for the text form, and
+   this is how both can keep it.
+
+   .ad-login is listed beside .ad-body for the reason section 1's bridge lists
+   it: the sign-in and two-step pages carry THAT class on <body>, and a help
+   line under the sign-in field is the same help line. */
+.ad-body .sik-help,
+.ad-body .ad-help:not(button),
+.ad-body .ad-card__sub,
+.ad-login .sik-help,
+.ad-login .ad-card__sub {
+    font-size: var(--ad-text-xs);
+    line-height: var(--ad-lh-xs);
+    font-weight: var(--ad-weight-regular);
+    color: var(--ad-muted);
+    max-width: 40ch;
+}
+
+/* `display` is deliberately NOT restated. app.css already makes .sik-help a
+   block; adding it here at a higher specificity would newly beat `[hidden]`
+   on the admin help lines that are revealed by script, and that is behaviour,
+   not type. The gap is the admin's own --ad-gap-help (6px) rather than the
+   storefront's 4px: at 4px under a 44px input the help line looked attached
+   to the next field as much as to its own, and 6px is the token this admin
+   already names for exactly this gap. */
+.ad-body .sik-help,
+.ad-body .ad-help:not(button) {
+    margin-top: var(--ad-gap-help);
+}
+
+/* A card subtitle answers the title above it, so it travels with the title
+   instead of floating between the two. Stated as a margin because the screens
+   write it as both a <div> and a <p>, and a <p> arrives with the UA's 16px. */
+.ad-body .ad-card__sub,
+.ad-login .ad-card__sub { margin: 2px 0 0; }
+
+/* Body copy in a card keeps the body SIZE - it is prose the operator is meant
+   to read, not a label's afterthought - and only takes the measure. Scoped to
+   block-level paragraphs, because .ad-muted and .text-muted are also worn by
+   inline spans, table meta and chart labels, where a measure means nothing. */
+.ad-body p.ad-muted,
+.ad-body p.text-muted {
+    max-width: 40ch;
+    line-height: var(--ad-lh-md);
+}
+
+/* --- A callout still outranks all of it ----------------------------------
+   The one thing this section must not do is flatten a warning into the help
+   around it. After the rules above an alert is the largest text in the card,
+   the only text with a tint and a rule around it, and now the only
+   secondary-position text at medium weight - so it GAINS rank as help loses
+   it, rather than merely keeping what it had.
+
+   It is not capped. A 40ch measure would set a warning as a narrow column in
+   the middle of a wide card, which reads as a footnote; spanning the card is
+   how the box stops the eye.
+
+   Colours are untouched. Measured on the tints they ship on: success 6.62,
+   warning 6.56, danger 5.61, info 5.91. The sizes are app.css's own 14px
+   restated on the admin scale, so the storefront's scale can move without
+   changing what a warning looks like in here. */
+.ad-body .sik-alert,
+.ad-login .sik-alert {
+    font-size: var(--ad-text-md);
+    line-height: var(--ad-lh-md);
+    font-weight: var(--ad-weight-medium);
+}
+.ad-body .sik-alert strong,
+.ad-login .sik-alert strong { font-weight: var(--ad-weight-bold); }
+
+/* --- Depth that was moved into a <details> -------------------------------
+   The long explanations are being taken off these screens and put behind a
+   summary at the foot of the card. That only works if the summary looks like
+   a CONTROL: left as plain text it reads as one more line of the prose it was
+   supposed to replace, and nobody opens it. Closed it is a 12px medium line
+   in --ad-ink-2 (11.01 light, 11.69 dark) with a pointer; open, the body
+   under it sets as the secondary copy it is. */
+.ad-body .ad-card__body > details > summary,
+.ad-body .ad-field > details > summary {
+    font-size: var(--ad-text-xs);
+    line-height: var(--ad-lh-xs);
+    font-weight: var(--ad-weight-medium);
+    color: var(--ad-ink-2);
+    cursor: pointer;
+}
+.ad-body .ad-card__body > details > summary:hover,
+.ad-body .ad-field > details > summary:hover { color: var(--ad-ink); }
+.ad-body .ad-card__body > details[open] > summary,
+.ad-body .ad-field > details[open] > summary { margin-bottom: var(--ad-space-2); }
+
+/* Only the paragraphs and lists inside, never `> *`: these <details> also
+   hold <pre> traces in logs/errors.php and tables in security/settings.php,
+   and neither wants a 40ch measure. */
+.ad-body .ad-card__body > details > p,
+.ad-body .ad-card__body > details > ul,
+.ad-body .ad-field > details > p,
+.ad-body .ad-field > details > ul {
+    font-size: var(--ad-text-xs);
+    line-height: var(--ad-lh-md);
+    color: var(--ad-muted);
+    max-width: 40ch;
+}

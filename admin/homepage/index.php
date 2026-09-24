@@ -87,7 +87,9 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title"><?= e($zones[$zone]['label']) ?></div>
-            <div class="ad-card__sub"><?= e($zones[$zone]['sub']) ?> &middot; rendered top to bottom in this order.</div>
+            <?php // The list is already in sort_order, so "rendered top to bottom in this
+                  // order" was describing what the table in front of them looks like. ?>
+            <div class="ad-card__sub"><?= e($zones[$zone]['sub']) ?></div>
         </div>
         <div class="ad-btngroup">
             <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('homepage/trust-features.php')) ?>">

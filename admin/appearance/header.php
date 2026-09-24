@@ -173,9 +173,12 @@ require ADMIN_PATH . '/includes/header.php';
 
         <?php if ($unplaced !== []): ?>
             <div class="sik-alert sik-alert--warning">
-                <div><strong><?= count($unplaced) ?> header setting(s) exist in the contract but are not on
-                    this form</strong> — <code><?= e(implode(', ', $unplaced)) ?></code>. They keep their
-                    stored value; add them to <code>$layout</code> in this file to edit them.</div>
+                <?php // Developer-facing: a knob added to HEADER_DEFAULTS that nobody put in
+                      // $layout above. It keeps its stored value and is simply uneditable
+                      // here until it is placed in a fieldset. ?>
+                <div><strong><?= count($unplaced) ?> header setting(s) are not on this form</strong>
+                    &mdash; <code><?= e(implode(', ', $unplaced)) ?></code>. They keep their stored
+                    value. Add them to <code>$layout</code> in this file.</div>
             </div>
         <?php endif; ?>
 
@@ -184,8 +187,9 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Menu style</h2>
-                    <p class="ad-card__sub">Structural layout. Everything below applies on top of whichever
-                        style is selected, so the two never fight.</p>
+                    <?php // The style decides structure only. Sizing, type and colour below are
+                          // applied on top of whichever one is picked, so the two never fight. ?>
+                    <p class="ad-card__sub">Structural layout. Everything below applies on top of it.</p>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -217,8 +221,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Logo &amp; height</h2>
-                    <p class="ad-card__sub">The wordmark itself lives in Settings &rarr; General; this is how
-                        much room it gets.</p>
+                    <p class="ad-card__sub">Room for the wordmark. The image is in Settings &rarr; General.</p>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -234,9 +237,8 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Category bar</h2>
-                    <p class="ad-card__sub">Which links appear is the
-                        <a href="<?= e(admin_url('menus/')) ?>">Menu Builder</a>'s job. This is how the bar
-                        that carries them behaves.</p>
+                    <p class="ad-card__sub">How the bar behaves. Its links come from the
+                        <a href="<?= e(admin_url('menus/')) ?>">Menu Builder</a>.</p>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -252,8 +254,9 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Navigation type</h2>
-                    <p class="ad-card__sub">Shown as <strong>Typography</strong> on the Appearance hub. The
-                        storefront font family is in
+                    <?php // Kept: the hub labels this card "Typography", so somebody sent here
+                          // from that card needs the two names connected. ?>
+                    <p class="ad-card__sub">Called <strong>Typography</strong> on the hub. Font family is in
                         <a href="<?= e(admin_url('settings/theme.php')) ?>">Settings &rarr; Theme</a>.</p>
                 </div>
             </div>
@@ -269,8 +272,7 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Icons &amp; actions</h2>
-                    <p class="ad-card__sub">Switching a control off removes its markup rather than hiding it —
-                        the bell in particular costs two queries before it paints.</p>
+                    <p class="ad-card__sub">Off removes the markup; the bell also costs two queries.</p>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -326,9 +328,10 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <h2 class="ad-card__title">Colour &amp; edges</h2>
-                    <p class="ad-card__sub">Every colour here is optional. Blank means the header keeps
-                        following <a href="<?= e(admin_url('settings/theme.php')) ?>">the theme</a>, which is
-                        why leaving them all blank reproduces the shipped header exactly.</p>
+                    <?php // All optional. Left entirely blank, this card reproduces the shipped
+                          // header exactly, because every value falls through to the theme. ?>
+                    <p class="ad-card__sub">Blank keeps the header following
+                        <a href="<?= e(admin_url('settings/theme.php')) ?>">the theme</a>.</p>
                 </div>
             </div>
             <div class="ad-card__body">
@@ -346,18 +349,30 @@ require ADMIN_PATH . '/includes/header.php';
         </section>
 
         <div class="ad-card">
+            <?php /* The six-card mapping used to be 66 words sitting under the save
+                     button. It is only needed at the moment somebody resets, and the
+                     part that matters then - that a Header reset leaves the two icons
+                     alone - is the last sentence, which nobody read down to. One
+                     summary, one line to the hub. */ ?>
+            <div class="ad-card__body">
+                <details>
+                    <summary>Where resetting these fields lives</summary>
+                    <p>
+                        Resetting is on <a href="<?= e(admin_url('appearance/')) ?>">the Appearance
+                        hub</a>, which lists the values it will change before changing them.
+                    </p>
+                    <p>
+                        This screen's fields are spread over six of its cards:
+                        <strong>Header</strong>, <strong>Typography</strong>, <strong>Icons</strong>,
+                        <strong>Mobile</strong>, and &mdash; because the two icons belong to the
+                        features themselves &mdash; <strong>Wishlist</strong> and
+                        <strong>Compare</strong>. Resetting the first four leaves <em>Show the
+                        wishlist icon</em> and <em>Show the compare icon</em> as they are.
+                    </p>
+                </details>
+            </div>
             <?= settings_save_bar($changed . ' of ' . count($spec) . ' settings differ from the shipped header.') ?>
         </div>
-
-        <p class="ad-muted" style="font-size:12px;line-height:1.6;margin:12px 2px 0">
-            Resetting lives on <a href="<?= e(admin_url('appearance/')) ?>">the Appearance hub</a>, where it
-            shows exactly which values change before it changes them. The fields on this screen are spread
-            over six of its cards: <strong>Header</strong>, <strong>Typography</strong>,
-            <strong>Icons</strong>, <strong>Mobile</strong>, and — because the two icons are owned by the
-            features themselves — <strong>Wishlist</strong> and <strong>Compare</strong>. Resetting only the
-            first four leaves <em>Show the wishlist icon</em> and <em>Show the compare icon</em> exactly as
-            they are.
-        </p>
     </form>
 
     <!-- Preview ---------------------------------------------------------- -->
@@ -391,10 +406,12 @@ require ADMIN_PATH . '/includes/header.php';
 
                 <p class="aph-pending" data-pending></p>
 
+                <?php // Sizing, spacing, type and colour are CSS custom properties, so the
+                      // server can restyle the frame without a save. Adding or removing a
+                      // control changes the markup, which only a save can do - those report
+                      // themselves in [data-pending] above instead of being faked. ?>
                 <p class="ad-muted" style="font-size:11.5px;line-height:1.5;margin:10px 0 0">
-                    Sizing, spacing, type and colour are applied live because they are CSS custom properties.
-                    Adding or removing a control changes the markup, so those show the note above until you
-                    save.
+                    Sizing, type and colour apply live. Adding or removing a control needs a save.
                 </p>
             </div>
         </div>

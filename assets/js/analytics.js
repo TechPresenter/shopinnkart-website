@@ -121,7 +121,12 @@
             tp: navigator.maxTouchPoints || 0,
             m: ua ? (ua.mobile ? 1 : 0) : '',
             p: ua ? ua.platform : '',
-            l: (navigator.language || '').slice(0, 12),
+            // navigator.language used to be sent here as `l`. Nothing on the
+            // server ever read it - geo.php explicitly refuses to guess a
+            // country from a language preference - so it was a fingerprinting
+            // bit travelling for no purpose. A measurement system should send
+            // what it uses and nothing else; put it back the day something
+            // reads it.
             s: seq
         });
     }

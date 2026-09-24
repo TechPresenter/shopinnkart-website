@@ -386,7 +386,7 @@ function settings_field(string $key, array $spec, array $values, array $errors):
 
     if ($type === 'textarea' || $type === 'code' || $type === 'json') {
         $rows = (int) ($field['rows'] ?? ($type === 'textarea' ? 4 : 8));
-        $mono = $type === 'textarea' ? '' : ' style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px"';
+        $mono = $type === 'textarea' ? '' : ' style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--ad-text-sm)"';
         return '<div class="ad-field">' . $labelHtml
             . '<textarea class="sik-textarea' . $invalid . '" id="' . e_attr($id) . '" name="' . e_attr($key) . '"'
             . ' rows="' . $rows . '"' . $mono
@@ -556,14 +556,13 @@ function settings_save_bar(string $note = ''): string
     // only bounce off admin_require_action().
     if (!admin_can('settings.edit')) {
         return '<div class="ad-card__foot">'
-            . '<span class="ad-muted" style="margin-right:auto;font-size:12.5px">'
-            . 'You have read-only access to settings. Ask a Super Admin for the '
-            . '<code>settings.edit</code> permission to change anything here.</span>'
+            . '<span class="ad-muted" style="margin-right:auto;font-size:var(--ad-text-xs)">'
+            . 'Read-only: changing anything here needs the <code>settings.edit</code> permission.</span>'
             . '</div>';
     }
 
     return '<div class="ad-card__foot">'
-        . ($note !== '' ? '<span class="ad-muted" style="margin-right:auto;font-size:12.5px">' . e($note) . '</span>' : '')
+        . ($note !== '' ? '<span class="ad-muted" style="margin-right:auto;font-size:var(--ad-text-xs)">' . e($note) . '</span>' : '')
         . '<button type="submit" class="ad-btn ad-btn--primary">' . icon('check', 'w-4 h-4') . ' Save Changes</button>'
         . '</div>';
 }

@@ -158,14 +158,14 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="ad-container">
     <?php if ($credsUnreadable): ?>
         <div class="sik-alert sik-alert--warning" style="margin-bottom:16px">
-            The saved credentials cannot be read: they were encrypted with a different application key
-            (<code>config/app.key.php</code> was replaced or regenerated). Enter them again and save.
+            Saved credentials cannot be read &mdash; the application key
+            (<code>config/app.key.php</code>) changed. Enter them again and save.
         </div>
     <?php endif; ?>
     <?php if ($secretUnreadable): ?>
         <div class="sik-alert sik-alert--warning" style="margin-bottom:16px">
-            The saved webhook signing secret cannot be read (the application key changed), so every
-            webhook is being refused. Enter the secret again below.
+            Saved webhook secret cannot be read, so <strong>every webhook is being
+            refused</strong>. Enter it again below.
         </div>
     <?php endif; ?>
 
@@ -187,7 +187,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__head">
                         <div>
                             <h2 class="ad-card__title">Account</h2>
-                            <div class="ad-card__sub">Stored encrypted with the application key. Never shown again once saved.</div>
+                            <div class="ad-card__sub">Stored encrypted. Never shown again once saved.</div>
                         </div>
                     </div>
                     <div class="ad-card__body">
@@ -223,7 +223,7 @@ require ADMIN_PATH . '/includes/header.php';
                                        value="<?= e_attr($shown) ?>"
                                        <?php endif; ?>>
                                 <?php if ($secret && $has && empty($meta['required'])): ?>
-                                    <label class="ad-check" style="margin-top:6px;font-size:12.5px">
+                                    <label class="ad-check" style="margin-top:6px;font-size:var(--ad-text-sm)">
                                         <input type="checkbox" name="clear_<?= e_attr($key) ?>" value="1"> Clear the saved value
                                     </label>
                                 <?php endif; ?>
@@ -332,28 +332,22 @@ require ADMIN_PATH . '/includes/header.php';
                                        title="Copy the webhook URL"><?= icon('copy', 'w-4 h-4') ?> Copy URL</a>
                                 </div>
                             <?php endif; ?>
-                            <span class="sik-help">
-                                Paste this into the courier's webhook settings. It carries no courier name
-                                (Shiprocket rejects URLs containing "shiprocket", "sr" or "kr"), and its random
-                                part identifies this integration, so treat it as private. It keeps working while
-                                the courier is switched off, so parcels already out keep being tracked.
-                            </span>
+                            <span class="sik-help">Paste into the courier's webhook settings. Treat it as private.</span>
                         </div>
 
                         <div class="ad-field">
                             <label class="sik-label" for="webhookSecret">Signing secret</label>
                             <input class="sik-input<?= $secretUnreadable ? ' is-invalid' : '' ?>" id="webhookSecret" name="webhook_secret" type="password"
                                    autocomplete="off"
+                                   <?php // The unreadable-secret case already shouts from the callout at the
+                                         // top of the page; the placeholder only has to not claim a usable
+                                         // secret is saved. ?>
                                    placeholder="<?= $secretUsable ? 'Saved — leave blank to keep it'
-                                       : ($secretUnreadable ? 'Saved secret cannot be read (application key changed) — enter it again' : '') ?>">
+                                       : ($secretUnreadable ? 'Enter the secret again' : '') ?>">
                             <?php if ($secretUnreadable): ?>
-                                <span class="sik-error">The saved secret cannot be read (the application key changed) — enter it again.</span>
+                                <span class="sik-error">Cannot be read — enter it again.</span>
                             <?php else: ?>
-                                <span class="sik-help">
-                                    Proves an inbound call really came from the courier; without one, every call is refused.
-                                    Couriers that send a token rather than a signature must be given this exact value
-                                    (Shiprocket: the webhook's Token, sent as <code>x-api-key</code>).
-                                </span>
+                                <span class="sik-help">Without one, every inbound call is refused.</span>
                             <?php endif; ?>
                         </div>
 
@@ -363,6 +357,28 @@ require ADMIN_PATH . '/includes/header.php';
                             <span class="ad-switch__track"></span>
                             <span>Accept webhooks from this courier</span>
                         </label>
+
+                        <?php /* The shape of the URL and the token-vs-signature rule are read
+                                 once, while the courier account is being set up, and never
+                                 again - so they are opt-in rather than four lines between the
+                                 field and the next one. */ ?>
+                        <details style="margin-top:14px">
+                            <summary style="cursor:pointer;font-weight:600">How this webhook works</summary>
+                            <div class="ad-muted" style="margin-top:8px">
+                                <p style="margin:0 0 8px">
+                                    The URL carries no courier name, because Shiprocket rejects URLs
+                                    containing "shiprocket", "sr" or "kr". Its random part identifies this
+                                    integration, which is why it is private. It keeps working while the
+                                    courier is switched off, so parcels already out keep being tracked.
+                                </p>
+                                <p style="margin:0">
+                                    The signing secret proves an inbound call really came from the courier.
+                                    Couriers that send a token rather than a signature must be given this
+                                    exact value &mdash; on Shiprocket, the webhook's Token, sent as
+                                    <code>x-api-key</code>.
+                                </p>
+                            </div>
+                        </details>
                     </div>
                 </div>
             </div>
@@ -389,11 +405,16 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php if ($code === 'shiprocket'): ?>
                                 <?php // Shiprocket has no sandbox: the generic sentence would promise a test booking that cannot exist. ?>
                                 <span class="sik-help" style="display:block;margin-top:6px">
-                                    Shiprocket has no test environment. In Test mode, rates, serviceability,
-                                    tracking, labels and the connection test use your real account, but booking,
-                                    AWB, pickup, cancel, return and manifest requests are refused. Switch to Live
-                                    to book.
+                                    Shiprocket has no sandbox &mdash; Test mode cannot book.
                                 </span>
+                                <details style="margin-top:8px">
+                                    <summary style="cursor:pointer;font-weight:600">What Test mode still does</summary>
+                                    <p class="ad-muted" style="margin:8px 0 0">
+                                        Rates, serviceability, tracking, labels and the connection test use your
+                                        real account. Booking, AWB, pickup, cancel, return and manifest requests
+                                        are refused. Switch to Live to book.
+                                    </p>
+                                </details>
                             <?php endif; ?>
                         </div>
 
@@ -434,7 +455,7 @@ require ADMIN_PATH . '/includes/header.php';
                             </span>
                         </p>
                         <?php if (!empty($provider['last_message'])): ?>
-                            <p class="ad-muted" style="margin:0 0 10px;font-size:12.5px"><?= e((string) $provider['last_message']) ?></p>
+                            <p class="ad-muted" style="margin:0 0 10px;font-size:var(--ad-text-xs)"><?= e((string) $provider['last_message']) ?></p>
                         <?php endif; ?>
 
                         <?php // Save first: the test runs against what is stored, not what is typed. ?>
@@ -459,9 +480,8 @@ require ADMIN_PATH . '/includes/header.php';
                 <a class="ad-btn" href="<?= e(admin_url('shipping/')) ?>">Cancel</a>
                 <button type="submit" class="ad-btn ad-btn--primary"><?= icon('check', 'w-4 h-4') ?> Save</button>
             <?php else: ?>
-                <span class="ad-muted" style="margin-right:auto;font-size:12.5px">
-                    You have read-only access to courier configuration. Ask a Super Admin for the
-                    <code>settings.edit</code> permission to change it.
+                <span class="ad-muted" style="margin-right:auto;font-size:var(--ad-text-xs)">
+                    Read-only. Ask a Super Admin for <code>settings.edit</code>.
                 </span>
                 <a class="ad-btn" href="<?= e(admin_url('shipping/')) ?>">Back</a>
             <?php endif; ?>

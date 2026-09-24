@@ -290,7 +290,7 @@ require ADMIN_PATH . '/includes/header.php';
     <div class="ad-card__head">
         <div>
             <div class="ad-card__title">Roles</div>
-            <div class="ad-card__sub">Every admin user holds exactly one role, and the role holds every permission.</div>
+            <div class="ad-card__sub">One role per admin user; the role holds the permissions.</div>
         </div>
     </div>
     <div class="ad-card__body ad-card__body--flush">
@@ -424,10 +424,12 @@ require ADMIN_PATH . '/includes/header.php';
             <?php if ($isSuperEdit): ?>
                 <div class="sik-alert sik-alert--warning">
                     <?= icon('shield', 'w-5 h-5') ?>
+                    <?php // The save re-writes the wildcard whatever is posted, so the matrix
+                          // is decoration for this role - hence read-only rather than a form
+                          // whose ticks would be silently discarded. ?>
                     <div>
-                        This role holds the wildcard permission <code>*</code>, which grants everything
-                        including future modules. The matrix below is read-only for this role &mdash; the
-                        wildcard is saved back unchanged no matter what is submitted.
+                        Wildcard <code>*</code> &mdash; grants everything, including future
+                        modules. The matrix below is read-only.
                     </div>
                 </div>
             <?php endif; ?>
@@ -501,7 +503,7 @@ require ADMIN_PATH . '/includes/header.php';
                 </div>
             </div>
             <?php if (!$isSuperEdit): ?>
-                <label class="ad-switch" style="font-size:12.5px">
+                <label class="ad-switch" style="font-size:var(--ad-text-sm)">
                     <input type="checkbox" data-check-all aria-label="Select every permission">
                     <span class="ad-switch__track"></span>
                     <span>Select all</span>
@@ -562,8 +564,8 @@ require ADMIN_PATH . '/includes/header.php';
         </div>
 
         <div class="ad-card__foot">
-            <span class="ad-muted" style="margin-right:auto;font-size:12.5px">
-                Ticking every box is not the same as the wildcard: only <code>*</code> covers modules added later.
+            <span class="ad-muted" style="margin-right:auto;font-size:var(--ad-text-xs)">
+                Ticking every box is not the wildcard: only <code>*</code> covers future modules.
             </span>
             <a class="ad-btn" href="<?= e($rolesUrl) ?>">Cancel</a>
             <button type="submit" class="ad-btn ad-btn--primary">

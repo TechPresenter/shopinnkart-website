@@ -213,23 +213,25 @@ require ADMIN_PATH . '/includes/header.php';
                 <div class="ad-card__head">
                     <div>
                         <h2 class="ad-card__title">Coverage audit</h2>
-                        <p class="ad-card__sub">Checked on every load, so this page can never quietly
-                            stop covering a setting.</p>
+                    <?php // Re-run on every load rather than cached: a spec change that
+                          // orphans a key has to show up the next time anyone looks. ?>
+                        <p class="ad-card__sub">Re-checked on every load.</p>
                     </div>
                 </div>
-                <div class="ad-card__body" style="font-size:12.5px;line-height:1.6">
+                <div class="ad-card__body" style="font-size:var(--ad-text-sm);line-height:1.6">
                     <?php if ($unknown !== []): ?>
                         <p style="color:#B45309;margin:0 0 8px">
-                            <strong><?= count($unknown) ?> key(s) claimed by a section but unknown to any
-                            field spec</strong> — these would reset nothing:
+                            <?php // Claimed by a section but absent from every field spec, so a
+                                  // reset would silently skip them. ?>
+                            <strong><?= count($unknown) ?> key(s) would reset nothing.</strong>
                             <code><?= e(implode(', ', $unknown)) ?></code>
                         </p>
                     <?php endif; ?>
                     <?php if ($unclaimed !== []): ?>
+                        <?php // The admin chrome colours and the social URLs are excluded on
+                              // purpose; anything else in this list is a real gap. ?>
                         <p class="ad-muted" style="margin:0">
-                            <strong><?= count($unclaimed) ?> setting(s) no Appearance section claims.</strong>
-                            The admin chrome colours and the social URLs are excluded deliberately;
-                            anything else here is a gap:
+                            <strong><?= count($unclaimed) ?> setting(s) no section claims.</strong>
                             <code><?= e(implode(', ', $unclaimed)) ?></code>
                         </p>
                     <?php endif; ?>
@@ -325,7 +327,7 @@ require ADMIN_PATH . '/includes/header.php';
                     <p class="ad-card__sub">Taken automatically before every reset.</p>
                 </div>
             </div>
-            <div class="ad-card__body" style="font-size:12.5px;line-height:1.65">
+            <div class="ad-card__body" style="font-size:var(--ad-text-sm);line-height:1.65">
                 <?php if ($snapshot !== null): ?>
                     <p style="margin:0 0 10px">
                         Last snapshot: <strong><?= e((string) ($snapshot['taken_at'] ?? '?')) ?></strong>
@@ -356,23 +358,31 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php endif; ?>
                 <?php else: ?>
                     <p class="ad-muted" style="margin:0 0 10px">
-                        No snapshot yet. One is written automatically the first time you reset anything.
+                        No snapshot yet. One is written the first time you reset anything.
                     </p>
                 <?php endif; ?>
 
-                <hr style="border:0;border-top:1px solid var(--ad-border);margin:14px 0">
+                <?php
+                /* WHY THERE IS NO "SAVE DRAFT / PUBLISH" HERE.
+                   ------------------------------------------------------------------
+                   This was 118 words on screen, under the snapshot the operator came
+                   to use. It answers a question nobody asks while working; it is a
+                   design rationale, so it lives here now.
 
-                <p style="margin:0 0 6px"><strong>Why there is no “Save draft / Publish” here.</strong></p>
-                <p class="ad-muted" style="margin:0">
-                    A draft has to be stored somewhere that is not live, and publishing has to move it.
-                    That would be honest only if it covered everything this page links to — and most of
-                    what it links to is not settings but rows: menu items, footer links, popups, floating
-                    buttons, categories, all of which their own builders write live. Drafting three
-                    settings groups while the Menu Builder still published immediately would put a
-                    <em>Save draft</em> button on a page where it is a lie for most of the controls.
-                    So the hub does the useful half of the same job instead: it snapshots the current
-                    appearance before it changes anything, and lets you put it back in one click.
-                </p>
+                   A draft has to be stored somewhere that is not live, and publishing
+                   has to move it. That would be honest only if it covered everything
+                   this page links to - and most of what it links to is not settings
+                   but rows: menu items, footer links, popups, floating buttons,
+                   categories, all of which their own builders write live. Drafting
+                   three settings groups while the Menu Builder still published
+                   immediately would put a "Save draft" button on a page where it is a
+                   lie for most of the controls.
+
+                   So the hub does the useful half of the same job instead: it
+                   snapshots the current appearance before it changes anything, and
+                   lets you put it back in one click. That behaviour is visible in the
+                   card above; the reasoning does not need to be. */
+                ?>
             </div>
         </div>
     </div>
@@ -410,9 +420,12 @@ require ADMIN_PATH . '/includes/header.php';
                             loading="lazy" referrerpolicy="same-origin"></iframe>
                 </div>
 
+                <?php // The frame is a real viewport at that width, scaled down to fit the
+                      // pane - not a narrow desktop - so it renders what a visitor sees,
+                      // popups included. It holds its own state: saving on a linked screen
+                      // does not reach into the iframe, hence the reload button. ?>
                 <p class="ad-muted" style="font-size:11.5px;line-height:1.5;margin:10px 0 0">
-                    Scaled to fit, so 390 is a real 390px viewport rather than a narrow desktop. It renders
-                    as a visitor sees it, popups included. Reload after saving on any linked screen.
+                    A real viewport at that width, popups included. Reload after saving elsewhere.
                 </p>
             </div>
         </div>
@@ -444,7 +457,7 @@ require ADMIN_PATH . '/includes/header.php';
                 </p>
                 <p class="apx-note" data-reset-note style="margin:0 0 12px"></p>
 
-                <p style="font-size:12.5px;margin:0 0 6px">
+                <p style="font-size:var(--ad-text-sm);margin:0 0 6px">
                     <strong data-reset-count>0</strong> setting(s) will change:
                 </p>
                 <div class="apx-diff">
