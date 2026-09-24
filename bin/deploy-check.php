@@ -324,6 +324,47 @@ if ($booted && Database::isAvailable()) {
 
     $heading('The outside world');
 
+    // -----------------------------------------------------------------------
+    //  The address the app thinks it is at.
+    //
+    //  This is the second thing that goes wrong after a missing db.local.php,
+    //  and it is worse, because the site answers 200 and looks merely broken
+    //  rather than erroring. The Host allow-list is built from SITE_DOMAIN in
+    //  config/config.php, which ships as shopinnkart.com - so on any other
+    //  domain an unrecognised Host falls back to THAT address and every
+    //  stylesheet, script and image is requested from a domain the owner does
+    //  not own. The page renders unstyled and nothing works.
+    //
+    //  There is no Host header in CLI, so the real domain is read from the
+    //  path instead: cPanel and Hostinger both lay a site out under
+    //  /home/<user>/domains/<the-domain>/public_html, which names it exactly.
+    // -----------------------------------------------------------------------
+    $siteHost   = strtolower((string) parse_url(SITE_URL, PHP_URL_HOST));
+    $pinned     = SITE_URL_CANONICAL !== '';
+    $pathDomain = '';
+    if (preg_match('~/domains/([a-z0-9.\-]+)/~i', str_replace('\\', '/', $root), $m) === 1) {
+        $pathDomain = strtolower($m[1]);
+    }
+
+    if ($pathDomain !== '' && $pathDomain !== $siteHost
+        && $pathDomain !== preg_replace('/^www\./', '', $siteHost)) {
+        $stop('The site is building its links for the wrong domain',
+            'This install is at "' . $pathDomain . '", but the app resolves its own address as '
+            . SITE_URL . '. Every stylesheet, script and image is being requested from there, so '
+            . 'the page loads with no styling and nothing works.',
+            "Add one line to config/db.local.php and reload:\n"
+            . "            'url' => 'https://" . $pathDomain . "',\n"
+            . '            Use http:// until the certificate is installed.');
+    } elseif (!$pinned && $siteHost === strtolower(SITE_DOMAIN)) {
+        $todo('The site address is not pinned',
+            'Nothing sets it, so the app falls back to SITE_DOMAIN (' . SITE_DOMAIN . ') for any '
+            . 'host it does not recognise. On your own domain that means assets are fetched from '
+            . 'a domain you do not own.',
+            "Add to config/db.local.php:  'url' => 'https://your-domain.com',");
+    } else {
+        $ok('Site address', SITE_URL . ($pinned ? ' (pinned)' : ''));
+    }
+
     $host = (string) parse_url(SITE_URL, PHP_URL_HOST);
     if (security_host_is_local($host)) {
         $ok('Not applicable on ' . $host, 'local address');

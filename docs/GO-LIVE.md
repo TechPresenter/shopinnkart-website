@@ -59,8 +59,29 @@ Full instructions: `HOSTING.md`, sections 1 to 3.
 
 - [ ] **(you)** Make `storage/`, `uploads/` and `config/` writable — 755, or
       775 if the host insists.
-- [ ] **(you)** Open the site by its real domain. The site URL is worked out
-      from the address the visitor used, so there is nothing to edit.
+- [ ] **(you)** **Pin the site address.** Add one more line to
+      `config/db.local.php`:
+
+      ```php
+      'url' => 'https://your-domain.com',
+      ```
+
+      This is not optional, and it is the second thing that goes wrong after a
+      missing `db.local.php`. The app only trusts a `Host:` header it
+      recognises — otherwise a stranger sending `Host: evil.example` could get
+      their own address into a real password-reset email. The list of hosts it
+      recognises is built from `SITE_DOMAIN` in `config/config.php`, which
+      ships as `shopinnkart.com`. So on any other domain the app falls back to
+      that address and every stylesheet, script and image is requested from
+      `https://shopinnkart.com/assets/...` — a domain you do not own. The page
+      loads, unstyled, and nothing works.
+
+      Adding `url` fixes both halves at once: it puts your domain on the list
+      and makes it the address the app falls back to. Use `http://` until the
+      certificate is installed, then change it to `https://`.
+
+- [ ] **(you)** Open the site by its real domain and check that the styling is
+      there. `php bin/deploy-check.php` also reports this one by name.
 
 ---
 

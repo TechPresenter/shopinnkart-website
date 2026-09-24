@@ -157,8 +157,23 @@ unless `config/db.local.php` says `'env' => 'development'` (or the host sets
 prints stack traces and server paths to visitors, and the admin login page
 shows the default admin email and password.
 
-**The site URL is detected automatically** from the domain the visitor used, so
-there is nothing to edit. Just open the site by its real domain.
+**Pin the site address**, with one more line in `config/db.local.php`:
+
+```php
+'url' => 'https://your-domain.com',
+```
+
+The address is auto-detected from the `Host:` header, but only from a host the
+app recognises — otherwise a stranger's `Host: evil.example` could end up
+inside a genuine password-reset email. The recognised list is built from
+`SITE_DOMAIN` in `config/config.php`, which ships as `shopinnkart.com`, so on
+any other domain the app falls back to *that* address and every stylesheet,
+script and image is requested from `https://shopinnkart.com/assets/...`. The
+page renders with no styling at all and looks completely broken.
+
+`url` puts your domain on the recognised list and makes it the fallback, so one
+line fixes both. Use `http://` until the certificate is installed, then switch
+it to `https://`.
 
 **Install SSL.** Hostinger → *SSL* → issue the free certificate. Then open
 *Admin → Security → Settings* and, on the **HTTPS and HSTS** card, set
