@@ -108,9 +108,24 @@ function backup_path_absolute(string $path): bool
  *
  * Three guards, because one server's rule is another server's no-op: Apache
  * and LiteSpeed read .htaccess, IIS reads web.config, and an index.html
- * defeats a directory listing on anything that ignores both. None of them
- * helps if the folder is outside the web root, which is the point - they are
- * for the installs where it cannot be.
+ * defeats a directory listing on anything that ignores both.
+ *
+ * The web.config used to be a no-op that looked like a guard. It listed a
+ * hiddenSegment of "." - but IIS matches hiddenSegments against whole path
+ * SEGMENTS, and a segment of "." is normalised away by the URL parser before
+ * any rule sees it, so it could never match anything at all. It now denies by
+ * file extension with an empty allow list, which is how request filtering
+ * refuses every file in a folder, and which applies to static files rather
+ * than only to requests ASP.NET handles.
+ *
+ * Reasoned from the rule rather than measured: there is no IIS on the machine
+ * this was written on. On Apache, which IS measured, the .htaccess answers 403
+ * (scratchpad/test_exposed_paths.php).
+ *
+ * None of the three helps if the folder is outside the web root, which is the
+ * point - they are for the installs where it cannot be. Whether it actually is
+ * outside is reported separately as backup_dir_status()['outside_web_root'],
+ * because that is the one guard that does not need the server to co-operate.
  */
 function backup_dir_guard(string $dir): string
 {
@@ -121,9 +136,12 @@ function backup_dir_guard(string $dir): string
     $guards = [
         '.htaccess'  => "Require all denied\n<IfModule !mod_authz_core.c>\n    Order allow,deny\n    Deny from all\n</IfModule>\n",
         'index.html' => '',
-        'web.config' => "<?xml version=\"1.0\"?>\n<configuration><system.webServer><security>"
-            . "<requestFiltering><hiddenSegments><add segment=\".\" /></hiddenSegments></requestFiltering>"
-            . "</security></system.webServer></configuration>\n",
+        'web.config' => "<?xml version=\"1.0\"?>\n"
+            . "<configuration><system.webServer><security><requestFiltering>\n"
+            . "    <!-- Empty allow list: every extension is refused, which is how request\n"
+            . "         filtering denies a whole folder, static files included. -->\n"
+            . "    <fileExtensions allowUnlisted=\"false\" />\n"
+            . "</requestFiltering></security></system.webServer></configuration>\n",
     ];
 
     foreach ($guards as $name => $body) {
@@ -468,6 +486,38 @@ function backup_quote(PDO $pdo, $value): string
  *
  * @return array{tables:int,rows:int,bytes:int,checksum:string,protection:string}
  */
+/**
+ * ` ORDER BY \`pk\`` for a table, or '' when it has no usable key.
+ *
+ * Only a single-column primary key is used. A composite key would work too,
+ * but the point here is a cheap, stable order for chunking, and the clustered
+ * single-column case is every table in this schema. The name is read from the
+ * server and backquoted, never interpolated from anything a caller supplied.
+ */
+function backup_table_order(string $table): string
+{
+    static $cache = [];
+
+    if (array_key_exists($table, $cache)) {
+        return $cache[$table];
+    }
+
+    $order = '';
+    try {
+        $keys = Database::fetchAll(sprintf('SHOW KEYS FROM `%s` WHERE `Key_name` = %s', $table, "'PRIMARY'"));
+        if (count($keys) === 1) {
+            $column = (string) ($keys[0]['Column_name'] ?? '');
+            if (preg_match('/^[A-Za-z0-9_$]+$/', $column) === 1) {
+                $order = ' ORDER BY `' . $column . '`';
+            }
+        }
+    } catch (Throwable $e) {
+        $order = '';
+    }
+
+    return $cache[$table] = $order;
+}
+
 function backup_write_dump(string $filePath, array $options = []): array
 {
     $pdo        = Database::connect();
@@ -488,6 +538,31 @@ function backup_write_dump(string $filePath, array $options = []): array
     // touches the disk, not even briefly.
     $out      = new BackupCipher($filePath, $passphrase);
     $rowTotal = 0;
+
+    // ONE point in time for the whole dump.
+    //
+    // Each table is read in chunks, and a backup runs while customers are
+    // shopping. Without a snapshot, every chunk is a separate query against a
+    // moving table: an order placed halfway through a 40-chunk table shifts
+    // every later OFFSET by one and a row is skipped, a delete duplicates one,
+    // and the row count read before the loop stops matching what is there. The
+    // dump still finishes, still checksums, and still restores - as a database
+    // missing rows nobody can name. This is the same thing mysqldump means by
+    // --single-transaction.
+    //
+    // It is a read-only transaction over InnoDB. Anything non-transactional in
+    // the schema is simply not covered by it, which is why the chunk query is
+    // ALSO given a deterministic order below rather than relying on this alone.
+    $snapshot = false;
+    try {
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT');
+        $snapshot = true;
+    } catch (Throwable $e) {
+        // A host that refuses it still gets a backup - just not an
+        // instantaneous one. Recorded so it is not a silent downgrade.
+        security_event('backup.no_snapshot', 'low', ['error' => mb_substr($e->getMessage(), 0, 200)]);
+    }
 
     try {
         $out->write('-- ' . SITE_NAME . " database backup\n");
@@ -520,13 +595,22 @@ function backup_write_dump(string $filePath, array $options = []): array
             $offset  = 0;
             $pending = [];
             $columns = null;
+            // LIMIT/OFFSET across SEPARATE queries is only meaningful if the
+            // rows come back in the same order every time, and SQL promises
+            // nothing without ORDER BY. Ordering by the primary key costs
+            // nothing (it is the clustered order InnoDB already scans in) and
+            // makes the chunk boundaries mean what they say. A table with no
+            // single-column key keeps the old behaviour, covered by the
+            // snapshot above.
+            $order = backup_table_order($table);
 
             while ($offset < $count) {
                 // LIMIT/OFFSET are integers cast here: PDO cannot bind them
                 // while emulated prepares are off.
                 $chunk = Database::fetchAll(sprintf(
-                    'SELECT * FROM `%s` LIMIT %d OFFSET %d',
+                    'SELECT * FROM `%s`%s LIMIT %d OFFSET %d',
                     $table,
+                    $order,
                     BACKUP_CHUNK_ROWS,
                     $offset
                 ));
@@ -566,6 +650,19 @@ function backup_write_dump(string $filePath, array $options = []): array
         $out->write("-- End of backup\n");
     } finally {
         $out->close();
+
+        // The read view has to be released whether the dump finished or threw,
+        // or this connection keeps an InnoDB history list alive behind it. A
+        // COMMIT rather than a ROLLBACK: nothing was written, and committing a
+        // read-only transaction is the cheaper of the two.
+        if ($snapshot) {
+            try {
+                $pdo->exec('COMMIT');
+            } catch (Throwable $e) {
+                security_event('backup.snapshot_release_failed', 'low',
+                    ['error' => mb_substr($e->getMessage(), 0, 200)]);
+            }
+        }
     }
 
     clearstatcache(true, $filePath);

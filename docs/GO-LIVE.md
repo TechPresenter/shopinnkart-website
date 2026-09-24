@@ -122,7 +122,7 @@ otherwise only happens when somebody is watching.
 | every minute | `/usr/bin/php <project>/bin/send-queued-emails.php` | **No email leaves the site at all** — orders, password resets, invoices |
 | every 5 minutes | `/usr/bin/php <project>/bin/security-monitor.php --quiet` | Nobody is told about a break-in attempt |
 | every 30 minutes | `/usr/bin/php <project>/bin/refresh-shipments.php --quiet` | Tracking only moves when someone presses *Refresh* — and delivery is what marks a COD order paid |
-| `10 0 * * *` | `/usr/bin/php <project>/bin/analytics-rollup.php --quiet` | Yesterday's visits never become the totals every report reads |
+| `10 0 * * *` | `/usr/bin/php <project>/bin/analytics-rollup.php --quiet` | Yesterday's visits are never folded into daily totals, and the raw rows are never aged out. Only needed once you switch analytics on |
 | `15 3 * * *` | `/usr/bin/php <project>/bin/backup.php --quiet` | There is no backup |
 | `40 3 * * *` | `/usr/bin/php <project>/bin/prune-logs.php --quiet` | Logs grow without a ceiling, and the retention window you set is a promise nothing keeps |
 
@@ -177,7 +177,8 @@ visitor of the day is not the one who waits for the sitemap to build.
 | `/admin/login.php` | "Page not found" |
 | Add to cart → checkout → place a COD order | Order number like `SIK-20260923-AWNJ7D`, confirmation email within a minute |
 | *Admin → System → Error Log* | Empty |
-| *Admin → Security → Settings* | Every card green; *Deployment* no longer says *Present* |
+| *Admin → Security → Settings* | *Deployment* says **Clean** — no `install.php`, an application key, and no account still on the README password |
+| `bin/security-selftest.php` over SSH | Exits 0. It is the same checks in a form you can put on a cron |
 | `/sitemap.xml` and `/robots.txt` | Both load, and the sitemap lists real product URLs |
 
 ---

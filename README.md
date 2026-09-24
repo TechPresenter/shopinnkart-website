@@ -91,7 +91,7 @@ Everything below is built and working. Nothing here is a roadmap item.
 | **Content** | Homepage designer, menu builder, footer builder, pages, FAQ, blog, testimonials |
 | **Appearance** | Header/theme customisation with a live preview, floating buttons |
 | **Reports** | Sales, products, orders, customers, marketing |
-| **Settings** | 14 tabs — store, payment, shipping, tax, email, SEO, social, theme, widgets, invoice, redirects |
+| **Settings** | 15 screens — general, store, payment, shipping, tax, invoice, email, email log, SEO, SEO health, redirects, analytics, theme, social, widgets |
 | **System** | Admin users, roles and permissions, activity log, error log, login history, backups, maintenance mode |
 
 **Homepage designer** — a three-pane builder: a live storefront preview on the left, a
@@ -121,7 +121,7 @@ is the real gate.
 - Zero horizontal overflow at 320px across every storefront page
 - Admin measured at 390px across 89 screens: no unreachable content, and tap targets at or above
   the WCAG 2.2 minimum
-- No framework, no build step, no npm, no CDN. Vanilla JavaScript in 12 modules.
+- No framework, no build step, no npm, no CDN. Vanilla JavaScript in 14 modules.
 
 ---
 
@@ -513,7 +513,7 @@ There is no `.htaccess` equivalent, so translate the rules:
 ```nginx
 location / { try_files $uri $uri/ /index.php?$query_string; }
 
-location ~ ^/(config|storage|database|includes|admin/includes)/ { deny all; }
+location ~ ^/(config|storage|database|includes|admin/includes|bin)/ { deny all; }
 location ~ /\.                                                  { deny all; }
 location ~* ^/uploads/.*\.(php|phtml|pl|py|jsp|asp|sh|cgi)$      { deny all; }
 

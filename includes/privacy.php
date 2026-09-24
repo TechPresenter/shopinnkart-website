@@ -32,6 +32,11 @@
 
 declare(strict_types=1);
 
+// Required rather than assumed: the only thing that makes a failed export
+// section visible is the security log, so this file must not be loadable
+// without it.
+require_once INCLUDES_PATH . '/security-events.php';
+
 require_once __DIR__ . '/backup.php';
 
 /** How long a confirmation link is good for. */
@@ -369,14 +374,63 @@ function privacy_reject(int $id, string $reason, array $context = []): bool
 //  The export
 // ===========================================================================
 
-/** Run a query for the export, and never let one missing table lose the rest. */
+/**
+ * Run a query for the export, and never let one missing table lose the rest.
+ *
+ * The catch is deliberate - an older database missing a table should still
+ * produce the other twelve sections rather than failing the whole request.
+ * But it used to return [] and say nothing, which is indistinguishable from
+ * "this customer has none", and that is the worst possible answer for a
+ * subject-access bundle: two of the three device queries named columns that
+ * do not exist, and for as long as they did, every export told the customer
+ * they had no remembered browsers and no trusted devices. It was marked
+ * ready and nothing anywhere recorded a problem.
+ *
+ * So a failure is still survivable, but it is now LOUD: it is written to the
+ * security log and counted, and privacy_export_build() refuses to describe a
+ * bundle as complete when the counter moved.
+ */
 function privacy_rows(string $sql, array $params = []): array
 {
     try {
         return Database::fetchAll($sql, $params);
     } catch (Throwable $e) {
+        privacy_export_fault($e->getMessage(), $sql);
         return [];
     }
+}
+
+/**
+ * Record that one section of an export could not be read.
+ *
+ * Kept in a static rather than a column because it belongs to ONE run of
+ * privacy_export_build(), which resets it before it starts. The SQL is
+ * logged, the parameters are not: the parameters are the customer's own ids
+ * and this log is not the place for them.
+ *
+ * @param string|null $reset pass null to read the count, 'reset' to clear it
+ */
+function privacy_export_fault(?string $message = null, string $sql = '', bool $reset = false): int
+{
+    static $faults = 0;
+
+    if ($reset) {
+        $faults = 0;
+        return 0;
+    }
+    if ($message === null) {
+        return $faults;
+    }
+
+    $faults++;
+    security_event('privacy.export_section_failed', 'high', [
+        'error' => mb_substr($message, 0, 300),
+        // First line only: enough to name the table and the columns.
+        'query' => mb_substr(trim((string) strtok($sql, "
+")), 0, 200),
+    ]);
+
+    return $faults;
 }
 
 /**
@@ -541,11 +595,16 @@ function privacy_export_data(int $userId): array
             'note' => 'Devices signed in to this account: remembered browsers, trusted devices '
                 . 'and mobile app tokens. The tokens themselves are not stored and cannot be shown.',
             'data' => [
+                // `remember_tokens` and `auth_trusted_devices` do NOT share
+                // api_tokens' column names, and this used to assume they did.
+                // Aliased to one shape so the bundle reads the same whichever
+                // table a row came from.
                 'remembered'  => privacy_rows(
-                    'SELECT `id`, `created_ip`, `user_agent`, `expires_at`, `created_at`
+                    'SELECT `id`, `ip_address` AS `last_ip`, `user_agent`, `expires_at`, `created_at`
                        FROM `remember_tokens` WHERE `user_id` = :id', ['id' => $userId]),
                 'trusted'     => privacy_rows(
-                    "SELECT `id`, `device_name`, `last_ip`, `expires_at`, `created_at`
+                    "SELECT `id`, `label` AS `device_name`, `ip_address` AS `last_ip`,
+                            `last_used_at`, `expires_at`, `created_at`
                        FROM `auth_trusted_devices` WHERE `user_type` = 'customer' AND `user_id` = :id",
                     ['id' => $userId]),
                 'app_tokens'  => privacy_rows(
@@ -608,7 +667,13 @@ function privacy_consent_record(int $userId, string $email): array
  */
 function privacy_export_build(int $userId, int $requestId): array
 {
+    // Any section that cannot be read is counted while the data is gathered,
+    // so the summary can say the bundle is short rather than implying the
+    // customer simply has nothing under that heading.
+    privacy_export_fault(null, '', true);
+
     $data     = privacy_export_data($userId);
+    $faults   = privacy_export_fault();
     $sections = [];
     foreach ($data as $key => $section) {
         if (is_array($section) && isset($section['data']) && is_array($section['data'])) {
@@ -683,10 +748,20 @@ function privacy_export_build(int $userId, int $requestId): array
         'format'        => $useZip ? 'zip' : 'json',
         'sections'      => $sections,
         'request_id'    => $requestId,
+        // Zero on a healthy store. Anything else means a section could not
+        // be read and the bundle is SHORT - which must never be reported to
+        // the customer as "you have none of those".
+        'faults'        => $faults,
     ];
 }
 
-/** The plain-text note that opens the archive. */
+/**
+ * The plain-text note that opens the archive.
+ *
+ * If a section could not be read, the note says so. A subject-access
+ * bundle that is quietly short is worse than one that admits it is short:
+ * the customer can ask again, and the store can be held to it.
+ */
 function privacy_export_readme(array $data): string
 {
     $lines = [
