@@ -760,10 +760,10 @@ require ADMIN_PATH . '/includes/header.php';
                             <label class="sik-label" for="miBadgeColor">Badge colour</label>
                             <div class="ad-colorfield">
                                 <input type="color" aria-label="Pick a badge colour" data-color-for="#miBadgeColor"
-                                       value="<?= e(preg_match('/^#[0-9a-f]{6}$/i', (string) ($formItem['badge_color'] ?? '')) === 1 ? $formItem['badge_color'] : '#f4511e') ?>">
+                                       value="<?= e(preg_match('/^#[0-9a-f]{6}$/i', (string) ($formItem['badge_color'] ?? '')) === 1 ? $formItem['badge_color'] : theme_default_badge_colour()) ?>">
                                 <input class="sik-input ad-mono<?= isset($errors['badge_color']) ? ' is-invalid' : '' ?>"
                                        type="text" id="miBadgeColor" name="badge_color" maxlength="20"
-                                       data-badge-color value="<?= e($formItem['badge_color'] ?? '') ?>" placeholder="#F4511E">
+                                       data-badge-color value="<?= e($formItem['badge_color'] ?? '') ?>" placeholder="<?= e_attr(theme_default_badge_colour()) ?>">
                             </div>
                             <?php if (isset($errors['badge_color'])): ?>
                                 <span class="sik-error"><?= e($errors['badge_color']) ?></span>

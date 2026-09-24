@@ -115,6 +115,14 @@ $collapsed = ($_COOKIE['sik_admin_sidebar'] ?? setting('admin_sidebar_collapsed'
 </head>
 <body class="ad-body<?= $collapsed ? ' ad-collapsed' : '' ?>">
 
+<?php // The admin had neither of these on any of its 108 pages, which is a
+      // WCAG 2.4.1 Level A failure: a keyboard or screen-reader user arrived
+      // at the top of a sidebar holding forty links and had to walk all of
+      // them, on every page, to reach the thing they came for. The storefront
+      // has had both since its redesign; this is the same pattern and the
+      // same class, so it inherits the storefront's styling. ?>
+<a href="#adMain" class="sik-skip">Skip to content</a>
+
 <div class="ad-shell">
 
     <?php require ADMIN_PATH . '/includes/sidebar.php'; ?>
@@ -125,7 +133,10 @@ $collapsed = ($_COOKIE['sik_admin_sidebar'] ?? setting('admin_sidebar_collapsed'
 
         <?php require ADMIN_PATH . '/includes/topbar.php'; ?>
 
-        <div class="ad-content">
+        <?php // tabindex="-1" is what makes the skip link actually move focus;
+              // without it the target is not focusable and the next Tab lands
+              // back in the navigation the user was trying to skip. ?>
+        <main class="ad-content" id="adMain" tabindex="-1">
             <div class="ad-container">
 
                 <?php

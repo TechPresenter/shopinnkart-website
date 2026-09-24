@@ -348,7 +348,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <input type="color" name="badge_color[<?= $rowId ?>]" data-badge-color
                                                aria-label="Badge colour for <?= e_attr($row['label']) ?>"
                                                <?= trim((string) ($row['badge'] ?? '')) === '' ? 'disabled' : '' ?>
-                                               value="<?= e(preg_match('/^#[0-9a-f]{6}$/i', (string) ($row['badge_color'] ?? '')) === 1 ? $row['badge_color'] : '#f4511e') ?>">
+                                               value="<?= e(preg_match('/^#[0-9a-f]{6}$/i', (string) ($row['badge_color'] ?? '')) === 1 ? $row['badge_color'] : theme_default_badge_colour()) ?>">
                                     </span>
 
                                     <label class="ad-switch">

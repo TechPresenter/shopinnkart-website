@@ -112,6 +112,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
 </head>
 <body class="ad-login">
 
+<main>
     <div class="ad-login__card">
         <a href="<?= e(url()) ?>">
             <img class="ad-login__logo"
@@ -181,5 +182,6 @@ $storeName = (string) setting('store_name', SITE_NAME);
             });
         });
     </script>
+</main>
 </body>
 </html>

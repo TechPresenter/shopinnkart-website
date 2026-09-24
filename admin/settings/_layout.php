@@ -274,7 +274,7 @@ function settings_handle_save(string $screen, string $group, array $spec, array 
 
             case 'color':
                 if (preg_match('/^#[0-9A-Fa-f]{6}$/', $raw) !== 1) {
-                    $errors[$key] = $label . ' must be a 6-digit hex colour such as #F4511E.';
+                    $errors[$key] = $label . ' must be a 6-digit hex colour such as #ED1857.';
                 }
                 break;
 
@@ -403,7 +403,7 @@ function settings_field(string $key, array $spec, array $values, array $errors):
             . '<input type="color" value="' . e_attr(preg_match('/^#[0-9A-Fa-f]{6}$/', $value) === 1 ? $value : '#ffffff') . '"'
             . ' data-color-picker="' . e_attr($id) . '" aria-label="' . e_attr($label . ' colour picker') . '">'
             . '<input class="sik-input' . $invalid . '" type="text" id="' . e_attr($id) . '" name="' . e_attr($key) . '"'
-            . ' value="' . e_attr($value) . '" maxlength="7" placeholder="#F4511E" spellcheck="false" ' . $extra . '>'
+            . ' value="' . e_attr($value) . '" maxlength="7" placeholder="#ED1857" spellcheck="false" ' . $extra . '>'
             . '</div>' . $foot . '</div>';
     }
 

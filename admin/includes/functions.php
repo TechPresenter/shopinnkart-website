@@ -16,6 +16,21 @@ declare(strict_types=1);
  * The sidebar tree. Each entry declares the permission that reveals it, so the
  * menu and the page guards can never disagree.
  */
+/**
+ * The colour a new badge, chip or swatch should open on.
+ *
+ * The store's own primary colour, so it follows a rebrand instead of
+ * having to be chased through the admin afterwards - which is how
+ * #F4511E, the colour this store used before the festive rebrand, was
+ * still the default a menu badge opened on months later.
+ */
+function theme_default_badge_colour(): string
+{
+    $colour = trim((string) setting('primary_color', ''));
+
+    return preg_match('/^#[0-9a-f]{6}$/i', $colour) === 1 ? $colour : '#ED1857';
+}
+
 function admin_menu(): array
 {
     return [

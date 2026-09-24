@@ -274,7 +274,7 @@ $v->required('label')->max('label', 120)
 // Both colours land in a style attribute, so keep them to a colour literal.
 foreach (['badge_color' => 'Badge colour', 'badge_text_color' => 'Text colour'] as $field => $name) {
     if ($data[$field] !== '' && preg_match('/^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20})$/', $data[$field]) !== 1) {
-        $v->rule($field, false, $name . ': use a hex colour like #F4511E, or a CSS colour name.');
+        $v->rule($field, false, $name . ': use a hex colour like #ED1857, or a CSS colour name.');
     }
 }
 

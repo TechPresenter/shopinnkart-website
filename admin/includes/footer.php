@@ -15,7 +15,7 @@ if (function_exists('admin_partial_request') && admin_partial_request()) {
 }
 ?>
             </div><!-- /.ad-container -->
-        </div><!-- /.ad-content -->
+        </main><!-- /.ad-content -->
 
         <?php // Every value below is a token; A4 moves the block to .ad-footer. ?>
         <footer style="padding:var(--ad-space-4) var(--ad-space-6);border-top:1px solid var(--ad-line);

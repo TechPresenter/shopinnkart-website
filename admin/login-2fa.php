@@ -158,6 +158,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
 </head>
 <body class="ad-login">
 
+<main>
     <div class="ad-login__card" style="max-width:<?= $stage === 'enrol' ? '520' : '420' ?>px">
         <img class="ad-login__logo" src="<?= e(brand_logo_src()) ?>"
              alt="<?= e($storeName) ?>" width="200" height="42">
@@ -315,5 +316,6 @@ $storeName = (string) setting('store_name', SITE_NAME);
             });
         });
     </script>
+</main>
 </body>
 </html>
