@@ -213,7 +213,10 @@ require ADMIN_PATH . '/includes/header.php';
                                         ?>
                                         <form method="post" action="<?= e(admin_url('brands/delete.php')) ?>"
                                               class="ad-inline-form"
-                                              onsubmit="return confirm(<?= e_attr((string) json_encode($confirmText)) ?>)">
+                                              <?= admin_confirm_form_attrs($confirmText, [
+                                                  'title' => 'Delete this brand?',
+                                                  'label' => 'Delete brand',
+                                              ]) ?>>
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="id" value="<?= $brandId ?>">
                                             <input type="hidden" name="confirm" value="1">

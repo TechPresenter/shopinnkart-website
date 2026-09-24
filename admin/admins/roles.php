@@ -371,7 +371,10 @@ require ADMIN_PATH . '/includes/header.php';
 
                                     <?php if ($canDelete && !$isSystem && $inUse === 0): ?>
                                         <form method="post" action="<?= e($rolesUrl) ?>" class="ad-inline-form"
-                                              onsubmit="return confirm(<?= e_attr((string) json_encode('Delete the role "' . $role['name'] . '"? This cannot be undone.')) ?>)">
+                                              <?= admin_confirm_form_attrs(
+                                                  'Delete the role "' . $role['name'] . '"? This cannot be undone.',
+                                                  ['title' => 'Delete this role?', 'label' => 'Delete role']
+                                              ) ?>>
                                             <?= csrf_field() ?>
                                             <input type="hidden" name="op" value="delete">
                                             <input type="hidden" name="id" value="<?= $roleId ?>">

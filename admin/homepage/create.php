@@ -10,6 +10,8 @@ require_once __DIR__ . '/../includes/auth.php';
 $admin = admin_require('homepage.edit');
 
 require_once __DIR__ . '/_meta.php';
+// The nested rows -> items model, shared with the storefront renderer.
+require_once INCLUDES_PATH . '/homepage-rows.php';
 
 $zone = admin_filter('zone', array_keys(homepage_zones()), 'home');
 
@@ -61,12 +63,28 @@ $errors = [];
 if (is_post()) {
     csrf_require();
 
+    // PHP dropped the tail of this post (max_input_vars), so most of the
+    // section's own fields never arrived. Creating a row out of the defaults
+    // that are left would be worse than not creating one.
+    if (homepage_rows_post_truncated()) {
+        flash('error', 'That section has more rows and items than one form post can carry, '
+            . 'so nothing was created. Build it with fewer rows or items and save again.');
+        redirect(admin_url('homepage/create.php?zone=' . urlencode($zone)));
+    }
+
     $data   = homepage_form_input();
     $errors = homepage_validate($data);
 
-    // Repopulate the form from what was typed, keeping the picker selection.
+    $rowNotes = [];
+    $rows = homepage_rows_input($rowNotes);
+
+    // Repopulate the form from what was typed, keeping the picker selection
+    // and any rows that were built before the validation failed.
     $section = array_merge($section, $data, [
-        'settings' => homepage_merge_settings(null, $data['product_ids']),
+        'settings' => homepage_rows_merge_settings(
+            homepage_merge_settings(null, $data['product_ids']),
+            $rows
+        ),
     ]);
 
     if ($errors !== []) {
@@ -76,7 +94,7 @@ if (is_post()) {
         $columns['section_key']  = homepage_unique_key($data['section_key']);
         $columns['image']        = admin_handle_image('image', 'widgets');
         $columns['mobile_image'] = admin_handle_image('mobile_image', 'widgets');
-        $columns['settings']     = homepage_merge_settings(null, $data['product_ids']);
+        $columns['settings']     = $section['settings'];
 
         $id = Database::insert('homepage_sections', $columns);
 
@@ -86,6 +104,9 @@ if (is_post()) {
         admin_after_write();
 
         flash('success', 'Section "' . $columns['section_key'] . '" created.');
+        foreach ($rowNotes as $note) {
+            flash('warning', $note);
+        }
         redirect(admin_url('homepage/edit.php?id=' . $id));
     }
 }

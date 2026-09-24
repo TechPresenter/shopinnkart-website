@@ -75,6 +75,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         if ($source === $target) {
             $errors['target_path'] = 'A redirect cannot point at itself.';
+        } elseif (!$isRegex && seo_redirect_would_loop($source, $target, $id)) {
+            // Not just a self-pointing rule: this follows the chain the target
+            // already sits on. /a -> /b is fine, and /b -> /a is fine, but
+            // saving the second one closes a circle that bounces a visitor
+            // until their browser gives up. Caught here because the pair is
+            // only wrong together, and this is the moment it becomes a pair.
+            $errors['target_path'] = 'That would create a redirect loop: '
+                . $target . ' already leads back to ' . $source . '. '
+                . 'Point one of the two somewhere else first.';
         }
         if (!array_key_exists($code, REDIRECT_CODES)) {
             $code = 301;
@@ -122,6 +131,23 @@ if (($editId = input_int('edit')) > 0) {
 $redirects = Database::fetchAll('SELECT * FROM `redirects` ORDER BY `status`, `hits` DESC, `id` DESC');
 
 $pageTitle = 'Redirects';
+
+// Most rules should start life on the broken-link monitor rather than here:
+// that screen knows which URLs are actually being asked for, so a rule written
+// there is one somebody is waiting on, not a guess at a URL that may not exist.
+$open404 = 0;
+try {
+    $open404 = (int) Database::fetchColumn("SELECT COUNT(*) FROM `seo_404_log` WHERE `status` = 'open'");
+} catch (Throwable $e) {
+    // The monitor is not installed yet; the button simply does not appear.
+}
+
+if ($open404 > 0) {
+    $pageActions = '<a class="ad-btn ad-btn--primary" href="' . e(admin_url('seo/404s.php')) . '">'
+        . icon('link', 'w-4 h-4') . ' ' . number_format($open404) . ' broken link'
+        . ($open404 === 1 ? '' : 's') . ' waiting</a>';
+}
+
 require ADMIN_PATH . '/includes/header.php';
 ?>
 
@@ -297,7 +323,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value="<?= (int) $rule['id'] ?>">
                                         <button type="submit" class="ad-btn ad-btn--sm ad-btn--danger"
-                                                data-confirm="Delete this redirect? Links using the old URL will 404 again.">
+                                                <?= admin_confirm_attrs('Links using the old URL will 404 again.', ['title' => 'Delete this redirect?', 'label' => 'Delete redirect', 'tone' => 'danger']) ?>>
                                             Delete
                                         </button>
                                     </form>

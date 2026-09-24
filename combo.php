@@ -100,7 +100,7 @@ seo_from_entity($combo, [
     'title'       => (string) $combo['name'],
     'description' => str_limit((string) ($combo['subtitle'] ?: strip_tags($description)), 260, ''),
     'og_image'    => (string) ($combo['og_image'] ?: $combo['image'] ?: $combo['banner']),
-]);
+], 'combo');
 
 // A combo is one purchasable thing at one price, so it is a Product with one
 // Offer - and the Offer carries `price`, never `regular`, because that figure

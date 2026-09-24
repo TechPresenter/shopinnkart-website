@@ -18,6 +18,8 @@ require_once __DIR__ . '/../includes/auth.php';
 $admin = admin_require('settings.view');
 
 require_once ADMIN_PATH . '/settings/_layout.php';
+require_once INCLUDES_PATH . '/content-functions.php';
+require_once INCLUDES_PATH . '/sitemap-functions.php';
 
 /**
  * How many rows in $table fail $condition, and how many there are in total.
@@ -104,6 +106,11 @@ $redirects = [
  * "we could not look" and "we looked and it is wrong" are different answers
  * and the checklist prints them differently.
  *
+ * Deliberately still a whole function rather than a call into
+ * includes/sitemap-functions.php: the regression suites lift this function out
+ * of the shipped source and run it on its own, so that the guarantee is tested
+ * against what is served rather than against a copy.
+ *
  * @return array{reached:bool,status:int,body:string}
  */
 function seo_health_fetch(string $url, float $timeout): array
@@ -160,6 +167,29 @@ $robotsOk = $robots['reached'] && $robots['status'] < 400 && str_contains($robot
 $sitemapReached = $sitemap['reached'];
 $robotsReached  = $robots['reached'];
 
+// What the fetch above cannot answer when it gets no answer at all. The index
+// is built here, in process, so "does it parse" and "how many URLs does it
+// lead to" are known even on a single-worker server that cannot serve itself.
+//
+// Counted, not built. Each section's total is one indexed COUNT, where
+// building every section file would load every product, page and image row -
+// which measured 3.5s on this page and is not what a summary is for. Admin >
+// SEO > Sitemap builds and parses each file, because that is its job.
+$builtUrls  = 0;
+$builtFiles = 0;
+foreach (array_keys(sitemap_sections()) as $sitemapSection) {
+    if (!sitemap_section_enabled($sitemapSection)) {
+        continue;
+    }
+    $builtUrls  += sitemap_section_count($sitemapSection);
+    $builtFiles += sitemap_section_pages($sitemapSection);
+}
+
+$indexFact       = sitemap_health_parse('index', sitemap_index_url(), (string) sitemap_index_xml(), 'sitemap');
+$sitemapProblems = $indexFact['problems'];
+$builtOk         = $builtUrls > 0 && $indexFact['parses'] && $sitemapProblems === [];
+$robotsAllowsSitemap = robots_allows(sitemap_index_url());
+
 $integrations = [
     'Google Analytics'      => trim((string) setting('google_analytics_id', '')),
     'Google Tag Manager'    => trim((string) setting('google_tag_manager_id', '')),
@@ -174,6 +204,16 @@ foreach ($rows as $row) {
 }
 
 $pageTitle = 'SEO health';
+// The screens this report links into. They are not in the settings tab strip -
+// they are their own section under /admin/seo - so the way in is here, beside
+// the numbers that send an operator to them. This page counts the problems;
+// those pages are where they get fixed.
+$pageActions = '<a class="ad-btn ad-btn--primary" href="' . e(admin_url('seo/')) . '">'
+    . icon('list', 'w-4 h-4') . ' SEO workbench</a>'
+    . '<a class="ad-btn" href="' . e(admin_url('seo/sitemap.php')) . '">'
+    . icon('globe', 'w-4 h-4') . ' Sitemap &amp; robots</a>'
+    . '<a class="ad-btn" href="' . e(admin_url('seo/schema.php')) . '">'
+    . icon('code', 'w-4 h-4') . ' Schema</a>';
 require ADMIN_PATH . '/includes/header.php';
 ?>
 
@@ -206,12 +246,17 @@ $tiles = [
     ),
     admin_stat_card(
         'Sitemap',
-        $sitemapOk ? (string) (int) $sitemapUrls : "\u{2014}",
+        // The BUILT count, not the fetched one: it is the same number when the
+        // store can answer itself and the true one when it cannot.
+        $builtUrls > 0 ? number_format($builtUrls) : "\u{2014}",
         'globe',
         // navy, not red, when we never got an answer: a red tile is a verdict
         // on the store, and "we could not look" is not a verdict.
-        $sitemapOk ? 'blue' : (!$sitemapReached ? 'navy' : 'red'),
-        $sitemapOk ? 'URLs listed' : (!$sitemapReached ? 'could not fetch' : 'lists no URLs')
+        $builtOk ? 'blue' : (!$sitemapReached ? 'navy' : 'red'),
+        $builtUrls > 0
+            ? 'URLs in ' . (int) $builtFiles . ' file' . ($builtFiles === 1 ? '' : 's')
+            : 'lists no URLs',
+        admin_url('seo/sitemap.php')
     ),
     admin_stat_card(
         'Redirects',
@@ -293,6 +338,16 @@ $tiles = [
                         sitemap.xml <?= $sitemapOk ? 'reachable, ' . (int) $sitemapUrls . ' URLs' : 'reachable but lists no URLs' ?>
                     <?php endif; ?>
                 </li>
+                <?php /* Built here, so this line is answered whether or not the
+                         fetch above got anything. */ ?>
+                <li class="<?= $builtOk ? 'is-ok' : ($builtUrls > 0 ? 'is-todo' : 'is-bad') ?>">
+                    sitemap.xml builds and parses &mdash;
+                    <?= (int) $builtUrls ?> URLs in <?= (int) $builtFiles ?> file<?= $builtFiles === 1 ? '' : 's' ?>
+                    <?php if ($sitemapProblems !== []): ?>
+                        <span class="ad-muted">(<?= e($sitemapProblems[0]) ?><?= count($sitemapProblems) > 1
+                            ? ', and ' . (count($sitemapProblems) - 1) . ' more' : '' ?>)</span>
+                    <?php endif; ?>
+                </li>
                 <li class="<?= !$robotsReached ? 'is-unknown' : ($robotsOk ? 'is-ok' : 'is-bad') ?>">
                     <?php if (!$robotsReached): ?>
                         robots.txt &mdash; could not fetch
@@ -303,15 +358,24 @@ $tiles = [
                         robots.txt <?= $robotsOk ? 'served and names the sitemap' : 'missing its Sitemap line' ?>
                     <?php endif; ?>
                 </li>
+                <li class="<?= $robotsAllowsSitemap ? 'is-ok' : 'is-bad' ?>">
+                    <?= $robotsAllowsSitemap
+                        ? 'The crawl rules allow the sitemap to be read'
+                        : 'A robots.txt rule blocks the sitemap, so no crawler will read it' ?>
+                </li>
                 <li class="<?= $redirects['looping'] === 0 ? 'is-ok' : 'is-bad' ?>">
                     <?= $redirects['looping'] === 0
                         ? 'No redirect points at itself'
                         : (int) $redirects['looping'] . ' redirect(s) point at themselves' ?>
                 </li>
                 <li class="<?= $imagesNoAlt === 0 ? 'is-ok' : 'is-todo' ?>">
+                    <?php // A count with nowhere to go is a complaint; the desk is where it gets fixed. ?>
                     <?= $imagesNoAlt === 0
                         ? 'Every product image has alt text'
                         : (int) $imagesNoAlt . ' product image(s) have no alt text' ?>
+                    <?php if ($imagesNoAlt > 0): ?>
+                        &mdash; <a href="<?= e(admin_url('seo/images.php')) ?>">describe them</a>
+                    <?php endif; ?>
                 </li>
                 <li class="<?= $dupeTitles === [] ? 'is-ok' : 'is-todo' ?>">
                     <?= $dupeTitles === []

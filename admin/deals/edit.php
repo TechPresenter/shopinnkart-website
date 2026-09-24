@@ -53,9 +53,9 @@ $pageActions = '';
 if (admin_can('deals.delete')) {
     // Written out instead of admin_delete_form() so the page action can be a
     // full labelled button rather than an icon.
-    $confirm = json_encode('Delete "' . $deal['title'] . '"? Its product list goes with it.');
+    $confirm = ('Delete "' . $deal['title'] . '"? Its product list goes with it.');
     $pageActions = '<form method="post" action="' . e(admin_url('deals/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) $confirm) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

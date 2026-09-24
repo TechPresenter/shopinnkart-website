@@ -248,6 +248,11 @@ $formConfig = [
                                     A slug already in use gets a number added.
                                 </span>
                             <?php endif; ?>
+                            <?php
+                            /* Offers to keep the current URL alive as a 301 when the slug
+                               changes. Renders nothing on a create, where there is no old URL. */
+                            seo_slug_keep_checkbox('combo', (string) ($combo['slug'] ?? ''));
+                            ?>
                         </div>
                     </div>
 
@@ -583,40 +588,28 @@ $formConfig = [
                 </div>
                 <div class="ad-card__body">
                     <?php
-                    // Three plain fields rather than seo_editor(). That editor
-                    // renders and posts all nine SEO_EDITOR_FIELDS - focus
-                    // keyword, canonical, robots, the social trio and custom
-                    // JSON-LD - and `combos` has columns for exactly three of
-                    // them, so six of its inputs would have nowhere to land.
+                    // The shared editor, the same one the other five entity
+                    // forms use. It used to be three hand-written fields here
+                    // because `combos` only had columns for three of the nine
+                    // it posts; the per-entity SEO migration added the other
+                    // six, so the exception is gone and so is the drift.
+                    require_once ADMIN_PATH . '/includes/seo-editor.php';
+                    seo_editor($combo, [
+                        'url'              => (string) ($combo['slug'] ?? '') !== ''
+                            ? combo_url((string) $combo['slug'])
+                            : url(),
+                        'title_from'       => 'name',
+                        'description_from' => 'subtitle',
+                        'type'             => 'combo',
+                        'id'               => (int) ($combo['id'] ?? 0),
+                    ]);
                     ?>
-                    <div class="ad-field">
-                        <label class="sik-label" for="comboMetaTitle">Meta title</label>
-                        <input class="sik-input<?= isset($errors['meta_title']) ? ' is-invalid' : '' ?>" type="text"
-                               id="comboMetaTitle" name="meta_title" maxlength="255"
-                               value="<?= e($combo['meta_title'] ?? '') ?>">
-                        <?php if (isset($errors['meta_title'])): ?>
-                            <span class="sik-error"><?= e($errors['meta_title']) ?></span>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="ad-field">
-                        <label class="sik-label" for="comboMetaDescription">Meta description</label>
-                        <textarea class="sik-textarea" id="comboMetaDescription" name="meta_description"
-                                  rows="3"><?= e($combo['meta_description'] ?? '') ?></textarea>
-                        <span class="sik-help">Roughly 155 characters is what a search result shows.</span>
-                    </div>
-
-                    <div class="ad-field">
-                        <label class="sik-label" for="comboOgImage">Social image path</label>
-                        <input class="sik-input<?= isset($errors['og_image']) ? ' is-invalid' : '' ?>" type="text"
-                               id="comboOgImage" name="og_image" maxlength="255"
-                               value="<?= e($combo['og_image'] ?? '') ?>" placeholder="uploads/combos/share-card.jpg">
-                        <?php if (isset($errors['og_image'])): ?>
-                            <span class="sik-error"><?= e($errors['og_image']) ?></span>
-                        <?php else: ?>
-                            <span class="sik-help">Blank uses the card image above.</span>
-                        <?php endif; ?>
-                    </div>
+                    <?php if (isset($errors['meta_title'])): ?>
+                        <span class="sik-error"><?= e($errors['meta_title']) ?></span>
+                    <?php endif; ?>
+                    <?php if (isset($errors['og_image'])): ?>
+                        <span class="sik-error"><?= e($errors['og_image']) ?></span>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>

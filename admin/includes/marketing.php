@@ -150,11 +150,11 @@ function marketing_usage_bar(int $used, ?int $limit, string $noun = 'used'): str
     }
 
     $percent = min(100.0, ($used / $limit) * 100);
-    $tone = $percent >= 100 ? '#DC2626' : ($percent >= 80 ? '#D97706' : 'var(--ad-primary)');
+    $tone = $percent >= 100 ? 'var(--ad-danger)' : ($percent >= 80 ? 'var(--ad-warning)' : 'var(--ad-primary)');
 
     return '<div style="min-width:120px">'
         . '<div class="ad-cellflex__meta" style="margin-bottom:4px">'
-        . '<strong style="color:var(--ad-text)">' . number_format($used) . '</strong> / ' . number_format($limit)
+        . '<strong style="color:var(--ad-ink)">' . number_format($used) . '</strong> / ' . number_format($limit)
         . ' &middot; ' . round($percent) . '%</div>'
         . '<div class="sik-progress"><span style="width:' . round($percent, 2) . '%;background:' . $tone . '"></span></div>'
         . '</div>';
@@ -368,9 +368,9 @@ function marketing_picker_assets(): string
         .ad-picker__search > svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ad-muted); }
         .ad-picker__search .sik-input { padding-left: 34px; }
         .ad-picker__results {
-            position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px);
-            background: #fff; border: 1px solid var(--ad-border); border-radius: 10px;
-            box-shadow: 0 12px 30px rgba(16, 35, 61, .14); max-height: 300px; overflow-y: auto; padding: 5px;
+            position: absolute; z-index: var(--ad-z-dropdown); left: 0; right: 0; top: calc(100% + 4px);
+            background: var(--ad-elevated); border: 1px solid var(--ad-line); border-radius: var(--ad-radius-lg);
+            box-shadow: var(--ad-shadow-3); max-height: 300px; overflow-y: auto; padding: 5px;
         }
         .ad-picker__results[hidden] { display: none; }
         .ad-picker__results .ad-dropdown__item { width: 100%; text-align: left; }

@@ -3,6 +3,10 @@
 Four things have to line up: the files, the database, the credentials and the
 writable folders. Miss the last one and the site loads but cannot save an image.
 
+> Looking for the short version - the ordered list of what is left to do and
+> which parts only you can do? That is **[GO-LIVE.md](GO-LIVE.md)**. This page
+> is the detail behind it.
+
 ---
 
 ## 1. The database

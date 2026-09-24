@@ -56,6 +56,34 @@ const RUNTIME_TABLES = [
     'email_verifications',
     'rate_limits',
     'shipping_api_logs',
+    'security_events',
+    'security_alerts',
+    'seo_404_log',
+
+    // These three are not merely noise - carrying them across is a way in.
+    // api_tokens holds tokens issued to THIS machine, auth_trusted_devices
+    // holds the browsers allowed to skip the second sign-in step, and
+    // an_salts is what makes a visitor id unguessable. Exporting them would
+    // hand a laptop's credentials to the live site, so they never travel.
+    'api_tokens',
+    'auth_trusted_devices',
+    'an_salts',
+
+    // Analytics collected while clicking around a development machine.
+    // Shipping it would open the live dashboard on invented traffic.
+    'an_events',
+    'an_pageviews',
+    'an_sessions',
+    'an_visitors',
+    'an_paths',
+    'an_sources',
+    'an_vitals',
+    'an_state',
+    'an_daily_traffic',
+    'an_daily_page',
+    'an_daily_product',
+    'an_daily_dim',
+    'an_daily_vitals',
 ];
 
 /**

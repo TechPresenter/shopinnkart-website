@@ -192,6 +192,20 @@ require ADMIN_PATH . '/includes/header.php';
                                                 <?php if ((int) $widget['lazy_load'] === 1): ?>
                                                     &middot; lazy
                                                 <?php endif; ?>
+                                                <?php
+                                                /* A section built from nested rows draws its rows instead of
+                                                   its widget type, so the type shown above is no longer the
+                                                   whole story and the list has to say so.
+
+                                                   A count, not the rows: this runs once per section on the
+                                                   page, and homepage_rows_of() would re-sanitise every item's
+                                                   copy to answer it. */
+                                                $widgetRows = homepage_rows_count($widget);
+                                                ?>
+                                                <?php if ($widgetRows > 0): ?>
+                                                    &middot; <?= $widgetRows === 1
+                                                        ? '1 row' : $widgetRows . ' rows' ?>
+                                                <?php endif; ?>
                                             </span>
                                         </span>
                                     </div>

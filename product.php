@@ -123,7 +123,7 @@ seo_from_entity($detail, [
     'title'       => (string) $detail['name'],
     'description' => str_limit((string) ($detail['short_description'] ?: $detail['description']), 260, ''),
     'og_image'    => (string) $detail['main_image'],
-]);
+], 'product');
 seo_add_schema(seo_product_schema($detail));
 seo_add_schema(seo_breadcrumb_schema($crumbs));
 

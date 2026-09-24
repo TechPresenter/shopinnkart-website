@@ -413,7 +413,14 @@ return [
                                                            name="reset_password_<?= (int) $row['id'] ?>"
                                                            placeholder="Your own password" autocomplete="current-password">
                                                     <button type="submit" class="ad-btn ad-btn--sm ad-btn--danger"
-                                                            data-confirm="Reset two-step sign in for <?= e_attr((string) $row['name']) ?>? They will be emailed.">
+                                                            <?= admin_confirm_attrs(
+                                                                'They are emailed, and they set it up again the next time they sign in.',
+                                                                [
+                                                                    'title' => 'Reset two-step for ' . (string) $row['name'] . '?',
+                                                                    'label' => 'Reset two-step',
+                                                                    'tone'  => 'danger',
+                                                                ]
+                                                            ) ?>>
                                                         Reset their second factor
                                                     </button>
                                                 </form>

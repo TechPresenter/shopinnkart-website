@@ -431,7 +431,10 @@ require ADMIN_PATH . '/includes/header.php';
             <?php endif; ?>
         </div>
         <form method="post" action="<?= e($selfUrl) ?>" class="ad-card__foot"
-              onsubmit="return confirm('Delete log files older than 30 days? This cannot be undone.')">
+              <?= admin_confirm_form_attrs(
+                  'Log files older than 30 days are deleted from the server. This cannot be undone.',
+                  ['title' => 'Clear temporary files?', 'label' => 'Clear files']
+              ) ?>>
             <?= csrf_field() ?>
             <input type="hidden" name="op" value="clear_temp">
             <button type="submit" class="ad-btn<?= $staleLogs === [] ? '' : ' ad-btn--danger' ?>"

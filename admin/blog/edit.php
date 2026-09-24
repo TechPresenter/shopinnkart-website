@@ -24,11 +24,23 @@ if ($post === null) {
 }
 
 $errors = [];
+// Held before the submitted values are merged in below: it is what decides
+// whether the slug really changed, and so whether the old URL needs a 301.
+$originalSlug = (string) $post['slug'];
 
 if (is_post()) {
     csrf_require();
 
     $seo       = seo_editor_input();
+    // The panel's extended fields (keywords, the Twitter trio, breadcrumbs and
+    // the custom code). Staged rather than written, so a refused code field
+    // fails the whole save instead of appearing to succeed while dropping it.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    // A slug the admin TYPED that collides with another record or with a
+    // reserved address is refused here, so it joins the validator errors
+    // below. A blank one is still derived and quietly made unique.
+    seo_editor_slug_check('post', (string) input('slug', ''), $id, $seoErrors);
     $submitted = [
         'category_id'  => input_int('category_id', 0),
         'title'        => (string) input('title', ''),
@@ -55,15 +67,11 @@ if (is_post()) {
         $v->exists('category_id', 'blog_categories');
     }
 
-    if ($v->fails()) {
-        $errors = $v->errors();
+    if ($v->fails() || $seoErrors !== []) {
+        $errors = $v->errors() + $seoErrors;
         flash('error', 'Please correct the highlighted fields.');
     } else {
-        $slug = unique_slug(
-            'blog_posts',
-            slugify($submitted['slug'] !== '' ? $submitted['slug'] : $submitted['title']),
-            $id
-        );
+        $slug = seo_editor_slug('post', $submitted['slug'], $submitted['title'], $id, $errors);
 
         $image = $post['featured_image'];
         if ((string) input('remove_featured_image', '0') === '1' && empty($_FILES['featured_image']['name'])) {
@@ -94,6 +102,11 @@ if (is_post()) {
             'published_at'   => $publishedAt,
             ...$seo,
         ], '`id` = :id', ['id' => $id]);
+
+        seo_entity_meta_save('post', $id, $seoMeta);
+        // A published post that is renamed keeps its old /blog/<slug> alive:
+        // that URL is the one already sitting in newsletters and shares.
+        seo_editor_slug_change('post', $originalSlug, $slug);
 
         log_activity('blog_post.updated', 'blog_post', $id, 'Updated post "' . $submitted['title'] . '"');
         admin_after_write();
@@ -133,7 +146,7 @@ $pageActions = '<a class="ad-btn" href="' . e(admin_url('blog/view.php?id=' . $i
 if (admin_can('blog.delete')) {
     $confirm = 'Delete "' . $post['title'] . '"? This cannot be undone.';
     $pageActions .= '<form method="post" action="' . e(admin_url('blog/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

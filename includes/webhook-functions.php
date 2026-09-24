@@ -450,6 +450,12 @@ function webhook_normalise_event(string $gateway, string $rawBody, array $decode
  * Admin > Settings silently switched off webhook IP limiting and the
  * brute-force cap on bad signatures with it. It is backed by the shared
  * `rate_limits` table now, which no performance switch can reach.
+ *
+ * NOT WIRED TO ANY ENDPOINT. api/payments/webhook.php moved to the
+ * failure-only budget below (payment_webhook_note_failure()), and the courier
+ * hub has its own in includes/shipping-functions.php — so nothing in shipped
+ * code calls this. It is kept as the general-purpose helper it always was, and
+ * a reader must not assume the payment endpoint is behind it.
  */
 function webhook_rate_limit_hit(string $bucket, int $max, int $windowSeconds): bool
 {
@@ -518,7 +524,13 @@ function payment_webhook_note_failure(string $key): array
     ];
 }
 
-/** Is this caller over its failure budget? Records nothing. */
+/**
+ * Is this caller over its failure budget? Records nothing.
+ *
+ * Read-only companion to note_failure(), used by tests and probes; the
+ * endpoint itself learns the answer from the counter it just incremented, so
+ * a check here would be a second row read per refusal for nothing.
+ */
 function payment_webhook_throttled(string $key): bool
 {
     return !rate_limit_allows(PAYMENT_WEBHOOK_BUCKET, $key, PAYMENT_WEBHOOK_MAX_FAILURES, PAYMENT_WEBHOOK_WINDOW);

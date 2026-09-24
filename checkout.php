@@ -26,6 +26,15 @@ if (cart_is_empty()) {
     redirect(url('cart.php'));
 }
 
+// The funnel's "reached checkout" step, recorded once per visit. This page is
+// re-rendered on every validation error and every back button, so counting
+// each render would produce a funnel where more people began checkout than
+// ever added to a cart. The session's own funnel bit is the memo, which means
+// it survives a new tab and needs no session variable of its own.
+if (!is_post() && analytics_library()) {
+    analytics_record_begin_checkout();
+}
+
 /** Saved addresses are re-read here so a posted id can never point elsewhere. */
 $addresses = $user === null ? [] : Database::fetchAll(
     'SELECT * FROM `user_addresses` WHERE `user_id` = :uid ORDER BY `is_default` DESC, `id` DESC',
@@ -164,6 +173,24 @@ $invalid = static fn (string $name): string => error_for($errors, $name) ? ' is-
         <div class="sik-alert sik-alert--error" role="alert">
             <?= icon('alert', 'w-4 h-4') ?>
             <span>Some details need another look. The fields are marked below.</span>
+        </div>
+    <?php endif; ?>
+
+    <?php
+    /* cart_items() reconciles a line against live stock and writes the clamp
+       back, so the summary below and the order agree. A shopper who came
+       straight from a product page never passed the cart page's own notice,
+       and a basket that shrank between adding and paying must not do so
+       silently - this is where they are told. */
+    $basketChanged = cart_adjustment_message();
+    ?>
+    <?php if ($basketChanged !== ''): ?>
+        <div class="sik-alert sik-alert--warning" role="alert">
+            <?= icon('alert', 'w-4 h-4') ?>
+            <span>
+                <?= e($basketChanged) ?>
+                <a href="<?= e(url('cart.php')) ?>">Review your cart</a> before paying.
+            </span>
         </div>
     <?php endif; ?>
 

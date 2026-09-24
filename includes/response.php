@@ -121,6 +121,12 @@ function api_require_csrf(): void
     }
 
     if (!csrf_verify()) {
+        // Same counter as the form path (see csrf_require): the monitor reads
+        // one number for "forms being posted from somewhere else", whichever
+        // door the post came through.
+        if (function_exists('security_csrf_failed')) {
+            security_csrf_failed('api');
+        }
         json_error('Your session expired. Please refresh the page and try again.', [], 403, 'csrf');
     }
 }

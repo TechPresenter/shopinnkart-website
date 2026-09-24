@@ -35,6 +35,9 @@ if ((string) input('confirm', '0') !== '1') {
 
 delete_upload($brand['logo']);
 Database::delete('brands', '`id` = :id', ['id' => $id]);
+// The record is gone, so its extended SEO row has nothing to describe.
+seo_entity_meta_delete('brand', $id);
+
 
 log_activity(
     'brand.deleted',

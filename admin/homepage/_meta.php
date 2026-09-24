@@ -16,6 +16,11 @@ if (!defined('SIK_BOOTSTRAPPED')) {
     exit;
 }
 
+// The nested rows -> items model. It is a storefront file (widgets.php renders
+// from it too), and it owns the device/audience vocabulary a section, a row and
+// an item all share - see the note where those two functions used to live.
+require_once INCLUDES_PATH . '/homepage-rows.php';
+
 /**
  * The zones the storefront actually renders. `checkout` and `footer_top`
  * appear in the schema comment but no page calls render_zone() for them, so
@@ -219,22 +224,14 @@ function homepage_paddings(): array
     return ['none' => 'None', 'sm' => 'Small', 'md' => 'Medium', 'lg' => 'Large'];
 }
 
-function homepage_device_visibility(): array
-{
-    return [
-        'all'            => 'All devices',
-        'desktop'        => 'Desktop only',
-        'tablet'         => 'Tablet only',
-        'mobile'         => 'Mobile only',
-        'desktop_tablet' => 'Desktop + tablet',
-        'tablet_mobile'  => 'Tablet + mobile',
-    ];
-}
-
-function homepage_auth_visibility(): array
-{
-    return ['all' => 'Everyone', 'guest' => 'Signed-out visitors', 'user' => 'Signed-in customers'];
-}
+/*
+ * homepage_device_visibility() and homepage_auth_visibility() used to be
+ * declared here. They now live in includes/homepage-rows.php, required above,
+ * because a ROW and an ITEM inside a section answer the same two questions the
+ * section does and are filtered by the same visibility_allows(). Two copies of
+ * those lists would be two places to add a breakpoint to, and the one nobody
+ * updated would silently drop a saved value on the next save.
+ */
 
 /**
  * id => label lists for the dependent source picker.

@@ -199,6 +199,12 @@ account_layout_open('orders', [
     </div>
 </div>
 
+<?php // Courier, waybill, the courier's own link, its scans and any return
+      // pickup - the same card the public tracking page draws, from the same
+      // view model, so the two can never disagree. It renders nothing at all
+      // for an order that has never been handed to a courier. ?>
+<?= order_courier_panel_html($order) ?>
+
 <div class="sik-panel" style="margin-bottom:var(--sp-5)">
     <div class="sik-panel__head">
         <h2 class="sik-panel__title">Items (<?= count($items) ?>)</h2>

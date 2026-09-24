@@ -18,11 +18,23 @@ admin_gate_try_enter();
 // link. It exits with a 301/302 when one matches.
 seo_apply_redirect();
 
+// Nothing matched, so this really is a dead URL. Record what was asked for and
+// where the link was, so Admin > SEO > Broken links can show the operator what
+// is actually breaking rather than waiting for a customer to report it. Path
+// and referrer only, both with their query strings stripped - see
+// seo_log_404() for why there is no IP or user agent here. It swallows every
+// failure: a page that is already an error must not become a 500.
+seo_log_404();
+
 http_response_code(404);
 
 seo_set([
     'title'  => 'Page Not Found',
     'robots' => 'noindex, follow',
+    // No canonical. The URL being asked for does not exist, so declaring it
+    // the canonical version of this page is a claim about a page that is not
+    // there - and it echoed whatever path a bot invented back into our head.
+    'canonical' => '',
 ]);
 
 require INCLUDES_PATH . '/header.php';

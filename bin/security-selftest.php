@@ -59,14 +59,29 @@ if ($installer['present']) {
     $say('  ok    install.php has been deleted');
 }
 
-// --- 3. Somewhere to keep secrets ------------------------------------------
+// --- 3. The password the store shipped with ---------------------------------
+// Deliberately a problem rather than a note. The project's README is in a
+// public repository and prints the seeded administrator's password, and the
+// same row is in the dump an owner imports - so until it is changed, reading
+// the repository is enough to sign in here. Hiding the login address does not
+// help against somebody holding the key.
+require_once INCLUDES_PATH . '/deployment-checks.php';
+$seeded = deployment_seeded_logins();
+$seededMessage = deployment_seeded_logins_message($seeded);
+if ($seededMessage !== null) {
+    $problems[] = $seededMessage;
+} else {
+    $say('  ok    no account still uses a password from the README');
+}
+
+// --- 4. Somewhere to keep secrets ------------------------------------------
 if (!app_key_available()) {
     $problems[] = 'No application key: config/ is not writable and SIK_APP_KEY is unset, so SMTP and courier secrets cannot be stored.';
 } else {
     $say('  ok    application key is available');
 }
 
-// --- 4. HTTPS ---------------------------------------------------------------
+// --- 5. HTTPS ---------------------------------------------------------------
 $mode = (string) setting('sec_force_https', 'auto');
 $host = (string) parse_url(SITE_URL, PHP_URL_HOST);
 if (security_host_is_local($host)) {
@@ -80,7 +95,7 @@ if (security_host_is_local($host)) {
         . ', HSTS ' . ((int) setting('sec_hsts_max_age', 300) > 0 ? setting('sec_hsts_max_age', 300) . 's' : 'off'));
 }
 
-// --- 5. Content Security Policy ---------------------------------------------
+// --- 6. Content Security Policy ---------------------------------------------
 $csp = (string) setting('sec_csp_mode', 'report-only');
 if ($csp === 'off') {
     $problems[] = 'The Content Security Policy is switched off.';
@@ -90,7 +105,7 @@ if ($csp === 'off') {
     $say('  ok    Content Security Policy is enforced');
 }
 
-// --- 6. Secrets left in the mail queue --------------------------------------
+// --- 7. Secrets left in the mail queue --------------------------------------
 try {
     $stale = (int) Database::fetchColumn(
         // "token=[redacted]" still matches "%token=%", so an already-scrubbed

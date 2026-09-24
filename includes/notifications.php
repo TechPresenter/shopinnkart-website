@@ -381,6 +381,125 @@ function notify_order_status_changed(?array $order, string $status): void
     }
 }
 
+// ===========================================================================
+//  COURIER MILESTONES
+// ===========================================================================
+
+/**
+ * Is there anything behind this channel that could actually deliver?
+ *
+ * The queue, the templates and notify() are channel-agnostic on purpose, and
+ * notification_templates already has sms / whatsapp / push in its enum. What
+ * this shop has NO provider for is the sending half: there is no gateway, no
+ * credentials and no send_via_sms(). Queueing on those channels would pile up
+ * rows that nothing drains and let a screen claim the customer was texted.
+ *
+ * So: one place that says what is real. A future SMS gateway is a branch in
+ * process_notification_queue() plus this returning true - and nothing else in
+ * the shipping hub, the checkout or the admin changes.
+ */
+function notification_channel_ready(string $channel): bool
+{
+    // Email is ready when a transport is configured at all; the "log" driver
+    // counts, because it writes a real, readable message.
+    return $channel === 'email';
+}
+
+/**
+ * Queue one courier-milestone message for a customer - once, ever.
+ *
+ * Called by the shipping hub (shipping_notify_shipment()) for the events the
+ * brief lists: shipped, pickup scheduled, in transit, out for delivery,
+ * delivered, RTO, return pickup. Refunds keep their own path in
+ * payment-functions.php, because a refund is a money event, not a courier one.
+ *
+ * Duplicate protection is deliberately two layers:
+ *
+ *   1. shipment_notifications holds one row per (consignment, milestone), and
+ *      the INSERT that claims it is the gate. A courier resends events and the
+ *      poller catches up with them; both find the row and stop. It outlives the
+ *      queue row, which send-queued-emails.php prunes once sent.
+ *   2. notify()'s own idempotency key still blocks a second (template, order,
+ *      recipient). That is what stops this layer and the order-status mail
+ *      update_order_status() sends from both reaching the inbox for one event -
+ *      whichever of them gets there first wins, and the other is a no-op.
+ *
+ * Returns true only when this call was the one that claimed the milestone.
+ */
+function notify_shipment_milestone(
+    array $order,
+    int $shipmentId,
+    string $milestone,
+    string $templateKey,
+    array $vars = [],
+    string $channel = 'email'
+): bool {
+    $orderId   = (int) ($order['id'] ?? 0);
+    $recipient = trim((string) ($order['customer_email'] ?? ''));
+    if ($shipmentId <= 0 || $orderId <= 0 || $milestone === '' || $templateKey === '') {
+        return false;
+    }
+    if (!notification_channel_ready($channel)) {
+        // Nothing can send it, so nothing is queued and nothing is claimed:
+        // the day a provider is added, the milestone is still unsaid and goes
+        // out then rather than being silently marked done now.
+        return false;
+    }
+
+    // --- claim the milestone ------------------------------------------------
+    // INSERT IGNORE on uq_shipment_milestone: the unique key is the lock, so
+    // two webhook deliveries racing on one event produce one message.
+    try {
+        $claimed = Database::query(
+            'INSERT IGNORE INTO `shipment_notifications`
+                (`shipment_id`, `order_id`, `milestone`, `template_key`, `channel`, `queued`)
+             VALUES (:s, :o, :m, :t, :c, 0)',
+            ['s' => $shipmentId, 'o' => $orderId, 'm' => mb_substr($milestone, 0, 40),
+             't' => mb_substr($templateKey, 0, 80), 'c' => $channel]
+        )->rowCount();
+    } catch (Throwable $e) {
+        // Before the migration there is no ledger. Refusing to mail at all
+        // would be worse than mailing without the second lock: notify()'s own
+        // idempotency key still holds.
+        ErrorHandler::log('warning', 'Shipment milestone ledger unavailable (' . $milestone . '): ' . $e->getMessage());
+        $claimed = 1;
+    }
+    if ($claimed === 0) {
+        return false;   // already said
+    }
+
+    if ($recipient === '') {
+        return false;   // claimed, but there is nobody to tell
+    }
+
+    $queued = notify(
+        $templateKey,
+        $recipient,
+        array_merge(order_notification_vars($order), $vars),
+        'order',
+        $orderId,
+        $channel,
+        [
+            'email_type'     => mb_substr('shipment_' . $milestone, 0, 40),
+            'recipient_name' => (string) ($order['customer_name'] ?? ''),
+            'user_id'        => isset($order['user_id']) && $order['user_id'] !== null ? (int) $order['user_id'] : null,
+            'order_id'       => $orderId,
+        ]
+    );
+
+    // Recorded, not acted on: a milestone the queue refused (no template, the
+    // customer opted out of that category) stays claimed - saying it later
+    // would be saying it late - but the desk can see which ones went nowhere.
+    try {
+        Database::update('shipment_notifications', ['queued' => $queued ? 1 : 0],
+            '`shipment_id` = :s AND `milestone` = :m', ['s' => $shipmentId, 'm' => $milestone]);
+    } catch (Throwable $e) {
+        // The message is already queued; the bookkeeping is not worth an error page.
+    }
+
+    return $queued;
+}
+
 /**
  * Send an admin-facing template to every configured notification address.
  * `admin_notify_email` accepts a comma-separated list.
@@ -400,6 +519,38 @@ function notify_admins(string $templateKey, array $vars, ?string $referenceType,
             'order_id'       => $options['order_id'] ?? ($referenceType === 'order' ? $referenceId : null),
         ]));
     }
+}
+
+/**
+ * The tracking link to put in front of the customer for an order.
+ *
+ * The courier's own page when the shipping hub has recorded one for the live
+ * consignment, and this shop's tracking page otherwise - which always works,
+ * and asks for the email or mobile before it shows anything.
+ *
+ * Deliberately not guarded by shipping_hub_installed(): this runs for every
+ * order email, and two extra queries per message to learn what the try/catch
+ * below finds out anyway is a poor trade. A shop without the hub has no
+ * shipment_id on its orders, so it never gets here at all.
+ */
+function order_courier_tracking_url(array $order): string
+{
+    $fallback = canonical_url('track-order.php?order=' . urlencode((string) ($order['order_number'] ?? '')));
+
+    if (empty($order['shipment_id'])) {
+        return $fallback;
+    }
+
+    try {
+        $url = trim((string) Database::fetchColumn(
+            'SELECT `tracking_url` FROM `shipments` WHERE `id` = :id',
+            ['id' => (int) $order['shipment_id']]
+        ));
+    } catch (Throwable $e) {
+        return $fallback;   // the hub is not installed on this database
+    }
+
+    return $url !== '' ? $url : $fallback;
 }
 
 /**
@@ -487,6 +638,10 @@ function order_notification_vars(array $order, ?array $invoice = null): array
         'tracking_number' => (string) ($order['tracking_number'] ?? 'will be shared shortly'),
         'courier_name'    => (string) ($order['courier_name'] ?? 'our delivery partner'),
         'tracking_url'    => canonical_url('track-order.php?order=' . urlencode($orderNumber)),
+        // The courier's OWN page when the shipping hub holds one, this shop's
+        // tracking page otherwise. Never assembled from a guessed pattern: a
+        // dead link in the inbox is worse than one fewer button.
+        'courier_tracking_url' => order_courier_tracking_url($order),
         'order_url'       => canonical_url('order-details.php?order=' . urlencode($orderNumber)),
         'review_url'      => canonical_url('my-reviews.php'),
 

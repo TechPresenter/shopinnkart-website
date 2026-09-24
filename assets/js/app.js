@@ -614,6 +614,63 @@
     // document and a keyboard user has to tab all the way back.
     const returnFocusTo = new WeakMap();
 
+    /* ----------------------------------------------------------------------
+       SIK.layers — one stack for every overlay on the page
+
+       The storefront's drawers and modals AND the admin's menus, tooltips,
+       popovers, modals, drawers and quick views (assets/js/admin.js) all push
+       here. It exists so Escape closes exactly ONE thing: the topmost layer.
+       A menu opened inside a drawer has to close the menu and leave the drawer
+       standing, and a per-component Escape listener can never get that right,
+       because each listener only knows about itself. There is one Escape
+       handler on the page, in boot() below, and it calls SIK.closeTop().
+
+       A handle is { el, close, type, lock, overlay }:
+         el       the overlay element; identity in the stack
+         close    what closeTop() calls — the component's own close function
+         lock     this layer holds body scroll still. Drawers and modals: yes.
+                  Menus, tooltips and popovers: no; the page may still scroll
+                  under them, and they close on scroll instead.
+         overlay  this layer shows the shared #sikOverlay scrim.
+       ---------------------------------------------------------------------- */
+    function layerPush(handle) {
+        if (!handle || !handle.el) return handle;
+        openLayers.push(handle);
+        if (handle.lock) document.body.classList.add('sik-no-scroll');
+        if (handle.overlay) ensureOverlay().classList.add('is-open');
+        return handle;
+    }
+
+    /**
+     * Remove every handle for this element and release only what nothing else
+     * is still holding. A non-locking layer (an admin menu) must never release
+     * the scroll lock a drawer underneath it owns, and must never release a
+     * lock it did not take — the admin sidebar sets `sik-no-scroll` itself,
+     * outside this stack.
+     */
+    function layerPop(elOrHandle) {
+        const el = (elOrHandle && elOrHandle.el) ? elOrHandle.el : elOrHandle;
+        if (!el) return;
+        const gone = openLayers.filter(l => l.el === el);
+        if (!gone.length) return;
+        openLayers = openLayers.filter(l => l.el !== el);
+        if (gone.some(l => l.lock) && !openLayers.some(l => l.lock)) {
+            document.body.classList.remove('sik-no-scroll');
+        }
+        if (gone.some(l => l.overlay) && !openLayers.some(l => l.overlay)) {
+            ensureOverlay().classList.remove('is-open');
+        }
+    }
+
+    SIK.layers = {
+        push: layerPush,
+        pop: layerPop,
+        /** The layer Escape would close, or null. */
+        top: function () { return openLayers.length ? openLayers[openLayers.length - 1] : null; },
+        count: function () { return openLayers.length; },
+        has: function (el) { return openLayers.some(l => l.el === el); }
+    };
+
     SIK.openDrawer = function (id) {
         const drawer = document.getElementById(id);
         if (!drawer) return;
@@ -630,11 +687,12 @@
         $$('[data-open-drawer="' + id + '"]').forEach(function (btn) {
             btn.setAttribute('aria-expanded', 'true');
         });
-        ensureOverlay().classList.add('is-open');
         drawer.classList.add('is-open');
         drawer.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('sik-no-scroll');
-        openLayers.push({ type: 'drawer', el: drawer });
+        layerPush({
+            type: 'drawer', el: drawer, lock: true, overlay: true,
+            close: function () { SIK.closeDrawer(drawer); }
+        });
         // Move focus in for keyboard users.
         const focusable = drawer.querySelector('button, [href], input, select, textarea');
         if (focusable) setTimeout(() => focusable.focus(), 120);
@@ -682,11 +740,7 @@
             drawer.removeEventListener('keydown', drawer._sikTrap);
             delete drawer._sikTrap;
         }
-        openLayers = openLayers.filter(l => l.el !== drawer);
-        if (!openLayers.length) {
-            ensureOverlay().classList.remove('is-open');
-            document.body.classList.remove('sik-no-scroll');
-        }
+        layerPop(drawer);
         const opener = returnFocusTo.get(drawer);
         if (opener && document.contains(opener)) opener.focus();
         returnFocusTo.delete(drawer);
@@ -701,8 +755,10 @@
         modal._openedAt = Date.now();
         modal.classList.add('is-open');
         modal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('sik-no-scroll');
-        openLayers.push({ type: 'modal', el: modal });
+        layerPush({
+            type: 'modal', el: modal, lock: true,
+            close: function () { SIK.closeModal(modal); }
+        });
     };
 
     SIK.closeModal = function (id) {
@@ -710,23 +766,27 @@
         if (!modal) return;
         modal.classList.remove('is-open');
         modal.setAttribute('aria-hidden', 'true');
-        openLayers = openLayers.filter(l => l.el !== modal);
-        if (!openLayers.length) {
-            ensureOverlay().classList.remove('is-open');
-            document.body.classList.remove('sik-no-scroll');
-        }
+        layerPop(modal);
     };
 
-    /** Close the most recently opened layer. */
+    /** Close the most recently opened layer, and only that one. */
     SIK.closeTop = function () {
         const layer = openLayers[openLayers.length - 1];
         if (!layer) return;
-        if (layer.type === 'drawer') SIK.closeDrawer(layer.el);
+        if (typeof layer.close === 'function') layer.close();
+        else if (layer.type === 'drawer') SIK.closeDrawer(layer.el);
         else SIK.closeModal(layer.el);
     };
 
     SIK.closeAll = function () {
-        while (openLayers.length) SIK.closeTop();
+        // A close() that fails to pop its own handle would spin this loop for
+        // ever, so a layer that does not go on its own is dropped by hand.
+        let guard = 0;
+        while (openLayers.length && guard++ < 50) {
+            const before = openLayers.length;
+            SIK.closeTop();
+            if (openLayers.length >= before) openLayers.pop();
+        }
     };
 
     /* ----------------------------------------------------------------------

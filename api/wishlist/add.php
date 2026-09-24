@@ -39,6 +39,13 @@ if (!$result['ok']) {
     json_error($result['message'], [], $status);
 }
 
+// wishlist_toggle() is a toggle: half of its successful calls are removals,
+// and counting those as saves would make the "most wished for" report a list
+// of the products people changed their minds about.
+if (!empty($result['added'])) {
+    analytics_track('add_to_wishlist', ['product_id' => request_int('product_id')]);
+}
+
 json_success($result['message'], [
     'added' => $result['added'],
     'count' => $result['count'],

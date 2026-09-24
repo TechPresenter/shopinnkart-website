@@ -133,6 +133,82 @@ function cart_line_ceiling(int $productId, ?int $variantId = null): int
     return max(0, min($stock, max(1, (int) $product['max_order_qty'])));
 }
 
+/**
+ * Units of one product sitting on the cart's OTHER lines.
+ *
+ * A product can legitimately be on more than one line at once: a combo's
+ * component line and a loose line of the same product are deliberately kept
+ * apart (see cart_add()). Stock and max_order_qty are limits on the ORDER,
+ * not on a line, and create_order() enforces them that way - summed per
+ * (product, variant) for stock and per product for the cap.
+ *
+ * A line that caps itself without looking at its siblings therefore builds a
+ * basket checkout will refuse, and the shopper is told "only 3 left" for a
+ * quantity the cart never showed them. Both numbers come back so each limit
+ * is measured the way create_order() measures it.
+ *
+ * @return array{product:int, variant:int}
+ */
+function cart_units_elsewhere(int $cartId, int $productId, ?int $variantId, int $exceptItemId = 0): array
+{
+    $row = Database::fetch(
+        'SELECT COALESCE(SUM(`quantity`), 0) AS product_units,
+                COALESCE(SUM(CASE WHEN (`variant_id` <=> :vid) THEN `quantity` ELSE 0 END), 0) AS variant_units
+           FROM `cart_items`
+          WHERE `cart_id` = :cid AND `product_id` = :pid AND `id` <> :except',
+        ['cid' => $cartId, 'pid' => $productId, 'vid' => $variantId, 'except' => $exceptItemId]
+    );
+
+    return [
+        'product' => (int) ($row['product_units'] ?? 0),
+        'variant' => (int) ($row['variant_units'] ?? 0),
+    ];
+}
+
+/**
+ * Lines the last cart_items() call had to reduce, so the page can say so.
+ *
+ * cart_items() reconciles a line against live stock and WRITES THE CLAMP BACK
+ * (see there for why). Reducing somebody's basket without telling them is the
+ * half of that fix that matters, and only a page can tell them - so the change
+ * is recorded here and the cart and the checkout read it back.
+ *
+ * Per request, not per session: every surface that renders a basket calls
+ * cart_items() in the same request it renders. A later call that changes
+ * nothing leaves the record alone, so reading the cart twice in one request
+ * does not swallow the notice.
+ *
+ * @param  array<int, array<string, mixed>>|null $record  written by cart_items() only
+ * @return array<int, array<string, mixed>>  [{item_id, product_id, name, from, to}, ...]
+ */
+function cart_adjustments(?array $record = null): array
+{
+    static $lines = [];
+
+    if ($record !== null) {
+        $lines = $record;
+    }
+
+    return $lines;
+}
+
+/** One sentence naming what changed, or '' when nothing did. */
+function cart_adjustment_message(): string
+{
+    $lines = cart_adjustments();
+    if ($lines === []) {
+        return '';
+    }
+
+    $parts = [];
+    foreach ($lines as $line) {
+        $parts[] = $line['name'] . ' (' . (int) $line['from'] . ' → ' . (int) $line['to'] . ')';
+    }
+
+    return 'Stock changed while ' . (count($parts) === 1 ? 'this was' : 'these were')
+        . ' in your cart, so the quantity was reduced: ' . implode('; ', $parts) . '.';
+}
+
 /** Fold a guest cart into the customer's cart at login. */
 function cart_merge_guest_into_user(string $sessionId, int $userId): void
 {
@@ -161,10 +237,16 @@ function cart_merge_guest_into_user(string $sessionId, int $userId): void
             $guestItems = Database::fetchAll('SELECT * FROM `cart_items` WHERE `cart_id` = :id', ['id' => (int) $guestCart['id']]);
 
             foreach ($guestItems as $item) {
-                $existing = Database::fetch(
+                // Combo component lines never merge, in either direction: a
+                // set is priced from its own lines, so folding a loose unit
+                // into one (or a component into a loose line) quietly changes
+                // what the set is - the same defect cart_add() had. A guest
+                // combo line is carried across whole, keeping its group.
+                $existing = $item['combo_id'] !== null ? null : Database::fetch(
                     'SELECT * FROM `cart_items`
                      WHERE `cart_id` = :cid AND `product_id` = :pid
-                       AND (`variant_id` <=> :vid) LIMIT 1',
+                       AND (`variant_id` <=> :vid) AND `combo_id` IS NULL
+                     ORDER BY `id` LIMIT 1',
                     ['cid' => (int) $userCart['id'], 'pid' => (int) $item['product_id'], 'vid' => $item['variant_id']]
                 );
 
@@ -263,17 +345,47 @@ function cart_add(int $productId, ?int $variantId = null, int $quantity = 1): ar
         return ['ok' => false, 'message' => 'Please enable cookies to use the cart.', 'item_id' => null];
     }
 
+    // A loose add must never join a COMBO component line. The lookup matched
+    // on (cart_id, product_id, variant_id) alone, so "add one more" of a
+    // product that is also inside a set grew the SET's component instead: the
+    // set silently gained a unit it was not priced for, and removing the combo
+    // then took the shopper's loose unit away with it. A combo line is only
+    // ever written by cart_add_combo() and cart_remove_combo().
     $existing = Database::fetch(
-        'SELECT * FROM `cart_items` WHERE `cart_id` = :cid AND `product_id` = :pid AND (`variant_id` <=> :vid) LIMIT 1',
+        'SELECT * FROM `cart_items`
+          WHERE `cart_id` = :cid AND `product_id` = :pid AND (`variant_id` <=> :vid)
+            AND `combo_id` IS NULL
+          ORDER BY `id` LIMIT 1',
         ['cid' => $cartId, 'pid' => $productId, 'vid' => $variantId]
     );
 
+    // Stock and the per-order cap belong to the ORDER, and the loose line is
+    // now kept apart from the combo's - so this line has to be capped against
+    // what the cart's other lines already hold. Capping it on its own builds a
+    // basket create_order() refuses, for a quantity the cart never showed.
+    $elsewhere   = cart_units_elsewhere($cartId, $productId, $variantId, (int) ($existing['id'] ?? 0));
     $maxPerOrder = max(1, (int) $product['max_order_qty']);
+    $stockRoom   = $availableStock - $elsewhere['variant'];
+    $capRoom     = $maxPerOrder - $elsewhere['product'];
+
     $requested = ($existing !== null ? (int) $existing['quantity'] : 0) + $quantity;
-    $capped = min($requested, $availableStock, $maxPerOrder);
+    $capped    = min($requested, $stockRoom, $capRoom);
+
+    if ($capped < 1) {
+        // Everything this product is allowed is already in the basket, on the
+        // combo's line or on another variant's. Saying so beats adding nothing
+        // and reporting success.
+        return [
+            'ok'      => false,
+            'message' => $stockRoom <= $capRoom
+                ? 'Your cart already holds all ' . $availableStock . ' we have in stock.'
+                : 'Your cart already holds the ' . $maxPerOrder . ' we can sell in one order.',
+            'item_id' => null,
+        ];
+    }
 
     if ($capped < $requested) {
-        $message = $availableStock < $maxPerOrder
+        $message = $stockRoom <= $capRoom
             ? 'Only ' . $availableStock . ' left in stock - quantity adjusted.'
             : 'You can order up to ' . $maxPerOrder . ' of this item.';
     } else {
@@ -290,6 +402,15 @@ function cart_add(int $productId, ?int $variantId = null, int $quantity = 1): ar
             'variant_id' => $variantId,
             'quantity'   => $capped,
         ]);
+    }
+
+    // Counted here, where the row is written, rather than in the browser: an
+    // ad blocker cannot hide this and a console cannot invent it. The quantity
+    // recorded is what actually went in, which is not what was asked for when
+    // stock or max_order_qty capped it above.
+    $added = $capped - ($existing !== null ? (int) $existing['quantity'] : 0);
+    if ($added > 0) {
+        analytics_track('add_to_cart', ['product_id' => $productId, 'qty' => $added]);
     }
 
     return ['ok' => true, 'message' => $message, 'item_id' => $itemId];
@@ -309,6 +430,10 @@ function cart_update(int $itemId, int $quantity): array
 
     if ($quantity <= 0) {
         Database::delete('cart_items', '`id` = :id AND `cart_id` = :cid', ['id' => $itemId, 'cid' => $cartId]);
+        analytics_track('remove_from_cart', [
+            'product_id' => (int) $item['product_id'],
+            'qty'        => (int) $item['quantity'],
+        ]);
         return ['ok' => true, 'message' => 'Item removed.'];
     }
 
@@ -324,13 +449,35 @@ function cart_update(int $itemId, int $quantity): array
         $stock = $variant !== null ? (int) $variant['stock'] : 0;
     }
 
-    $capped = min($quantity, max(0, $stock), max(1, (int) $product['max_order_qty']));
+    // Same reckoning as cart_add(): stock and the per-order cap are limits on
+    // the order, so what the cart's other lines hold of this product counts
+    // against this one.
+    $elsewhere   = cart_units_elsewhere($cartId, (int) $item['product_id'],
+        $item['variant_id'] === null ? null : (int) $item['variant_id'], $itemId);
+    $maxPerOrder = max(1, (int) $product['max_order_qty']);
+    $stockRoom   = max(0, $stock - $elsewhere['variant']);
+    $capRoom     = max(0, $maxPerOrder - $elsewhere['product']);
+
+    $capped = min($quantity, $stockRoom, $capRoom);
     if ($capped <= 0) {
         Database::delete('cart_items', '`id` = :id', ['id' => $itemId]);
-        return ['ok' => false, 'message' => 'That item is now out of stock and has been removed.'];
+        return ['ok' => false, 'message' => $stockRoom <= $capRoom
+            ? 'That item is now out of stock and has been removed.'
+            : 'Your cart already holds the ' . $maxPerOrder . ' of that we can sell in one order, so this line was removed.'];
     }
 
     Database::update('cart_items', ['quantity' => $capped], '`id` = :id', ['id' => $itemId]);
+
+    // A quantity change is an add or a removal, whichever direction it went,
+    // and the size of the change is what is counted - not the new total, which
+    // would make one shopper editing a line look like a queue of buyers.
+    $delta = $capped - (int) $item['quantity'];
+    if ($delta !== 0) {
+        analytics_track($delta > 0 ? 'add_to_cart' : 'remove_from_cart', [
+            'product_id' => (int) $item['product_id'],
+            'qty'        => abs($delta),
+        ]);
+    }
 
     return [
         'ok'      => true,
@@ -341,10 +488,31 @@ function cart_update(int $itemId, int $quantity): array
 
 function cart_remove(int $itemId): bool
 {
-    return Database::delete('cart_items', '`id` = :id AND `cart_id` = :cid', [
+    $cartId = cart_id();
+
+    // Read before the delete, and only when the store is counting: after the
+    // DELETE there is no way to say WHICH product was abandoned, which is the
+    // entire value of this event.
+    $item = analytics_library()
+        ? Database::fetch(
+            'SELECT `product_id`, `quantity` FROM `cart_items` WHERE `id` = :id AND `cart_id` = :cid LIMIT 1',
+            ['id' => $itemId, 'cid' => $cartId]
+        )
+        : null;
+
+    $removed = Database::delete('cart_items', '`id` = :id AND `cart_id` = :cid', [
         'id'  => $itemId,
-        'cid' => cart_id(),
+        'cid' => $cartId,
     ]) > 0;
+
+    if ($removed && $item !== null) {
+        analytics_track('remove_from_cart', [
+            'product_id' => (int) $item['product_id'],
+            'qty'        => (int) $item['quantity'],
+        ]);
+    }
+
+    return $removed;
 }
 
 function cart_clear(): void
@@ -359,6 +527,20 @@ function cart_clear(): void
 /**
  * Every cart line with live product data and freshly resolved prices.
  * Lines whose product vanished or went inactive are dropped automatically.
+ *
+ * ONE TRUTH. A line used to be clamped to live stock for DISPLAY only, while
+ * create_order() read the stored quantity - so the cart and the till disagreed
+ * in both directions: stock falling to 3 under a stored 8 showed 3 and then
+ * refused the order for 8, and stock recovering after the shopper had been
+ * shown 3 charged them for 8. The clamp is written back here, so the cart, the
+ * drawer, the API, the checkout summary and the order itself all read the same
+ * number. cart.php already did exactly this for its own page; doing it in the
+ * one place every surface goes through is what makes it true for a shopper who
+ * goes straight from a product page to checkout.
+ *
+ * Whatever is reduced is recorded in cart_adjustments() so the page can TELL
+ * the shopper their basket changed - a silent reduction is the thing this was
+ * meant to prevent, not a smaller bill.
  */
 function cart_items(): array
 {
@@ -380,7 +562,8 @@ function cart_items(): array
         ['cid' => $cartId]
     );
 
-    $items = [];
+    $items    = [];
+    $adjusted = [];
     foreach ($rows as $row) {
         $variant = null;
         if ($row['variant_id'] !== null) {
@@ -397,9 +580,26 @@ function cart_items(): array
             continue;
         }
 
-        $pricing = product_effective_price($row, $variant);
-        $stock = $variant !== null ? (int) $variant['stock'] : (int) $row['stock'];
-        $quantity = min((int) $row['quantity'], max(0, $stock));
+        $pricing  = product_effective_price($row, $variant);
+        $stock    = $variant !== null ? (int) $variant['stock'] : (int) $row['stock'];
+        $stored   = (int) $row['quantity'];
+        $quantity = min($stored, max(0, $stock));
+
+        // A line with stock left is written back to what the shelf can cover,
+        // so the stored quantity IS what was shown. A line with NO stock left
+        // is not written down to zero - zero is not a cart line, and deleting
+        // it would take the shopper's item away without a word. It renders at
+        // 0, blocks checkout and says why (cart.php's out-of-stock alert).
+        if ($quantity > 0 && $quantity < $stored) {
+            Database::update('cart_items', ['quantity' => $quantity], '`id` = :id', ['id' => (int) $row['item_id']]);
+            $adjusted[] = [
+                'item_id'    => (int) $row['item_id'],
+                'product_id' => (int) $row['id'],
+                'name'       => (string) $row['name'],
+                'from'       => $stored,
+                'to'         => $quantity,
+            ];
+        }
 
         $taxRate = (float) $row['tax_rate'];
         $lineSubtotal = money_round($pricing['price'] * $quantity);
@@ -421,7 +621,10 @@ function cart_items(): array
             'image'         => $variant !== null && !empty($variant['image']) ? $variant['image'] : $row['main_image'],
             'image_url'     => img_url($variant !== null && !empty($variant['image']) ? $variant['image'] : $row['main_image']),
             'quantity'      => $quantity,
-            'requested_qty' => (int) $row['quantity'],
+            // What the row held BEFORE this reconcile, so a page can show the
+            // before-and-after. Equal to `quantity` on every request after the
+            // one that moved it - the shopper is told once, not forever.
+            'requested_qty' => $stored,
             'mrp'           => $pricing['mrp'],
             'price'         => $pricing['price'],
             'discount'      => $pricing['discount'],
@@ -437,6 +640,13 @@ function cart_items(): array
             'mrp_display'   => money($pricing['mrp']),
             'subtotal_display' => money($lineSubtotal),
         ];
+    }
+
+    // Only when something actually moved: a second cart_items() in the same
+    // request (api/cart/coupon.php does two) must not wipe the notice the
+    // first one earned.
+    if ($adjusted !== []) {
+        cart_adjustments($adjusted);
     }
 
     return $items;
@@ -1248,6 +1458,14 @@ function cart_apply_coupon(string $code): array
     // an AJAX caller that reads cart_totals() in THIS request would
     // otherwise be handed the discount from before the coupon was applied.
     cart_row(true);
+
+    // The label is the store's own coupon code, never anything the shopper
+    // typed that is not a code we issued - validate_coupon() has already
+    // refused everything else by this point.
+    analytics_track('coupon_apply', [
+        'label' => (string) $result['coupon']['code'],
+        'value' => (float) $result['discount'],
+    ]);
 
     return ['ok' => true, 'message' => 'Coupon "' . $result['coupon']['code'] . '" applied.', 'discount' => $result['discount']];
 }
@@ -2120,6 +2338,11 @@ function cart_add_combo(int $comboId, int $quantity = 1): array
 
     cache_bust();
 
+    // After the transaction, never inside it: an analytics INSERT in there
+    // would hold the cart row locks for as long as the counter takes, and a
+    // rollback would silently drop the event with the sets it is counting.
+    analytics_track('add_to_cart', ['combo_id' => $comboId, 'qty' => $quantity]);
+
     return [
         'ok'      => true,
         'message' => $quantity > 1
@@ -2138,12 +2361,25 @@ function cart_remove_combo(string $group): bool
         return false;
     }
 
+    // Which combo this group is, read before the rows go. Only when the store
+    // is counting: otherwise removing a set costs a query for nothing.
+    $comboId = analytics_library()
+        ? (int) Database::fetchColumn(
+            'SELECT `combo_id` FROM `cart_items` WHERE `cart_id` = :cid AND `combo_group` = :g LIMIT 1',
+            ['cid' => $cartId, 'g' => $group]
+        )
+        : 0;
+
     $removed = Database::delete(
         'cart_items',
         '`cart_id` = :cid AND `combo_group` = :g',
         ['cid' => $cartId, 'g' => $group]
     );
     cache_bust();
+
+    if ($removed > 0 && $comboId > 0) {
+        analytics_track('remove_from_cart', ['combo_id' => $comboId, 'qty' => 1]);
+    }
 
     return $removed > 0;
 }

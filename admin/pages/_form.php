@@ -56,6 +56,11 @@ $isSystem = (int) ($cmsPage['is_system'] ?? 0) === 1;
                             <?php else: ?>
                                 <span class="sik-help">Leave blank to build it from the title. The page lives at /page/&lt;slug&gt;.</span>
                             <?php endif; ?>
+                            <?php if (!$isSystem) {
+                                /* Offers to keep the current URL alive as a 301 when the
+                                   slug changes. Renders nothing on a create. */
+                                seo_slug_keep_checkbox('page', $isEdit ? (string) ($cmsPage['slug'] ?? '') : '');
+                            } ?>
                         </div>
                     </div>
 
@@ -120,6 +125,8 @@ $isSystem = (int) ($cmsPage['is_system'] ?? 0) === 1;
                             : url(),
                         'title_from'       => 'title',
                         'description_from' => 'content',
+                        'type'             => 'page',
+                        'id'               => $isEdit ? (int) ($cmsPage['id'] ?? 0) : 0,
                     ]);
                     ?>
                     <?php if (isset($errors['meta_title'])): ?>

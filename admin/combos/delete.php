@@ -57,6 +57,9 @@ $cartLines = (int) Database::fetchColumn(
 
 // combo_items and combo_images cascade from combos, so one delete is enough.
 Database::delete('combos', '`id` = :id', ['id' => $id]);
+// The record is gone, so its extended SEO row has nothing to describe.
+seo_entity_meta_delete('combo', $id);
+
 
 // The one child the cascade cannot reach - see the header note on the id a
 // later combo may inherit. The component lines stay; they stop being a set.

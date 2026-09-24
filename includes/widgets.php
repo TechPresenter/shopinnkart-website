@@ -105,6 +105,66 @@ function render_widget(array $widget, array $context = []): string
 //  Shared chrome
 // ===========================================================================
 
+/**
+ * The real pixel size of an uploaded image, for the width/height attributes.
+ *
+ * Hard-coded attributes are a promise about an image an operator chooses,
+ * and the two disagree the moment somebody uploads art at a different
+ * shape. The hero's CSS now pins its box to the ratio the MARKUP declares
+ * (see .sik-hero__img in app.css), so a wrong number here is no longer a
+ * shift on decode - it is a crop. Reading the file gives the box the right
+ * shape from the first paint, which costs one stat and one header read,
+ * cached per request.
+ *
+ * The fallback is used for a remote URL, a missing file and anything
+ * getimagesize() cannot read, so the attributes are never absent.
+ *
+ * @return array{0:int,1:int}
+ */
+function widget_img_dims(?string $relative, int $fallbackW, int $fallbackH): array
+{
+    static $cache = [];
+
+    $key = (string) $relative;
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+
+    $dims = [$fallbackW, $fallbackH];
+    if ($key !== '' && stripos($key, 'http') !== 0) {
+        $path = ROOT_PATH . '/' . ltrim(strtr($key, DIRECTORY_SEPARATOR, '/'), '/');
+
+        if (is_file($path) && $size = @getimagesize($path)) {
+            if ($size[0] > 0 && $size[1] > 0) {
+                $dims = [(int) $size[0], (int) $size[1]];
+            }
+        } elseif (is_file($path) && strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'svg') {
+            // getimagesize() does not read SVG, and the art this store ships
+            // for the hero IS svg - so without this branch the fallback was
+            // used for the one case it was meant to fix. Only the opening tag
+            // is read; these files run to hundreds of kilobytes of path data.
+            $head = (string) @file_get_contents($path, false, null, 0, 1024);
+            if (preg_match('/<svg\b[^>]*>/i', $head, $tag) === 1) {
+                $w = $h = 0;
+                // A width in px is what the browser uses for the intrinsic
+                // ratio; a percentage or an em is not, so viewBox wins there.
+                if (preg_match('/\bwidth="([0-9.]+)(?:px)?"/i', $tag[0], $m)) { $w = (float) $m[1]; }
+                if (preg_match('/\bheight="([0-9.]+)(?:px)?"/i', $tag[0], $m)) { $h = (float) $m[1]; }
+                if (($w <= 0 || $h <= 0)
+                    && preg_match('/\bviewBox="\s*[-0-9.]+[,\s]+[-0-9.]+[,\s]+([0-9.]+)[,\s]+([0-9.]+)/i', $tag[0], $m)) {
+                    $w = (float) $m[1];
+                    $h = (float) $m[2];
+                }
+                if ($w > 0 && $h > 0) {
+                    $dims = [(int) round($w), (int) round($h)];
+                }
+            }
+        }
+    }
+
+    return $cache[$key] = $dims;
+}
+
 /** Section wrapper classes derived from the widget's styling fields. */
 /**
  * @param string $fallbackStyle A widget's own default colouring. Emitted first
@@ -883,8 +943,9 @@ function widget_hero(array $widget): void
                                         <?php if (!empty($slide['mobile_image']) && !banner_image_is_stock((string) $slide['mobile_image'])): ?>
                                             <source media="(max-width: 767px)" srcset="<?= e(img_url($slide['mobile_image'])) ?>">
                                         <?php endif; ?>
+                                        <?php [$heroW, $heroH] = widget_img_dims($slide['desktop_image'] ?? null, 860, 680); ?>
                                         <img class="sik-hero__img" src="<?= e(img_url($slide['desktop_image'])) ?>"
-                                             alt="<?= e($slide['title']) ?>" width="860" height="680"
+                                             alt="<?= e($slide['title']) ?>" width="<?= $heroW ?>" height="<?= $heroH ?>"
                                              <?= $index === 0 ? 'fetchpriority="high"' : 'loading="lazy"' ?> decoding="async">
                                     </picture>
                                 <?php elseif ($tiles !== []): ?>

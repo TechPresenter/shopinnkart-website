@@ -22,6 +22,9 @@ if (!defined('SIK_BOOTSTRAPPED')) {
 }
 
 require_once ADMIN_PATH . '/includes/marketing.php';
+// SEO_EDITOR_FIELDS and seo_editor_input(): the combo form posts the same nine
+// SEO fields as every other entity form now that `combos` has the columns.
+require_once ADMIN_PATH . '/includes/seo-editor.php';
 
 // ===========================================================================
 //  Option lists
@@ -87,9 +90,11 @@ function combo_form_defaults(): array
         // A new combo cannot be sellable yet - there is nothing in it - so it
         // opens as a draft rather than as a status the save would refuse.
         'status'           => 'draft',
-        'meta_title'       => '',
-        'meta_description' => '',
-        'og_image'         => '',
+        // The nine the shared SEO editor owns. combos used to carry only three
+        // of them, which is why this form had a hand-written SEO card; the rest
+        // arrived with the per-entity SEO migration, so it uses seo_editor()
+        // like the other five entity forms now.
+        ...array_fill_keys(SEO_EDITOR_FIELDS, ''),
         'items'            => [],
     ];
 }
@@ -118,9 +123,16 @@ function combo_form_input(): array
         'end_date'         => $text('end_date'),
         'sort_order'       => $text('sort_order'),
         'status'           => $text('status'),
-        'meta_title'       => $text('meta_title'),
-        'meta_description' => $text('meta_description'),
-        'og_image'         => $text('og_image'),
+        // seo_editor_input() reads the nine fields the shared panel posts,
+        // already trimmed, null-when-blank, with robots validated against the
+        // allowlist and the custom JSON-LD rejected unless it parses. Reading
+        // them by hand here is exactly how this form drifted from the other
+        // five the first time. Nulls become '' because everything in this
+        // array is a string until the payload converts it back.
+        ...array_map(
+            static fn ($value): string => (string) ($value ?? ''),
+            seo_editor_input()
+        ),
     ];
 }
 
@@ -512,9 +524,11 @@ function combo_form_save(?int $id): array
     $input  = combo_form_input();
     $picked = combo_form_picked();
 
+    // `slug` joins the three it already read: it is what decides whether the
+    // slug really moved, and so whether /combo/<old> needs a 301 to survive.
     $current = $id !== null
-        ? Database::fetch('SELECT `image`, `banner`, `sold_count` FROM `combos` WHERE `id` = :id', ['id' => $id])
-        : ['image' => null, 'banner' => null, 'sold_count' => 0];
+        ? Database::fetch('SELECT `image`, `banner`, `sold_count`, `slug` FROM `combos` WHERE `id` = :id', ['id' => $id])
+        : ['image' => null, 'banner' => null, 'sold_count' => 0, 'slug' => ''];
 
     if ($current === null) {
         return ['ok' => false, 'id' => (int) $id, 'errors' => ['name' => 'That combo no longer exists.']];
@@ -619,8 +633,15 @@ function combo_form_save(?int $id): array
         }
     }
 
-    if ($v->fails()) {
-        return ['ok' => false, 'id' => (int) $id, 'errors' => $v->errors()];
+    // A typed slug that another combo holds, or that is a reserved address, is
+    // refused and named. combo_form_slug() below still quietly numbers a slug
+    // DERIVED from the name, which is the right behaviour for something the
+    // admin did not choose.
+    $slugErrors = [];
+    seo_editor_slug_check('combo', $input['slug'], $id, $slugErrors);
+
+    if ($v->fails() || $slugErrors !== []) {
+        return ['ok' => false, 'id' => (int) $id, 'errors' => $v->errors() + $slugErrors];
     }
 
     // Images only move once the rest of the form is known good, so a rejected
@@ -671,10 +692,20 @@ function combo_form_save(?int $id): array
         'end_date'         => $end,
         'sort_order'       => (int) $input['sort_order'],
         'status'           => $input['status'],
-        'meta_title'       => $blankToNull($input['meta_title']),
-        'meta_description' => $blankToNull($input['meta_description']),
-        'og_image'         => $blankToNull($input['og_image']),
     ];
+
+    // The nine SEO columns, in one place rather than nine lines that can drift.
+    foreach (SEO_EDITOR_FIELDS as $seoColumn) {
+        $payload[$seoColumn] = $blankToNull((string) ($input[$seoColumn] ?? ''));
+    }
+
+    // The SEO panel's extended fields, staged before the write so a refused
+    // code field can still fail the save.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    if ($seoErrors !== []) {
+        return ['ok' => false, 'id' => (int) $id, 'errors' => $seoErrors];
+    }
 
     $comboId = Database::transaction(static function () use ($id, $payload, $picked): int {
         if ($id === null) {
@@ -707,6 +738,11 @@ function combo_form_save(?int $id): array
     });
 
     combo_form_save_gallery($comboId, $gallery);
+
+    seo_entity_meta_save('combo', $comboId, $seoMeta);
+    // A renamed combo keeps its old /combo/<slug> working as a 301 unless the
+    // admin unticked the box beside the slug field.
+    seo_editor_slug_change('combo', (string) ($current['slug'] ?? ''), (string) $payload['slug']);
 
     // Outside the transaction, and after the items exist: the stored mrp and
     // price are a cache of a computation over the components, so nothing may

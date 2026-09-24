@@ -28,28 +28,108 @@
    the rupee sign. Shipping only `latin` would have left every price falling
    back to the system font for its first glyph — "₹399" set in two typefaces.
 
-   font-display: swap - text paints immediately in the fallback and reflows once
-   the file lands, rather than holding the page blank.
+   ---- font-display: optional, and why it is not swap ---------------------
 
-   That swap DOES still shift layout, and this comment used to claim it did not:
-   there is no size-adjust and there are no ascent/descent/line-gap overrides on
-   any face below, so Plus Jakarta Sans replaces the system fallback at its own
-   metrics and re-wraps whatever the difference re-wraps. Measured in headless
-   Edge with a PerformanceObserver on layout-shift, cold and warm cache alike:
-   shop.php 0.019 at 1366px (the listing body lifts 24px) and search.php 0.037
-   at 390px (the pill row re-wraps); blocking the .woff2 files takes both to
-   0.000, which is what pins the cause on the swap and nothing else. Home,
-   category and product pages are all under 0.002 and do not need anything.
+   swap paints the fallback immediately and re-lays the text out when the file
+   lands. The metric overrides below make that re-layout very nearly free, but
+   NOT free: size-adjust equalises the AVERAGE advance of a sample string, and
+   any line that happens to sit within a few tenths of a percent of its wrap
+   point still re-wraps when the per-glyph advances change. That is not a
+   tuning error, it is the shape of the problem — two different typefaces
+   cannot break every line in the same place.
 
-   Fixing it means measuring the real metrics of each face against the local
-   fallback and declaring size-adjust / ascent-override / descent-override per
-   face - a design-system change with its own before/after, not a guess.
+   Measured with both woff2 responses held back 1200ms (CDP Fetch domain) so
+   the swap is FORCED to land after first paint, which is what a real network
+   does and what localhost hides; headless Edge, a PerformanceObserver on
+   layout-shift installed through Page.addScriptToEvaluateOnNewDocument — i.e.
+   genuinely before the first byte of the document is parsed — three cold runs
+   each, cache disabled:
+
+       shop.php    1366   0.0092   .sik-listing__sub goes from two lines to
+                                   one, the listing body lifts 23.8px
+       shop.php     390   0.0009   a card title un-wraps, .sik-card__foot
+                                   drops 21.5px
+       product.php 1366   0.0007   the announce promo re-measures
+       index.php   1366   0.0006   the same announce promo
+       search.php   390   0.0002   the "Clear all" chip changes width
+
+   optional gives the face a ~100ms block period and NO swap period: the file
+   is either in hand in time for first paint and used for that whole page
+   view, or it is not used on that view at all (and is cached for the next
+   one). Nothing re-wraps after paint, so the shift cannot occur — every
+   figure above is 0.0000 under the same forced 1200ms delay, and the natural
+   localhost load, where the preload wins the race, renders in Plus Jakarta
+   Sans and also measures 0.0000. (The one entry left on index.php at 1366
+   afterwards, 0.00015, is the hero carousel advancing between slides of
+   different heights, not the font — section 8's .sik-hero__slide.)
+
+   The cost is a first view, on a slow enough connection, that reads in the
+   fallback. Which is exactly what the overrides below are for.
+
+   ---- Why the faces below carry metric overrides ------------------------
+
+   Under `optional` the page renders in ONE of the two fonts for its whole
+   life, so the two have to lay out the same — otherwise the store is a
+   different shape depending on how the visitor's connection went. Each face
+   therefore declares the metrics of the font it stands in for, measured
+   rather than guessed: rendered at 1000px in a headless page, advance width
+   compared against the fallback stack and the baseline read off a zero-size
+   inline box (scratchpad/left2-storefront/metrics.html re-runs it):
+
+       Segoe UI (= what `ui-sans-serif`/`system-ui` resolve to on Windows,
+       and the first installed name in the stack elsewhere):
+           ascent 107.9%   descent 25.1%   line-gap 0%   line box 133%
+           x-height 50.0%  cap-height 70.0%
+       Plus Jakarta Sans as shipped:
+           ascent 103.8%   descent 23.7%   line-gap 0%   line box 127.5%
+           x-height 53.6%  cap-height 74.5%
+
+   ascent-override / descent-override / line-gap-override are divided by that
+   face's size-adjust on purpose: Blink re-scales an explicit override by
+   size-adjust, so 108% written literally lands as 102%. The values below are
+   the ones that COME OUT at 107.9 / 25.1 / 0 once size-adjust has been
+   applied — verified by measuring the adjusted faces back, not by reading the
+   spec.
+
+   FIVE faces per subset instead of one 400-800 face, because the width ratio
+   is not constant across the weight axis: Segoe UI only ships Regular,
+   Semibold, Bold and Black, so 500 and 600 render identically in the fallback
+   while Plus Jakarta Sans interpolates them, and a single size-adjust that
+   fixed 400 would leave 800 out by 7%. The bands are tiled rather than pinned
+   to the five design weights so nothing SNAPS: admin.css asks for 650, which
+   lands in the 551-650 band and still renders at 650, with the size-adjust of
+   the neighbouring design weight. All five bands point at the same two files,
+   so this is still two downloads.
+
+   The size-adjust does mean the store renders Plus Jakarta Sans a few percent
+   off its nominal size. That is the point of the descriptor and not a
+   compromise: Plus Jakarta Sans has a much larger x-height than Segoe UI, so
+   at 94.9% its x-height is 50.9% of the font size against Segoe UI's 50.0% —
+   the two LOOK the same size, which is what keeps a fallback view and a
+   webfont view the same page. It is also how a probe can tell which one is on
+   screen: `height: 100ex` at `font-size: 1000px` measures 508.6px when Plus
+   Jakarta Sans is being painted and exactly 500px when it is not, where
+   document.fonts.check() cannot tell them apart (under `optional` a face that
+   missed its deadline is loaded but unused).
+
+   The preload that goes with this lives in includes/header.php, in <head>
+   ahead of the stylesheets, and deliberately links the same unversioned URL
+   these rules request. It is not decoration under `optional`: it is what wins
+   the 100ms block period, and therefore what decides whether the store
+   renders in its own typeface at all.
    -------------------------------------------------------------------------- */
+
+/* Band 1 of 5 — the 400 end. size-adjust 94.883% is Segoe UI's advance width
+   for a 151-character sample divided by Plus Jakarta Sans's, at weight 400. */
 @font-face {
     font-family: "Plus Jakarta Sans";
     font-style: normal;
-    font-weight: 400 800;
-    font-display: swap;
+    font-weight: 400 450;
+    font-display: optional;
+    size-adjust: 94.883%;
+    ascent-override: 113.719%;
+    descent-override: 26.454%;
+    line-gap-override: 0%;
     src: url("../fonts/plus-jakarta-sans-latin-ext.woff2") format("woff2");
     unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
                    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
@@ -58,8 +138,134 @@
 @font-face {
     font-family: "Plus Jakarta Sans";
     font-style: normal;
-    font-weight: 400 800;
-    font-display: swap;
+    font-weight: 400 450;
+    font-display: optional;
+    size-adjust: 94.883%;
+    ascent-override: 113.719%;
+    descent-override: 26.454%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Band 2 of 5 — --fw-medium (500). Segoe UI renders 500 as Semibold. */
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 451 550;
+    font-display: optional;
+    size-adjust: 96.471%;
+    ascent-override: 111.847%;
+    descent-override: 26.018%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                   U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                   U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 451 550;
+    font-display: optional;
+    size-adjust: 96.471%;
+    ascent-override: 111.847%;
+    descent-override: 26.018%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Band 3 of 5 — --fw-semibold (600), the most used weight in the whole
+   stylesheet, and the band admin.css's 650 lands in. */
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 551 650;
+    font-display: optional;
+    size-adjust: 95.559%;
+    ascent-override: 112.914%;
+    descent-override: 26.266%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                   U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                   U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 551 650;
+    font-display: optional;
+    size-adjust: 95.559%;
+    ascent-override: 112.914%;
+    descent-override: 26.266%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Band 4 of 5 — --fw-bold (700), and where `font-weight: bold` resolves. */
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 651 750;
+    font-display: optional;
+    size-adjust: 98.508%;
+    ascent-override: 109.534%;
+    descent-override: 25.480%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                   U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                   U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 651 750;
+    font-display: optional;
+    size-adjust: 98.508%;
+    ascent-override: 109.534%;
+    descent-override: 25.480%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Band 5 of 5 — --fw-black (800). The one band where Plus Jakarta Sans is
+   NARROWER than the fallback, because Segoe UI answers 800 with Black. */
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 751 800;
+    font-display: optional;
+    size-adjust: 101.919%;
+    ascent-override: 105.869%;
+    descent-override: 24.628%;
+    line-gap-override: 0%;
+    src: url("../fonts/plus-jakarta-sans-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                   U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                   U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Plus Jakarta Sans";
+    font-style: normal;
+    font-weight: 751 800;
+    font-display: optional;
+    size-adjust: 101.919%;
+    ascent-override: 105.869%;
+    descent-override: 24.628%;
+    line-gap-override: 0%;
     src: url("../fonts/plus-jakarta-sans-latin.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
                    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
@@ -69,12 +275,35 @@
 /* The display serif. One style only - italic - because that is the only way
    it is used: the festive flourish above a heading. Two subsets, the same
    split as the sans, so a Latin-only page downloads 38 KB and not 62.
-   Self-hosted for the same reasons as the sans above. */
+   Self-hosted for the same reasons as the sans above.
+
+   Its fallback is Georgia italic, and the two do NOT get the size-adjust
+   treatment the sans gets: .sik-flourish asks for 600, Georgia has no 600, so
+   the browser answers with Georgia Bold Italic — which is 18.7% wider than
+   Playfair at 600 (measured, not quoted: size-adjust: 117.863% is what it
+   would take). Matching that would blow the flourish up by a fifth, and the
+   flourish is one or two words on a line of its own, so a width difference
+   re-wraps nothing. What IS matched is the vertical metric, which is what
+   moved the hero: Georgia italic is 91.7% / 21.9% against Playfair's 108.2% /
+   25.1%, so the line box went from 113.6% to 133.3% of the font size when the
+   file landed and every block under the flourish dropped. The overrides below
+   put Playfair's line box exactly on Georgia's, with no size-adjust, so the
+   glyphs keep their designed size and the box around them stops moving.
+
+   font-display: optional for the same reason as the sans, and it matters more
+   here: Playfair is deliberately NOT preloaded (38 KB for one decorative line
+   is not worth it on every page), so it is discovered late and a `swap` would
+   land well after first paint on every cold view. Under `optional` a cold
+   view sets the flourish in Georgia italic — same line box, same position —
+   and the next view, with the file cached, sets it in Playfair. */
 @font-face {
     font-family: "Playfair Display";
     font-style: italic;
     font-weight: 500 700;
-    font-display: swap;
+    font-display: optional;
+    ascent-override: 91.7%;
+    descent-override: 21.9%;
+    line-gap-override: 0%;
     src: url("../fonts/playfair-display-italic-latin-ext.woff2") format("woff2");
     unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
                    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
@@ -85,7 +314,10 @@
     font-family: "Playfair Display";
     font-style: italic;
     font-weight: 500 700;
-    font-display: swap;
+    font-display: optional;
+    ascent-override: 91.7%;
+    descent-override: 21.9%;
+    line-gap-override: 0%;
     src: url("../fonts/playfair-display-italic-latin.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
                    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -4637,6 +4869,11 @@ body.sik-has-bottomnav { padding-bottom: var(--sik-bottomnav-space); }
     background: var(--sik-grad-wine);
     color: #fff;
     box-shadow: var(--sik-shadow-lift);
+    /* One cell, every slide in it: the frame is always as tall as the TALLEST
+       slide, so an autoplay advance cannot move the page. The measurement
+       behind this is on .sik-hero__slide below. */
+    display: grid;
+    grid-template-areas: "sik-hero-slide";
 }
 /* Two pools of colour bleeding in from opposite corners — the depth in the
    panel is light, not another gradient. One element, painted once. */
@@ -4661,8 +4898,49 @@ body.sik-has-bottomnav { padding-bottom: var(--sik-bottomnav-space); }
     z-index: 2;
     pointer-events: none;
 }
-.sik-hero__slide { position: relative; z-index: 1; display: none; }
-.sik-hero__slide.is-active { display: block; animation: sik-fade-in var(--dur-slow) var(--ease-out) both; }
+/* Every slide occupies the SAME grid cell, so the frame is always as tall as
+   the tallest slide and an advance cannot change the page's height.
+   `display: none` made the frame exactly as tall as whichever slide was
+   showing, and the carousel advances on a 6s timer: each advance re-laid out
+   every section below the hero.
+
+   Measured on the mobile homepage, headless Edge at 390x844, autoplay running
+   (reduced motion deliberately NOT forced, because the autoplay IS the thing
+   under test), layout-shift observer installed before first paint, the
+   viewport parked 420px down so the frame's bottom edge and the section under
+   it are on screen — a shift whose impact region is below the fold scores 0
+   however far it moved the document, which is what made this so hard to pin
+   down. Sitting still for 20s, three runs:
+
+       one slide in flow (the old rule)   0.0357 / 0.0356 / 0.0356
+       every slide in the cell            0.0007 / 0.0009 / 0.0008
+
+   Before, each autoplay tick is a 0.0135 entry against
+   section#w-home_shop_by_category — the section directly under the hero.
+   After, the only entries left are the header's own 4px shrink when it
+   sticks. A MutationObserver running alongside puts every entry 11ms after
+   `is-active` moves from one .sik-hero__slide to the next, so the cause is
+   the advance: not the fonts, not the images (every one carries width and
+   height), and not the FAQ <details> the last round suspected — those never
+   open on their own and contribute nothing.
+
+   The three slides measure 911.6 / 896.7 / 871.2px at 390, so an advance
+   moved the page by up to 40px; at 1366 they are 580.5 / 588.3 / 588.3 and
+   the same advance measured 0.00015.
+
+   visibility rather than display so the hidden slides still take up the cell:
+   it keeps them out of the tab order and the accessibility tree exactly as
+   display:none did. The cost is that the off-slide images now have a box in
+   the viewport, so `loading="lazy"` stops deferring them and they arrive with
+   the first paint rather than with the first advance — two extra requests
+   here, and because the art is SVG that is 30 KB on desktop and 11 KB on
+   mobile. It is also why the carousel no longer flashes an unpainted panel
+   the first time it advances. */
+.sik-hero__slide { position: relative; z-index: 1; grid-area: sik-hero-slide; visibility: hidden; }
+.sik-hero__slide.is-active { visibility: visible; z-index: 2; animation: sik-fade-in var(--dur-slow) var(--ease-out) both; }
+/* A short slide in a tall frame: centre the copy/media block rather than
+   leaving the difference as a gap under it. */
+.sik-hero__slide > .sik-hero__grid { align-content: center; min-height: 100%; }
 
 /* Slide contents arrive one beat after the slide itself. */
 .sik-hero__slide.is-active .sik-hero__copy > * { animation: sik-rise var(--dur-slow) var(--ease-out) both; }
@@ -4787,6 +5065,27 @@ body.sik-has-bottomnav { padding-bottom: var(--sik-bottomnav-space); }
     height: auto;
     border-radius: var(--sik-radius);
     box-shadow: var(--sik-shadow-pop);
+    /* The box is settled before the file arrives, not after it.
+       widgets.php used to declare a flat width="860" height="680" against art
+       that ships at 900x700, and an operator can upload anything at all, so
+       the moment the image decoded Chromium swapped the declared ratio for
+       the real one and the box changed height. It now reads the real size off
+       the file (widget_img_dims()), so the markup no longer lies - but the
+       uploaded art still can be any shape, which is what this rule is for.
+       That went unnoticed while only the active slide was in flow: it is the
+       one image that loads eagerly, so its correction landed before first
+       paint. With every slide in the cell (see .sik-hero__slide) the other
+       two load late, and their correction re-sized the frame 3.9px under the
+       centred copy — measured 0.0036 on index.php at 1366, three runs, which
+       is bigger than the advance this section set out to fix.
+       aspect-ratio pins the box to what the markup promised and object-fit
+       keeps whatever art lands undistorted inside it, so a decode can no
+       longer change any layout. */
+    /* The frame the design wants, which is also the shape of the art that
+       ships - so nothing is cropped until somebody uploads a different one,
+       and then object-fit below decides what happens rather than the box. */
+    aspect-ratio: 900 / 700;
+    object-fit: cover;
 }
 
 /* --- the discount medallion ----------------------------------------------
@@ -14260,3 +14559,217 @@ a.sik-buylist__name:hover { color: var(--sik-primary-ink); }
     }
     .sik-phonegroup__number { margin-top: var(--sp-2); }
 }
+
+/* ==========================================================================
+   Consent banner  (includes/consent.php + assets/js/consent.js)
+
+   A fixed bottom sheet, which is the whole point: it is out of flow, so it
+   pushes nothing and its layout-shift contribution is 0 by construction rather
+   than by measurement. It sits above the mobile bottom nav, below toasts.
+
+   The three answers share ONE button rule. No primary/secondary split, no
+   "Reject" hidden behind "Choose", no greyed-out refusal: the visual weight of
+   accepting and refusing is identical, because that is the part of a consent
+   banner a regulator actually reads.
+   ========================================================================== */
+.sik-consent {
+    position: fixed;
+    left: 0;
+    right: 0;
+    /* Clears the phone bottom nav; the token is 0 above 1024px. */
+    bottom: calc(var(--sik-bottomnav-h, 0px) + env(safe-area-inset-bottom, 0px));
+    /* Under --z-toast (200) so a toast still reads over it, over everything
+       else on the page including drawers and modals: an unanswered banner must
+       not end up behind the thing it is asking about. */
+    z-index: 190;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: var(--sp-5) var(--sp-4);
+    background: var(--sik-elevated);
+    border-top: 1px solid var(--sik-line);
+    box-shadow: 0 -10px 40px -18px rgba(9, 11, 16, .45);
+    color: var(--sik-ink);
+    /* Revealed by JS, so it starts translated and settles. Transform only - no
+       height, no margin - so nothing around it moves. */
+    transform: translate3d(0, 100%, 0);
+    transition: transform var(--dur-slow) var(--ease-out);
+}
+.sik-consent[hidden] { display: none; }
+.sik-consent.is-open { transform: none; }
+/* consent.js moves focus here when the banner appears, so a screen reader
+   lands on it instead of having to find it at the end of the document. The
+   container is not a control, though, and Chrome treats that programmatic
+   focus as focus-visible - which painted a 2px ring around the whole sheet on
+   every first page load. The ring belongs on the buttons inside, which have
+   their own, so this one is suppressed in both states. */
+.sik-consent:focus,
+.sik-consent:focus-visible { outline: none; }
+
+.sik-consent__inner {
+    max-width: var(--sik-container, 1280px);
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-4) var(--sp-6);
+}
+.sik-consent__copy { flex: 1 1 320px; min-width: 0; }
+
+.sik-consent__title {
+    margin: 0 0 var(--sp-1);
+    font-size: var(--fs-md);
+    font-weight: 700;
+    line-height: 1.3;
+}
+.sik-consent__text,
+.sik-consent__meta,
+.sik-consent__signal {
+    margin: 0;
+    font-size: var(--fs-sm);
+    line-height: 1.55;
+    color: var(--sik-ink-2);
+}
+.sik-consent__meta { margin-top: var(--sp-2); color: var(--sik-muted); font-size: var(--fs-xs); }
+.sik-consent__meta a { text-decoration: underline; }
+
+/* Only shown when the browser is sending DNT/GPC. */
+.sik-consent__signal { display: none; margin-top: var(--sp-2); }
+.sik-consent.is-signal .sik-consent__signal { display: block; }
+.sik-consent.is-signal .sik-consent__text { display: none; }
+
+/* --- the answers ---------------------------------------------------------
+   Equal prominence is enforced by there being one rule: same background, same
+   border, same size, same order every time. Do not add a --primary modifier to
+   "Accept all" here; that is the dark pattern this component exists to avoid.
+   ------------------------------------------------------------------------- */
+.sik-consent__actions {
+    flex: 0 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+}
+.sik-consent__actions--signal,
+.sik-consent.is-signal .sik-consent__actions { display: none; }
+.sik-consent.is-signal .sik-consent__actions--signal { display: flex; }
+
+.sik-consent__btn {
+    flex: 1 1 auto;
+    min-height: var(--tap, 44px);
+    min-width: 128px;
+    padding: 0 var(--sp-5);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--sik-ink);
+    background: var(--sik-surface-2);
+    border: 1px solid var(--sik-line-strong);
+    border-radius: var(--sik-radius-sm, 10px);
+    cursor: pointer;
+    transition: background var(--dur-fast) linear, border-color var(--dur-fast) linear;
+}
+.sik-consent__btn:hover { background: var(--sik-hover); }
+.sik-consent__btn:active { background: var(--sik-press); }
+.sik-consent__btn:focus-visible {
+    outline: 2px solid var(--sik-primary);
+    outline-offset: 2px;
+}
+
+/* --- per-category choices ------------------------------------------------- */
+.sik-consent__choices {
+    max-width: var(--sik-container, 1280px);
+    margin: var(--sp-4) auto 0;
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--sik-line);
+}
+.sik-consent__choices[hidden] { display: none; }
+
+.sik-consent__list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-3); }
+.sik-consent__row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-4);
+}
+.sik-consent__rowtext { min-width: 0; display: grid; gap: 2px; }
+.sik-consent__rowname { font-size: var(--fs-sm); font-weight: 600; color: var(--sik-ink); }
+.sik-consent__rowhelp { font-size: var(--fs-xs); color: var(--sik-muted); line-height: 1.5; }
+.sik-consent__always { flex: none; font-size: var(--fs-xs); color: var(--sik-muted); padding-top: 2px; }
+
+/* The switch. The checkbox itself stays in the layer and keeps its own focus
+   ring, so it is reachable and operable by keyboard exactly like any checkbox;
+   only its painting is replaced. */
+.sik-consent__toggle { flex: none; position: relative; display: inline-flex; align-items: center; }
+.sik-consent__toggle input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.sik-consent__track {
+    width: 44px;
+    height: 26px;
+    border-radius: 999px;
+    background: var(--sik-line-strong);
+    position: relative;
+    transition: background var(--dur-fast) linear;
+}
+.sik-consent__track::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+    transition: transform var(--dur-fast) var(--ease-out);
+}
+.sik-consent__toggle input:checked + .sik-consent__track { background: var(--sik-success, #16A34A); }
+.sik-consent__toggle input:checked + .sik-consent__track::after { transform: translateX(18px); }
+.sik-consent__toggle input:focus-visible + .sik-consent__track {
+    outline: 2px solid var(--sik-primary);
+    outline-offset: 2px;
+}
+
+.sik-consent__actions--save { margin-top: var(--sp-4); justify-content: flex-start; }
+.sik-consent__actions--save .sik-consent__btn { flex: 0 0 auto; }
+
+/* The footer's "Cookie preferences" control: a button, because it opens
+   something here, painted exactly like the policy links beside it. */
+.sik-consent-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding: 0;
+    font: inherit;
+    font-size: var(--fs-xs);
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+}
+.sik-consent-link:hover { text-decoration: underline; }
+@media (min-width: 1024px) { .sik-consent-link { min-height: 28px; } }
+
+@media (max-width: 639px) {
+    .sik-consent { padding: var(--sp-4); }
+    .sik-consent__inner { gap: var(--sp-3); }
+    .sik-consent__actions { width: 100%; }
+    .sik-consent__btn { min-width: 0; flex: 1 1 100%; }
+}
+
+/* Motion off: both switches, matching the rest of the storefront. The banner
+   still appears - it just appears rather than travels. */
+@media (prefers-reduced-motion: reduce) {
+    .sik-consent { transition: none; transform: none; }
+    .sik-consent__track, .sik-consent__track::after { transition: none; }
+}
+body.sik-noanim .sik-consent { transition: none; transform: none; }

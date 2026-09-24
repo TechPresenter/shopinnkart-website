@@ -50,6 +50,13 @@ function security_event_mask(array $context): array
     foreach ($context as $key => $value) {
         if (is_array($value)) {
             $context[$key] = security_event_mask($value);
+        } elseif (is_bool($value)) {
+            // A yes/no cannot be a secret, and masking it destroys the only
+            // thing it was recorded for. Seen in the CSRF event, whose
+            // 'had_session_token' key matched "token" and came out as
+            // "[masked]" - which is exactly the "was there a token at all"
+            // answer that tells a stale tab apart from a cross-site post.
+            continue;
         } elseif (is_string($key) && preg_match('/pass(word)?|secret|token|otp|api[_-]?key|authorization|cookie|^code$|backup_code|totp/i', $key) === 1) {
             $context[$key] = '[masked]';
         } elseif (is_string($value) && mb_strlen($value) > 500) {

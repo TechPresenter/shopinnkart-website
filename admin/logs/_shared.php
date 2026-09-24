@@ -151,10 +151,19 @@ function logs_clear_card(string $table, string $actionUrl, int $total): string
         . 'The last ' . LOG_RETENTION_DAYS . ' days are kept whatever is chosen, '
         . 'and the clearing itself is recorded where this screen cannot reach it.'
         . '</div></div></div>'
+        /* Emptying a log is one of the three the brief names for a typed
+           confirmation: the rows are gone for good and nothing in the admin
+           can bring them back. What has to be typed is the log's own name,
+           which the card heading two lines up is already showing. */
         . '<form method="post" action="' . e($actionUrl) . '" class="ad-card__body ad-filters" style="border:0"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode(
-            'Permanently delete the selected part of the ' . $label . '? This cannot be undone.'
-        )) . ')">'
+        . admin_confirm_form_attrs(
+            'The rows you choose are deleted permanently. Nothing in the admin can bring them back.',
+            [
+                'title'   => 'Clear the ' . $label . '?',
+                'label'   => 'Clear the log',
+                'require' => $label,
+            ]
+        ) . '>'
         . csrf_field()
         . '<input type="hidden" name="op" value="clear">'
         . '<label class="sik-sr" for="logClearScope">How much to clear</label>'

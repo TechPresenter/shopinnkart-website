@@ -266,8 +266,12 @@ require ADMIN_PATH . '/includes/header.php';
                         </button>
                     </form>
                 <?php endif; ?>
+                <?php $emailLogDays = (int) max(7, setting_int('email_log_retention_days', 90)); ?>
                 <form method="post" action="<?= e($selfUrl) ?>" style="display:inline"
-                      onsubmit="return confirm('Delete sent entries older than <?= (int) max(7, setting_int('email_log_retention_days', 90)) ?> days?');">
+                      <?= admin_confirm_form_attrs(
+                          'Sent entries older than ' . $emailLogDays . ' days are deleted. Failed entries are kept.',
+                          ['title' => 'Prune the email log?', 'label' => 'Delete old entries']
+                      ) ?>>
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="prune">
                     <button type="submit" class="ad-btn ad-btn--sm ad-btn--danger-ghost">

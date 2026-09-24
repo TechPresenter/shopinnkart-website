@@ -474,7 +474,18 @@
         }
 
         function start() {
-            if (interval > 0) { stop(); timer = setInterval(() => show(index + 1), interval); }
+            // The reduced-motion rule belongs HERE, not only at the first
+            // start: a tab switch, a mouseleave, a swipe and a dot click all
+            // call this, so gating the opening call alone left the carousel
+            // free to begin moving for somebody who had asked for stillness -
+            // a visibilitychange was enough to start it. Measured: with
+            // reduced motion forced, a hidden/visible cycle used to restart
+            // the 6s timer and the page moved again.
+            if (interval <= 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                return;
+            }
+            stop();
+            timer = setInterval(() => show(index + 1), interval);
         }
         function stop() { if (timer) { clearInterval(timer); timer = null; } }
 
@@ -507,7 +518,8 @@
             start();
         }, { passive: true });
 
-        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) start();
+        // start() decides for itself whether the visitor wants movement.
+        start();
     }
 
     /* ----------------------------------------------------------------------

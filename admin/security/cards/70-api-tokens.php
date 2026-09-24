@@ -183,7 +183,7 @@ return [
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="api_tokens_revoke_all">
                             <button type="submit" class="ad-btn ad-btn--danger ad-btn--sm"
-                                    data-confirm="Revoke every app token on every account? Each device will have to sign in again.">
+                                    <?= admin_confirm_attrs('Every device has to sign in again.', ['title' => 'Revoke every app token?', 'label' => 'Revoke all tokens', 'tone' => 'danger']) ?>>
                                 Revoke every app token
                             </button>
                         </form>

@@ -91,9 +91,10 @@ $breadcrumbs  = [
 $pageActions = '';
 if ($impressions > 0 || $conversions > 0) {
     $pageActions .= '<form method="post" action="' . e(admin_url('popups/reset-stats.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode(
-            'Reset the counters for "' . $popup['name'] . '"? The numbers cannot be recovered.'
-        )) . ')">'
+        . admin_confirm_form_attrs(
+            'The impression and conversion numbers for "' . $popup['name'] . '" cannot be recovered.',
+            ['title' => 'Reset the counters?', 'label' => 'Reset counters']
+        ) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn">' . icon('refresh', 'w-4 h-4') . ' Reset Stats</button>'
@@ -104,7 +105,7 @@ if (admin_can('banners.delete')) {
     // label, so the page-level action builds the same POST form by hand.
     $confirm = 'Delete "' . $popup['name'] . '"? Its stats and images go with it. This cannot be undone.';
     $pageActions .= '<form method="post" action="' . e(admin_url('popups/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

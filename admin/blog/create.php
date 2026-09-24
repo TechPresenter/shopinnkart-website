@@ -33,6 +33,15 @@ if (is_post()) {
     csrf_require();
 
     $seo       = seo_editor_input();
+    // The panel's extended fields. Staged rather than written, so a refused
+    // code field fails the whole save instead of appearing to succeed while
+    // quietly dropping what somebody typed.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    // A slug the admin TYPED that collides with another record or with a
+    // reserved address is refused here, so it joins the validator errors
+    // below. A blank one is still derived and quietly made unique.
+    seo_editor_slug_check('post', (string) input('slug', ''), null, $seoErrors);
     $submitted = [
         'category_id'  => input_int('category_id', 0),
         'title'        => (string) input('title', ''),
@@ -59,11 +68,11 @@ if (is_post()) {
         $v->exists('category_id', 'blog_categories');
     }
 
-    if ($v->fails()) {
-        $errors = $v->errors();
+    if ($v->fails() || $seoErrors !== []) {
+        $errors = $v->errors() + $seoErrors;
         flash('error', 'Please correct the highlighted fields.');
     } else {
-        $slug  = unique_slug('blog_posts', slugify($submitted['slug'] !== '' ? $submitted['slug'] : $submitted['title']));
+        $slug  = seo_editor_slug('post', $submitted['slug'], $submitted['title'], null, $errors);
         $image = admin_handle_image('featured_image', 'blog');
 
         // A published post always carries a date, otherwise it sorts to the
@@ -89,6 +98,10 @@ if (is_post()) {
             'published_at'   => $publishedAt,
             ...$seo,
         ]);
+
+        // The record exists now, so its extended SEO fields have an id to
+        // hang off. A create has no old slug, so there is no redirect to write.
+        seo_entity_meta_save('post', $id, $seoMeta);
 
         log_activity('blog_post.created', 'blog_post', $id, 'Created post "' . $submitted['title'] . '"');
         admin_after_write();

@@ -584,7 +584,10 @@ require ADMIN_PATH . '/includes/header.php';
                     <div class="ad-card__title">Reset</div>
                 </div>
                 <form class="ad-card__body" method="post" action="<?= e(settings_url('theme')) ?>"
-                      onsubmit="return confirm('Reset every storefront theme value to the shipped defaults? Custom CSS and JavaScript are cleared too.')">
+                      <?= admin_confirm_form_attrs(
+                          'Every storefront theme value goes back to the shipped default, and the custom CSS and JavaScript boxes are emptied.',
+                          ['title' => 'Reset the theme?', 'label' => 'Reset theme']
+                      ) ?>>
                     <?= csrf_field() ?>
                     <input type="hidden" name="action" value="reset">
 

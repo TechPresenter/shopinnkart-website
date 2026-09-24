@@ -46,6 +46,19 @@ foreach ($providers as $row) {
 
 $shipmentCount = (int) Database::fetchColumn('SELECT COUNT(*) FROM `shipments`');
 
+// How a courier is being chosen right now. Shown here because this is the
+// screen an operator opens when a parcel went somewhere they did not expect,
+// and "which courier does it pick, and does it pick on its own?" is the first
+// question - a question that was previously only answerable by reading the
+// settings screen and the code.
+require_once INCLUDES_PATH . '/shipping-service.php';
+$selectWeights = shipping_selection_weights();
+$autoShip      = shipping_autoship_enabled();
+$autoCodMax    = shipping_autoship_cod_limit();
+$autoMaxAge    = shipping_autoship_max_age_days();
+$autoWaiting   = $autoShip ? count(shipping_autoship_candidates(200)) : 0;
+$pctWeight     = static fn (float $share): string => number_format($share * 100, 0) . '%';
+
 $pageTitle    = 'Shipping Integrations';
 $pageSubtitle = 'Courier accounts, credentials and connection health.';
 $breadcrumbs  = [
@@ -89,6 +102,70 @@ require ADMIN_PATH . '/includes/header.php';
             <div><div class="ad-stat__value"><?= $shipmentCount ?></div>
                  <div class="ad-stat__label">Shipments</div></div>
         </div>
+    </div>
+
+    <!-- ============ How a courier gets chosen ============ -->
+    <div class="ad-card">
+        <div class="ad-card__head">
+            <div>
+                <h2 class="ad-card__title">Automatic courier selection</h2>
+                <div class="ad-card__sub">
+                    Every quote is scored on cost, promised days, the courier's own delivered-against-returned
+                    record and its rating. The booking screen pre-selects the winner; an admin can still pick
+                    any other rate in one click.
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a class="ad-btn ad-btn--primary ad-btn--sm" href="<?= e(admin_url('shipping/rates.php')) ?>">
+                    <?= icon('truck', 'w-4 h-4') ?> Rate calculator
+                </a>
+                <?php /* The hub's three screens all belong on the hub's landing page: an
+                        operator chasing a parcel that came back should not have to find
+                        the desk through the shipments list. */ ?>
+                <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('shipping/shipments.php')) ?>">
+                    <?= icon('package', 'w-4 h-4') ?> Shipments
+                </a>
+                <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('shipping/returns.php')) ?>">
+                    <?= icon('rotate', 'w-4 h-4') ?> Returns &amp; RTO
+                </a>
+            </div>
+        </div>
+        <div class="ad-card__body">
+            <p style="margin:0 0 8px">
+                Weighted
+                <strong>cost <?= e($pctWeight((float) $selectWeights['cost'])) ?></strong>,
+                <strong>speed <?= e($pctWeight((float) $selectWeights['speed'])) ?></strong>,
+                <strong>performance <?= e($pctWeight((float) $selectWeights['reliability'])) ?></strong>,
+                <strong>rating <?= e($pctWeight((float) $selectWeights['rating'])) ?></strong>
+                over the last <?= (int) shipping_performance_window() ?> days, judging a courier only once it
+                has <?= (int) shipping_performance_minimum() ?> settled parcels behind it.
+            </p>
+            <p style="margin:0">
+                <?php if ($autoShip): ?>
+                    <span class="sik-status sik-status--green">Automatic shipping is ON</span>
+                    Confirmed orders book themselves with the recommended courier on each pass of the
+                    shipment cron (<code>bin/refresh-shipments.php</code>) - not the moment they are
+                    confirmed, so a booking follows within one cron interval.
+                    <?= $autoCodMax > 0
+                        ? 'COD above ' . e(money($autoCodMax)) . ' is left for a person.'
+                        : 'There is no COD ceiling, so any cash-on-delivery order may go out unattended.' ?>
+                    <?= $autoMaxAge > 0
+                        ? 'Only orders placed in the last ' . (int) $autoMaxAge . ' days are swept; older ones wait for a person.'
+                        : 'There is no age limit, so the sweep reaches the whole order history - including orders long since settled by hand.' ?>
+                    <span class="ad-muted"><?= (int) $autoWaiting ?> order<?= $autoWaiting === 1 ? '' : 's' ?> waiting for the next cron pass.</span>
+                <?php else: ?>
+                    <span class="sik-status sik-status--gray">Automatic shipping is OFF</span>
+                    Every booking is made by a person. The recommendation is advice, not an action.
+                <?php endif; ?>
+            </p>
+        </div>
+        <?php if (admin_can('settings.edit')): ?>
+            <div class="ad-card__foot">
+                <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('settings/shipping.php')) ?>">
+                    <?= icon('settings', 'w-4 h-4') ?> Change the weightings
+                </a>
+            </div>
+        <?php endif; ?>
     </div>
 
     <div class="ad-card">

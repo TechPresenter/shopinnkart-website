@@ -33,6 +33,15 @@ if (is_post()) {
     csrf_require();
 
     $seo       = seo_editor_input();
+    // The panel's extended fields (keywords, the Twitter trio, breadcrumbs and
+    // the custom code). Staged rather than written, so a refused code field
+    // fails the whole save instead of appearing to succeed while dropping it.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    // A slug the admin TYPED that collides with another record or with a
+    // reserved address is refused here, so it joins the validator errors
+    // below. A blank one is still derived and quietly made unique.
+    seo_editor_slug_check('page', (string) input('slug', ''), $id, $seoErrors);
     $submitted = [
         'title'          => (string) input('title', ''),
         'slug'           => (string) input('slug', ''),
@@ -55,19 +64,15 @@ if (is_post()) {
       ->integer('sort_order')->between('sort_order', 0, 9999)
       ->in('status', ['active', 'inactive']);
 
-    if ($v->fails()) {
-        $errors = $v->errors();
+    if ($v->fails() || $seoErrors !== []) {
+        $errors = $v->errors() + $seoErrors;
         flash('error', 'Please correct the highlighted fields.');
     } else {
         // A fixed route resolves a system page by its slug, so that slug is
         // kept whatever the (read-only) input sends back.
         $slug = $isSystem
             ? $storedSlug
-            : unique_slug(
-                'pages',
-                slugify($submitted['slug'] !== '' ? $submitted['slug'] : $submitted['title']),
-                $id
-            );
+: seo_editor_slug('page', $submitted['slug'], $submitted['title'], $id, $errors);
 
         $banner = $cmsPage['banner_image'];
         if ((string) input('remove_banner_image', '0') === '1' && empty($_FILES['banner_image']['name'])) {
@@ -86,6 +91,11 @@ if (is_post()) {
             'status'         => $submitted['status'],
             ...$seo,
         ], '`id` = :id', ['id' => $id]);
+
+        seo_entity_meta_save('page', $id, $seoMeta);
+        // A system page's slug never moves (a fixed route resolves it by slug),
+        // so $storedSlug === $slug there and this writes nothing.
+        seo_editor_slug_change('page', $storedSlug, $slug);
 
         log_activity('page.updated', 'page', $id, 'Updated page "' . $submitted['title'] . '"');
         admin_after_write();
@@ -110,7 +120,7 @@ $pageActions = '<a class="ad-btn" href="' . e(page_url((string) $cmsPage['slug']
 if (admin_can('pages.delete') && !$isSystem) {
     $confirm = 'Delete "' . $cmsPage['title'] . '"? This cannot be undone.';
     $pageActions .= '<form method="post" action="' . e(admin_url('pages/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

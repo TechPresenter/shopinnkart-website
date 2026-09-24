@@ -114,4 +114,10 @@ if ($updated === 0) {
     json_error('That popup is not running.', [], 404);
 }
 
+// The same fact in the analytics timeline, where it can be read against the
+// day, the channel and the session rather than as one lifetime counter on the
+// popup row. Recorded only after the UPDATE actually landed, so a replay at a
+// popup that is no longer running counts in neither place.
+analytics_track($event === 'conversion' ? 'popup_convert' : 'popup_view', ['label' => 'popup:' . $popupId]);
+
 json_success('Recorded.', ['id' => $popupId, 'event' => $event]);

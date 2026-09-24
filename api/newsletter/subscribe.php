@@ -67,6 +67,10 @@ if ($existing !== null) {
         'name'       => $name === '' ? ($existing['name'] ?? null) : $name,
     ], '`id` = :id', ['id' => (int) $existing['id']]);
 
+    // A resubscribe counts: the label is where the form was, never the
+    // address, which is the subscriber's and belongs only in the table above.
+    analytics_track('newsletter_signup', ['label' => $source]);
+
     json_success($confirmation, ['email' => $email, 'status' => 'active']);
 }
 
@@ -77,6 +81,8 @@ Database::insert('newsletter_subscribers', [
     'ip_address' => client_ip(),
     'status'     => 'active',
 ]);
+
+analytics_track('newsletter_signup', ['label' => $source]);
 
 // Only genuinely new subscribers get the welcome mail; reactivations already had it.
 notify_newsletter_welcome($email);

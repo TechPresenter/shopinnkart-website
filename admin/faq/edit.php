@@ -77,7 +77,7 @@ $pageActions = '<a class="ad-btn" href="' . e(url('faq')) . '" target="_blank" r
 if (admin_can('faq.delete')) {
     $confirm = 'Delete "' . str_limit((string) $faq['question'], 70) . '"? This cannot be undone.';
     $pageActions .= '<form method="post" action="' . e(admin_url('faq/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

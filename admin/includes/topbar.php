@@ -48,54 +48,54 @@ $pageTitle = $pageTitle ?? 'Dashboard';
         </a>
     <?php endif; ?>
 
-    <div class="ad-dropdown" data-dropdown>
-        <button type="button" class="ad-iconbtn" data-dropdown-toggle
-                aria-haspopup="true" aria-expanded="false"
-                style="width:auto;gap:8px;padding:0 6px 0 4px" aria-label="Account menu">
-            <span class="ad-avatar"><?= e(initials((string) $admin['name'])) ?></span>
-            <span class="hidden md:inline" style="font-size:13px;font-weight:600;color:var(--ad-text)"><?= e($admin['name']) ?></span>
-            <?= icon('chevron-down', 'w-3.5 h-3.5') ?>
-        </button>
+    <?php
+    /* The account menu is the first component on admin_dropdown() (A2). It is
+       the same list it always was; what it gains is role="menu" with real
+       menuitems, aria-controls, roving arrow keys, Home/End, type-ahead, an
+       Escape that closes exactly this layer and hands focus back to the
+       button, and a bottom sheet on a phone instead of a 230px panel pinned
+       to the right edge of a 360px screen. */
+    $acctItems = [];
+    $acctItems[] = ['html' =>
+        '<div class="ad-menu__head-name">' . e((string) $admin['name']) . '</div>'
+        . '<div class="ad-menu__head-meta">' . e((string) $admin['email']) . '</div>'
+        . '<div class="ad-menu__head-role">'
+        . '<span class="sik-status sik-status--blue">' . e((string) $admin['role_name']) . '</span></div>',
+    ];
+    if (admin_can('admins.edit')) {
+        $acctItems[] = ['label' => 'My Profile', 'icon' => 'user',
+                        'url' => admin_url('admins/edit.php?id=' . (int) $admin['id'])];
+    }
+    // No permission check: every admin owns their own password and second
+    // factor, including one whose role grants nothing else.
+    $acctItems[] = ['label' => 'My Security', 'icon' => 'lock', 'url' => admin_url('account/index.php')];
+    if (admin_can('settings.view')) {
+        $acctItems[] = ['label' => 'Settings', 'icon' => 'settings', 'url' => admin_url('settings/general.php')];
+    }
+    if (admin_can('logs.view')) {
+        $acctItems[] = ['label' => 'Login History', 'icon' => 'clock', 'url' => admin_url('logs/login-history.php')];
+    }
+    $acctItems[] = ['divider' => true];
+    // Sign-out stays a POST so a stray link or a prefetch cannot end the session.
+    $acctItems[] = ['label' => 'Sign Out', 'icon' => 'logout', 'tone' => 'danger',
+                    'form' => ['action' => admin_url('logout.php')]];
 
-        <div class="ad-dropdown__panel">
-            <div class="ad-dropdown__head">
-                <div style="font-weight:700;font-size:13.5px"><?= e($admin['name']) ?></div>
-                <div style="font-size:12px;color:var(--ad-muted)"><?= e($admin['email']) ?></div>
-                <div style="margin-top:6px">
-                    <span class="sik-status sik-status--blue"><?= e((string) $admin['role_name']) ?></span>
-                </div>
-            </div>
-
-            <?php if (admin_can('admins.edit')): ?>
-                <a class="ad-dropdown__item" href="<?= e(admin_url('admins/edit.php?id=' . (int) $admin['id'])) ?>">
-                    <?= icon('user', 'w-4 h-4') ?> My Profile
-                </a>
-            <?php endif; ?>
-            <?php // No permission check: every admin owns their own password and
-                  // second factor, including one whose role grants nothing else. ?>
-            <a class="ad-dropdown__item" href="<?= e(admin_url('account/index.php')) ?>">
-                <?= icon('lock', 'w-4 h-4') ?> My Security
-            </a>
-            <?php if (admin_can('settings.view')): ?>
-                <a class="ad-dropdown__item" href="<?= e(admin_url('settings/general.php')) ?>">
-                    <?= icon('settings', 'w-4 h-4') ?> Settings
-                </a>
-            <?php endif; ?>
-            <?php if (admin_can('logs.view')): ?>
-                <a class="ad-dropdown__item" href="<?= e(admin_url('logs/login-history.php')) ?>">
-                    <?= icon('clock', 'w-4 h-4') ?> Login History
-                </a>
-            <?php endif; ?>
-
-            <div class="ad-dropdown__divider"></div>
-
-            <!-- Sign-out is a POST so a stray link or prefetch cannot end the session. -->
-            <form method="post" action="<?= e(admin_url('logout.php')) ?>">
-                <?= csrf_field() ?>
-                <button type="submit" class="ad-dropdown__item ad-dropdown__item--danger">
-                    <?= icon('logout', 'w-4 h-4') ?> Sign Out
-                </button>
-            </form>
-        </div>
-    </div>
+    echo admin_dropdown([
+        'id'      => 'adAccountMenu',
+        'trigger' => [
+            'variant' => 'icon',
+            'class'   => 'ad-topbar__account',
+            // The panel's identity block is aria-hidden (a role="menu" may
+            // hold only menuitems), so whose account this is has to be said
+            // here, where a screen reader will actually reach it.
+            'aria_label' => 'Account menu: ' . $admin['name'] . ', ' . $admin['role_name'],
+            'html'    => '<span class="ad-avatar">' . e(initials((string) $admin['name'])) . '</span>'
+                       . '<span class="hidden md:inline ad-topbar__account-name">' . e((string) $admin['name']) . '</span>'
+                       . icon('chevron-down', 'w-3.5 h-3.5'),
+        ],
+        'items'          => $acctItems,
+        'align'          => 'end',
+        'sheet_on_phone' => true,
+    ]);
+    ?>
 </header>

@@ -132,16 +132,29 @@ if ($stage === 'enrol') {
 $storeName = (string) setting('store_name', SITE_NAME);
 ?>
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title><?= $stage === 'enrol' ? 'Set Up Two-Step Sign In' : 'Two-Step Sign In' ?> &middot; <?= e($storeName) ?></title>
     <?= brand_favicon_links() ?>
-    <link rel="stylesheet" href="<?= e(asset('css/tailwind.css')) ?>">
+    <?php // utilities.css, not tailwind.css: see admin/includes/header.php. ?>
+    <link rel="stylesheet" href="<?= e(asset('css/utilities.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('css/admin.css')) ?>">
+    <?php
+    /* The same two INPUT tokens the signed-in layout prints. Without them the
+       sign-in page fell back to admin.css's defaults while every page behind
+       it used the operator's colours - so the store's own admin colour only
+       appeared AFTER you were through the door. */
+    ?>
+    <style>
+        :root {
+            --ad-primary: <?= e(setting('admin_primary', '#D4134E')) ?>;
+            --ad-sidebar: <?= e(setting('admin_sidebar_bg', '#4A041C')) ?>;
+        }
+    </style>
 </head>
 <body class="ad-login">
 
@@ -171,7 +184,9 @@ $storeName = (string) setting('store_name', SITE_NAME);
                     Add this account to it:
                     <?php if ($qr !== ''): ?>
                         <div style="margin:10px 0;display:flex;justify-content:center">
-                            <div style="padding:10px;background:#fff;border-radius:10px;display:inline-block">
+                            <?php // The QR quiet zone stays literal white: a reader needs the light
+                                  // modules, and a themed surface would break scanning. ?>
+                            <div style="padding:10px;background:#fff;border-radius:var(--ad-radius-lg);display:inline-block">
                                 <?= $qr /* locally generated SVG, no user input in it */ ?>
                             </div>
                         </div>
@@ -182,7 +197,7 @@ $storeName = (string) setting('store_name', SITE_NAME);
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                         <code class="ad-mono" id="mfaSecret"
                               style="flex:1 1 220px;font-size:14px;letter-spacing:1px;word-break:break-all;
-                                     padding:8px 10px;background:var(--ad-surface-2, #f3f4f6);border-radius:8px">
+                                     padding:8px 10px;background:var(--ad-surface-2);border-radius:var(--ad-radius-md)">
                             <?= e(totp_secret_grouped($secret)) ?>
                         </code>
                         <button type="button" class="ad-btn ad-btn--sm" data-copy="<?= e_attr($secret) ?>">

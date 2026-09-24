@@ -106,6 +106,11 @@ if (is_post() && !form_rate_limit('register', 5, 3600)) {
                 $formError = 'We could not finish creating your account. Please try again.';
             } else {
                 login_user($user);
+                // A signup as well as the login that login_user() just
+                // recorded: the two are different questions - how many people
+                // joined, and how many sessions signed in - and one is not
+                // recoverable from the other once returning customers exist.
+                analytics_track('signup');
                 notify_welcome($user);
 
                 // Confirmation link. Never fatal, for the same reason the

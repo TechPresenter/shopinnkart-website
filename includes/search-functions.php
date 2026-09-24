@@ -138,6 +138,14 @@ function search_log_query(string $query, int $results): void
                 'session_id'    => session_key() ?: null,
                 'ip_address'    => client_ip(),
             ]);
+
+            // Counted only when a NEW row was written: the refinement branch
+            // above is one shopper still typing, and counting each keystroke
+            // as a search would report a busy search box as busy shoppers.
+            // The event carries no term - the words stay in search_logs, which
+            // has its own retention - only that a search happened, so the
+            // funnel can ask whether searchers buy more than browsers.
+            analytics_track('search');
         }
 
         $_SESSION['_search_log_id'] = $previousId;

@@ -187,9 +187,23 @@ php database/migrations/2026_09_21_combo_offers.php
 php database/migrations/2026_09_21_shipping_hub.php
 php database/migrations/2026_09_22_security.php
 php database/migrations/2026_09_22_shipping_fixes.php
+php database/migrations/2026_09_23_analytics.php
+php database/migrations/2026_09_23_commerce_pricing.php
 php database/migrations/2026_09_23_security_admin.php
 php database/migrations/2026_09_23_security_auth.php
+php database/migrations/2026_09_23_security_commerce_payments.php
 php database/migrations/2026_09_23_security_platform.php
+php database/migrations/2026_09_23_shipping_features.php
+php database/migrations/2026_09_23_shipping_returns.php
+php database/migrations/2026_09_24_analytics_rollups.php
+php database/migrations/2026_09_24_analytics_tables.php
+php database/migrations/2026_09_24_security_bots.php
+php database/migrations/2026_09_24_security_csp_corroboration.php
+php database/migrations/2026_09_24_security_mfa.php
+php database/migrations/2026_09_24_security_monitor.php
+php database/migrations/2026_09_24_security_privacy.php
+php database/migrations/2026_09_24_seo.php
+php database/migrations/2026_09_24_seo_schema.php
 
 # 4. Clear the file cache after any direct SQL write
 rm -f storage/cache/*.cache

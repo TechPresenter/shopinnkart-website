@@ -54,9 +54,9 @@ $pageActions = '';
 if (admin_can('flash_sales.delete')) {
     // Written out instead of admin_delete_form() so the page action can be a
     // full labelled button rather than an icon.
-    $confirm = json_encode('Delete "' . $sale['name'] . '"? Its product prices and sold counters go with it.');
+    $confirm = ('Delete "' . $sale['name'] . '"? Its product prices and sold counters go with it.');
     $pageActions = '<form method="post" action="' . e(admin_url('flash-sales/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) $confirm) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

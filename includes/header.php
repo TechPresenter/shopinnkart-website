@@ -90,6 +90,37 @@ $burgerOnLeft = $hd['header_burger_position'] === 'left';
 
     <?= brand_favicon_links() ?>
     <link rel="preconnect" href="<?= e(SITE_URL) ?>">
+
+    <?php
+    /* The two faces that carry above-the-fold text on every page: the Latin
+       sans, and the latin-ext sans that owns U+20B9 — the rupee sign in front
+       of every price. Ahead of the stylesheets on purpose: a webfont inside
+       @font-face is only discovered once app.css has been fetched AND parsed
+       AND a glyph needs it, which is three round trips too late.
+
+       These two links are what make the typeface reachable at all. app.css
+       declares the faces `font-display: optional`, so there is no swap period:
+       a face that is not in hand by first paint is not used for that page
+       view. Preloading is what puts both files in flight with the document
+       instead of behind a 658 KB stylesheet, and so what decides whether the
+       store renders in Plus Jakarta Sans or in the metric-matched fallback.
+
+       Playfair is NOT preloaded: it is one decorative line on some pages, so
+       38 KB on every page would cost more than the flourish is worth. It
+       therefore sets in Georgia italic on a cold view and in Playfair once
+       cached — the same line box either way, which is the trade app.css's
+       overrides make affordable.
+
+       asset() is deliberately NOT used. It appends ?v=<filemtime>, and
+       app.css asks for these files as ../fonts/<name>.woff2 with no query —
+       a preload of a different URL is a second download, not a head start.
+       crossorigin is required even same-origin: a font is fetched in CORS
+       mode, and a preload without it is discarded and fetched again. */
+    foreach (['plus-jakarta-sans-latin.woff2', 'plus-jakarta-sans-latin-ext.woff2'] as $sikFontFile): ?>
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="<?= e(ASSET_URL . '/fonts/' . $sikFontFile) ?>">
+    <?php endforeach; ?>
+
     <?php /* The utility layer, reduced to the ~76 classes this project actually
              uses. tailwind.css is a hand-built 8,487-rule subset (460 KB) that
              was downloaded and parsed on every page view to serve those few;
@@ -175,6 +206,13 @@ $themeBodyClass = (($theme['footer_style'] ?? 'dark') === 'light' ? 'sik-footer-
     . (basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) === 'checkout.php' ? 'sik-focus ' : '');
 ?>
 <body class="<?= setting_bool('mobile_bottom_nav', true) ? 'sik-has-bottomnav ' : '' ?><?= $themeBodyClass ?><?= e_attr(header_body_class($hd)) ?>">
+<?php
+/* The record's own body-open block, when it has one: a tag manager's
+   <noscript> fallback and anything else that must exist before the page
+   content is parsed. Empty unless an admin with settings.scripts put code on
+   this exact record AND the visitor's consent allows it - seo_render_body_open()
+   is what decides both, so nothing here needs to know. */
+?><?= seo_render_body_open() ?>
 
 <a href="#sikMain" class="sik-skip">Skip to content</a>
 

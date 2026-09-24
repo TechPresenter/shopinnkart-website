@@ -560,6 +560,10 @@ function account_menu(): array
                 // Hidden while the owner has customer 2FA switched off, the
                 // same way the wishlist entry disappears with its feature.
                 ['label' => 'Two-Step Sign In', 'url' => 'account-security.php', 'icon' => 'shield'],
+                // Always listed, even with self-service switched off: the page
+                // then says who to write to instead, which is more use than a
+                // missing link when somebody is looking for exactly this.
+                ['label' => 'Data & Privacy',  'url' => 'privacy.php',          'icon' => 'lock'],
             ],
         ],
     ];

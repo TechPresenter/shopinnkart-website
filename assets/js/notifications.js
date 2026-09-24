@@ -18,6 +18,12 @@
 
     let container = null;
 
+    /* How many are on screen at once. Beyond this they QUEUE - the fifth
+       "Saved" must not push the first error off the screen before it has been
+       read, which is what dropping the oldest used to do. */
+    const MAX_VISIBLE = 4;
+    const queue = [];
+
     function getContainer() {
         if (container && document.body.contains(container)) return container;
         container = document.getElementById('sikToasts');
@@ -32,13 +38,41 @@
         return container;
     }
 
+    /** Start the auto-dismiss clock, replacing any clock already running. */
+    function arm(toast, ms) {
+        clearTimeout(parseInt(toast.dataset.timer || '0', 10));
+        if (!ms) { toast.dataset.timer = '0'; return; }   // 0 = stays until dismissed
+        toast.dataset.timer = String(setTimeout(function () { dismiss(toast); }, ms));
+    }
+
     function dismiss(toast) {
         if (!toast || toast.dataset.leaving === '1') return;
         toast.dataset.leaving = '1';
+        clearTimeout(parseInt(toast.dataset.timer || '0', 10));
         toast.classList.add('is-leaving');
-        setTimeout(function () {
+        /* The removal is remembered as well as the auto-dismiss, because the
+           collapse path below can bring a toast back DURING its leave
+           animation. Without this handle that toast reappeared and then
+           vanished 240ms later, having said its piece to nobody. */
+        toast.dataset.gone = String(setTimeout(function () {
             if (toast.parentNode) toast.parentNode.removeChild(toast);
-        }, 240);
+            flush();
+        }, 240));
+    }
+
+    /** Move queued toasts onto the screen as slots free up. */
+    function flush() {
+        const wrap = getContainer();
+        while (queue.length && wrap.children.length < MAX_VISIBLE) {
+            const next = queue.shift();
+            if (!next || !next.node) continue;
+            show(next.node, next.life);
+        }
+    }
+
+    function show(toast, life) {
+        getContainer().appendChild(toast);
+        arm(toast, life);
     }
 
     /**
@@ -53,28 +87,61 @@
 
         const wrap = getContainer();
 
-        // Collapse an identical toast that is already on screen.
+        /* How long it stays. An error is a thing to read and act on, not a
+           thing to glimpse; one with an action button needs long enough to
+           reach the button. 0 means it waits to be dismissed. */
+        const life = options.duration !== undefined
+            ? options.duration
+            : (type === 'error' ? 6500 : (options.action ? 6000 : 3800));
+
+        // Collapse an identical toast that is already on screen, or queued.
         const existing = wrap.querySelector('.sik-toast[data-message="' + CSS.escape(message) + '"]');
         if (existing) {
+            clearTimeout(parseInt(existing.dataset.gone || '0', 10));
+            existing.dataset.gone = '0';
             existing.classList.remove('is-leaving');
             existing.dataset.leaving = '';
-            clearTimeout(parseInt(existing.dataset.timer || '0', 10));
-            existing.dataset.timer = String(setTimeout(() => dismiss(existing), options.duration || 3800));
+            arm(existing, life);
             return existing;
+        }
+        for (let q = 0; q < queue.length; q++) {
+            if (queue[q].node.dataset.message === message) return queue[q].node;
         }
 
         const toast = document.createElement('div');
         toast.className = 'sik-toast sik-toast--' + type;
         toast.dataset.message = message;
 
+        /* The live region, per toast rather than per container.
+           aria-live is resolved from the NEAREST ancestor that carries it, so
+           a value on the toast itself wins over the polite container - an
+           error interrupts, a "Saved" waits its turn. role=alert without an
+           explicit aria-live is assertive by implication, but Edge and NVDA
+           disagree about nested regions often enough to be worth stating. */
+        if (type === 'error' || type === 'warning') {
+            toast.setAttribute('role', 'alert');
+            toast.setAttribute('aria-live', 'assertive');
+        } else {
+            toast.setAttribute('role', 'status');
+            toast.setAttribute('aria-live', 'polite');
+        }
+        toast.setAttribute('aria-atomic', 'true');
+
         let html = '<span class="sik-toast__icon">' + (ICONS[type] || ICONS.info) + '</span><div class="sik-toast__body">';
         if (options.title) html += '<strong class="sik-toast__title">' + SIK.escapeHtml(options.title) + '</strong>';
         html += SIK.escapeHtml(message);
 
         if (options.action && options.action.label) {
-            const href = options.action.href ? SIK.escapeHtml(options.action.href) : '#';
-            html += '<a class="sik-toast__action" href="' + href + '">'
-                + SIK.escapeHtml(options.action.label) + '</a>';
+            /* A link when it goes somewhere, a button when it does something.
+               An <a href="#"> that runs a callback is a link that lies, and it
+               is the one control in a toast a keyboard user has to reach. */
+            if (options.action.href) {
+                html += '<a class="sik-toast__action" href="' + SIK.escapeHtml(options.action.href) + '">'
+                    + SIK.escapeHtml(options.action.label) + '</a>';
+            } else {
+                html += '<button type="button" class="sik-toast__action sik-toast__action--btn">'
+                    + SIK.escapeHtml(options.action.label) + '</button>';
+            }
         }
         html += '</div><button type="button" class="sik-toast__close" aria-label="Dismiss">' + CLOSE + '</button>';
         toast.innerHTML = html;
@@ -92,20 +159,26 @@
             }
         }
 
-        wrap.appendChild(toast);
+        // Hold the timer while the pointer is over it OR the keyboard is in
+        // it. Without the focus pair, tabbing to the action button started a
+        // race between the operator and the clock.
+        const hold = function () { clearTimeout(parseInt(toast.dataset.timer || '0', 10)); };
+        const resume = function () { if (toast.parentNode && life) arm(toast, 1800); };
+        toast.addEventListener('mouseenter', hold);
+        toast.addEventListener('mouseleave', resume);
+        toast.addEventListener('focusin', hold);
+        toast.addEventListener('focusout', resume);
 
-        // Keep at most 4 visible.
-        while (wrap.children.length > 4) dismiss(wrap.firstElementChild);
-
-        toast.dataset.timer = String(setTimeout(() => dismiss(toast), options.duration || 3800));
-
-        // Pause the timer while the pointer is over the toast.
-        toast.addEventListener('mouseenter', () => clearTimeout(parseInt(toast.dataset.timer, 10)));
-        toast.addEventListener('mouseleave', function () {
-            toast.dataset.timer = String(setTimeout(() => dismiss(toast), 1800));
-        });
+        if (wrap.children.length < MAX_VISIBLE) show(toast, life);
+        else queue.push({ node: toast, life: life });
 
         return toast;
+    };
+
+    /** Take everything down at once - the queue included. */
+    SIK.toastClear = function () {
+        queue.length = 0;
+        Array.prototype.slice.call(getContainer().children).forEach(dismiss);
     };
 
     SIK.toastSuccess = (m, o) => SIK.toast(m, 'success', o);

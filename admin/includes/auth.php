@@ -18,6 +18,9 @@ $projectRoot = dirname(__DIR__, 2);
 require_once $projectRoot . '/includes/init.php';
 
 require_once ADMIN_PATH . '/includes/functions.php';
+// UI primitives (A1). Pure string builders with no side effects, so loading
+// them for every admin page costs a parse and nothing else.
+require_once ADMIN_PATH . '/includes/ui.php';
 
 /**
  * Require an authenticated admin holding a permission.

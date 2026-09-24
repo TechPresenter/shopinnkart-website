@@ -155,7 +155,7 @@ return [
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="throttles_clear">
                         <button type="submit" class="ad-btn"
-                                data-confirm="Clear every sign-in counter? Anyone currently blocked gets a fresh start.">
+                                <?= admin_confirm_attrs('Anyone currently blocked gets a fresh start.', ['title' => 'Clear every sign-in counter?', 'label' => 'Clear counters', 'tone' => 'warning']) ?>>
                             Clear the counters now
                         </button>
                     </form>

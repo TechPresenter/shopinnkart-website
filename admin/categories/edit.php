@@ -46,12 +46,24 @@ $descendantIds = static function (int $rootId): array {
 };
 
 $errors = [];
+// Held before the submitted values are merged in below: it is what decides
+// whether the slug really changed, and so whether the old URL needs a 301.
+$originalSlug = (string) $category['slug'];
 
 if (is_post()) {
     csrf_require();
 
     $parentRaw = (string) input('parent_id', '');
     $seo       = seo_editor_input();
+    // The panel's extended fields (keywords, the Twitter trio, breadcrumbs and
+    // the custom code). Staged rather than written, so a refused code field
+    // fails the whole save instead of appearing to succeed while dropping it.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    // A slug the admin TYPED that collides with another record or with a
+    // reserved address is refused here, so it joins the validator errors
+    // below. A blank one is still derived and quietly made unique.
+    seo_editor_slug_check('category', (string) input('slug', ''), $id, $seoErrors);
     $submitted = [
         'name'         => (string) input('name', ''),
         'slug'         => (string) input('slug', ''),
@@ -86,15 +98,13 @@ if (is_post()) {
         );
     }
 
-    if ($v->fails()) {
-        $errors = $v->errors();
+    if ($v->fails() || $seoErrors !== []) {
+        $errors = $v->errors() + $seoErrors;
         flash('error', 'Please correct the highlighted fields.');
     } else {
-        $slug = unique_slug(
-            'categories',
-            slugify($submitted['slug'] !== '' ? $submitted['slug'] : $submitted['name']),
-            $id
-        );
+        // A typed slug is a decision, so a collision is refused and named;
+        // a blank one is still derived from the name and quietly made unique.
+        $slug = seo_editor_slug('category', $submitted['slug'], $submitted['name'], $id, $errors);
 
         $image = $category['image'];
         if ((string) input('remove_image', '0') === '1' && empty($_FILES['image']['name'])) {
@@ -125,6 +135,11 @@ if (is_post()) {
             ...$seo,
         ], '`id` = :id', ['id' => $id]);
 
+        seo_entity_meta_save('category', $id, $seoMeta);
+        // The old /category/<slug> keeps working as a 301 unless the admin
+        // unticked the box beside the slug field.
+        seo_editor_slug_change('category', $originalSlug, $slug);
+
         log_activity('category.updated', 'category', $id, 'Updated category "' . $submitted['name'] . '"');
         admin_after_write();
 
@@ -151,9 +166,9 @@ $pageActions = '<a class="ad-btn" href="' . e(category_url((string) $category['s
 if (admin_can('categories.delete')) {
     // Written out rather than using admin_delete_form() so the page action can
     // be a full-width labelled button instead of an icon.
-    $confirm = json_encode('Delete "' . $category['name'] . '"? This cannot be undone.');
+    $confirm = ('Delete "' . $category['name'] . '"? This cannot be undone.');
     $pageActions .= '<form method="post" action="' . e(admin_url('categories/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) $confirm) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

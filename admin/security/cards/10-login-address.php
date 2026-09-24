@@ -111,7 +111,7 @@ return [
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap">
                             <button type="submit" class="ad-btn ad-btn--primary"
-                                    data-confirm="From now on the admin login will only open at the new address. Continue?">
+                                    <?= admin_confirm_attrs('From now on the admin login only opens at the new address. Bookmark it before you go on.', ['title' => 'Move the admin login?', 'label' => 'Move it', 'tone' => 'danger']) ?>>
                                 <?= icon('lock', 'w-4 h-4') ?> <?= $gateOn ? 'Change address' : 'Hide the admin login' ?>
                             </button>
                         </div>
@@ -122,7 +122,7 @@ return [
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="gate_disable">
                             <button type="submit" class="ad-btn ad-btn--danger"
-                                    data-confirm="Make the admin login public again at /admin/login.php?">
+                                    <?= admin_confirm_attrs('Anyone who finds /admin/login.php will see the sign-in form again.', ['title' => 'Make the login public?', 'label' => 'Make it public', 'tone' => 'danger']) ?>>
                                 Make it public again
                             </button>
                         </form>

@@ -675,6 +675,60 @@ function user_agent(): string
     return substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
 }
 
+/**
+ * Record a first-party analytics event from wherever the thing actually
+ * happened: cart_add(), the checkout, login_user(), the newsletter endpoint.
+ *
+ * WHY THE SERVER RECORDS THESE AT ALL
+ * A browser event is missing whenever an ad blocker, a dropped beacon or a
+ * closed tab says so, and forgeable by anyone with a console. Add-to-cart and
+ * purchase decide what gets restocked and which channel paid for itself, so
+ * they are written where the row is written and the browser is never asked.
+ *
+ * WHY THIS ONE-LINE WRAPPER EXISTS
+ * So a store with analytics off pays for nothing: no file is parsed, no
+ * session is resolved, no table is touched. The setting is already in the
+ * per-request cache by the time any of these hooks fire, so the whole call
+ * costs an array lookup. Everything real is in includes/analytics/events.php.
+ *
+ * It never throws and returns nothing to check: a counter must not be able to
+ * fail a checkout. Callers fire it AFTER their own work has committed.
+ */
+function analytics_track(string $name, array $props = []): void
+{
+    try {
+        if (!analytics_library()) {
+            return;
+        }
+
+        analytics_event($name, $props);
+    } catch (Throwable $e) {
+        if (class_exists('ErrorHandler')) {
+            ErrorHandler::log('warning', 'analytics_track(' . $name . ') failed: ' . $e->getMessage());
+        }
+    }
+}
+
+/**
+ * Is the store counting, and is the analytics library loaded?
+ *
+ * Used by the two hooks that need more than a name - the purchase, which
+ * carries the committed order row, and begin_checkout, which is recorded once
+ * per session - and by the one hook that must read a row BEFORE deleting it
+ * (cart_remove), so a store with analytics off is not charged a query for a
+ * number it does not keep.
+ */
+function analytics_library(): bool
+{
+    if (setting('analytics_mode', 'off') === 'off') {
+        return false;
+    }
+
+    require_once INCLUDES_PATH . '/analytics/events.php';
+
+    return true;
+}
+
 /** Stable id for anonymous carts / compare lists. */
 function session_key(): string
 {
@@ -1152,6 +1206,13 @@ function random_token(int $bytes = 32): string
 /** Build breadcrumb markup from [['label'=>..,'url'=>..], ...]. */
 function breadcrumbs(array $items): string
 {
+    // The record's own trail settings - a shorter crumb label, or hiding the
+    // last crumb entirely. Applied here and in seo_breadcrumb_schema(), so the
+    // visible trail and the BreadcrumbList structured data always match.
+    if (function_exists('seo_breadcrumb_apply')) {
+        $items = seo_breadcrumb_apply($items);
+    }
+
     if ($items === []) {
         return '';
     }

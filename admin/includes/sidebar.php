@@ -90,7 +90,7 @@ $navStore  = $storeName ?? (string) setting('store_name', SITE_NAME);
 
     <div class="ad-sidebar__foot">
         <a href="<?= e(url()) ?>" target="_blank" rel="noopener"
-           style="display:flex;align-items:center;gap:8px;color:inherit">
+           style="display:flex;align-items:center;gap:var(--ad-space-2);color:inherit">
             <?= icon('external', 'w-4 h-4') ?> View storefront
         </a>
     </div>

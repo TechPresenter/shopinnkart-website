@@ -292,7 +292,10 @@ require ADMIN_PATH . '/includes/header.php';
                                         <?php if ($impressions > 0 || $conversions > 0): ?>
                                             <form method="post" action="<?= e(admin_url('popups/reset-stats.php')) ?>"
                                                   class="ad-inline-form"
-                                                  onsubmit="return confirm(<?= e_attr((string) json_encode('Reset the impression and conversion counters for "' . $popup['name'] . '"? The numbers cannot be recovered.')) ?>)">
+                                                  <?= admin_confirm_form_attrs(
+                                                      'The impression and conversion numbers for "' . $popup['name'] . '" cannot be recovered.',
+                                                      ['title' => 'Reset the counters?', 'label' => 'Reset counters']
+                                                  ) ?>>
                                                 <?= csrf_field() ?>
                                                 <input type="hidden" name="id" value="<?= $popupId ?>">
                                                 <button type="submit" class="ad-btn ad-btn--icon"

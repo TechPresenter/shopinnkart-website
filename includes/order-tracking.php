@@ -380,6 +380,280 @@ function order_tracking_headline(array $order): array
 }
 
 // ===========================================================================
+//  WHAT THE COURIER HUB KNOWS
+// ===========================================================================
+//
+// Two very different things can put a tracking number on an order:
+//
+//   the shipping hub   a consignment row with a provider, an AWB, a courier
+//                      tracking URL where the courier publishes one, and a
+//                      timeline of real scans. All of that can be shown.
+//
+//   somebody typing    orders.tracking_number filled in by hand on the admin
+//                      order screen. There is no consignment, no scans and no
+//                      link - and the page must SAY so. Drawing a "Track with
+//                      the courier" button over a number nothing is watching
+//                      is the one thing worse than showing no button.
+//
+// So every courier fact the storefront shows comes through this one view
+// model, and the honesty line comes with it rather than being remembered
+// separately on each page.
+
+/**
+ * The courier facts behind an order, and how much of them are real.
+ *
+ * @return array{hub:bool, shipment:?array, return:?array, courier:string, awb:string,
+ *               courier_url:string, our_url:string, scans:array, note:string}
+ */
+function order_tracking_courier(array $order): array
+{
+    $orderNumber = (string) ($order['order_number'] ?? '');
+    $out = [
+        'hub'         => false,
+        'shipment'    => null,
+        'return'      => null,
+        'courier'     => trim((string) ($order['courier_name'] ?? '')),
+        'awb'         => trim((string) ($order['tracking_number'] ?? '')),
+        'courier_url' => '',
+        'our_url'     => url('track-order.php?order=' . rawurlencode($orderNumber)),
+        'scans'       => [],
+        'note'        => '',
+    ];
+
+    if ($out['awb'] === '' && empty($order['shipment_id'])) {
+        return $out;
+    }
+
+    // Loaded here rather than at the top of the file: most pages that include
+    // order-tracking.php never reach an order with a consignment, and the hub
+    // pulls in the whole driver layer behind it.
+    if (!function_exists('shipping_status_label')) {
+        require_once __DIR__ . '/shipping-service.php';
+    }
+
+    $shipment = null;
+    if (!empty($order['shipment_id'])) {
+        try {
+            $shipment = Database::fetch('SELECT * FROM `shipments` WHERE `id` = :id', ['id' => (int) $order['shipment_id']]);
+        } catch (Throwable $e) {
+            $shipment = null;   // the hub is not installed on this database
+        }
+        // Only the consignment this order points at may speak for it.
+        if ($shipment !== null && (int) $shipment['order_id'] !== (int) $order['id']) {
+            $shipment = null;
+        }
+    }
+
+    if ($shipment === null) {
+        // A number with nothing behind it. Said plainly, in the customer's
+        // terms, so nobody waits for scans that are never coming.
+        $out['note'] = $out['awb'] === ''
+            ? ''
+            : 'This tracking number was entered by hand, so we have no live updates for it here. '
+                . 'Check it on ' . ($out['courier'] !== '' ? $out['courier'] : 'the courier') . '\'s own website, '
+                . 'or ask us and we will chase it.';
+        return $out;
+    }
+
+    $out['hub']      = true;
+    $out['shipment'] = $shipment;
+    $out['awb']      = trim((string) ($shipment['awb'] ?? '')) ?: $out['awb'];
+    $out['courier']  = trim((string) ($shipment['courier_name'] ?? '')) ?: $out['courier'];
+    $out['scans']    = order_tracking_courier_stages($shipment);
+
+    // The courier's own page, only where the hub actually holds one. Several
+    // couriers publish no public tracking page at all, and a guessed URL is a
+    // dead link at the moment the customer most wants it to work.
+    $out['courier_url'] = trim((string) ($shipment['tracking_url'] ?? ''));
+
+    if ($out['courier_url'] === '') {
+        $out['note'] = ($out['courier'] !== '' ? $out['courier'] : 'This courier')
+            . ' does not publish a public tracking page, so every scan it sends us is listed above instead.';
+    }
+
+    // The reverse leg, where one has been booked. It has an AWB and a status
+    // of its own and the customer is the one handing the parcel over, so it
+    // is shown rather than hidden behind the outbound consignment.
+    try {
+        $out['return'] = shipping_return_live_for_order((int) $order['id']);
+    } catch (Throwable $e) {
+        $out['return'] = null;
+    }
+
+    return $out;
+}
+
+/**
+ * A consignment's courier scans in the shape order_timeline_html() draws.
+ *
+ * The same renderer as the order stages, so the two read as one page: every
+ * row carries the courier's own time and its own wording, and nothing is
+ * invented for a scan that has not arrived.
+ */
+function order_tracking_courier_stages(array $shipment): array
+{
+    $icons = [
+        'ready' => 'box', 'booked' => 'package', 'pickup_scheduled' => 'truck',
+        'return_pickup' => 'rotate', 'in_transit' => 'truck', 'failed' => 'info',
+        'out_for_delivery' => 'location', 'delivered' => 'home',
+        'rto_initiated' => 'rotate', 'rto_delivered' => 'rotate', 'returned' => 'rotate',
+        'cancelled' => 'close', 'failed_booking' => 'close',
+    ];
+
+    try {
+        $events = Database::fetchAll(
+            'SELECT `status`, `message`, `location`, `occurred_at` FROM `shipment_events`
+              WHERE `shipment_id` = :s ORDER BY `occurred_at` ASC, `id` ASC',
+            ['s' => (int) $shipment['id']]
+        );
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    $terminal = shipping_is_terminal((string) $shipment['status']);
+    $stages   = [];
+    $last     = count($events) - 1;
+
+    foreach ($events as $index => $event) {
+        $status = (string) $event['status'];
+        $where  = trim((string) ($event['location'] ?? ''));
+        $desc   = trim((string) ($event['message'] ?? ''));
+
+        $stages[] = [
+            'key'   => 'scan' . $index,
+            'label' => shipping_status_label($status),
+            'icon'  => $icons[$status] ?? 'clock',
+            // The newest scan is where the parcel is now, unless the journey
+            // is over - then nothing is "current" and the rail stops.
+            'state' => $index === $last && !$terminal ? 'current' : 'done',
+            'tone'  => in_array($status, ['rto_initiated', 'rto_delivered', 'returned', 'cancelled'], true)
+                ? 'stopped' : 'default',
+            'at'    => (string) $event['occurred_at'],
+            'desc'  => $desc . ($where !== '' ? ($desc !== '' ? ' - ' : '') . $where : ''),
+        ];
+    }
+
+    return $stages;
+}
+
+/**
+ * The courier card: partner, waybill, link, scans, and the reverse leg.
+ *
+ * Rendered from order_tracking_courier() so the account order page and the
+ * public tracking page cannot drift - they had already drifted once, which is
+ * why order_tracking_panel_html() exists at all.
+ */
+function order_courier_panel_html(array $order): string
+{
+    $facts = order_tracking_courier($order);
+    if ($facts['awb'] === '' && $facts['shipment'] === null) {
+        return '';
+    }
+
+    ob_start(); ?>
+    <div class="sik-panel" style="margin-bottom:var(--sp-5)">
+        <div class="sik-panel__head">
+            <h2 class="sik-panel__title">Courier &amp; tracking</h2>
+        </div>
+        <div class="sik-panel__body">
+            <?= order_courier_facts_html($facts) ?>
+        </div>
+    </div>
+    <?php
+    return (string) ob_get_clean();
+}
+
+/**
+ * The inside of the courier card, without the panel around it.
+ *
+ * Its own function because the public tracking page already has a Shipment
+ * panel with the summary rows in it and only needs this part underneath.
+ */
+function order_courier_facts_html(array $facts, bool $withSummary = true): string
+{
+    $shipment = $facts['shipment'];
+    $return   = $facts['return'];
+
+    ob_start(); ?>
+    <?php if ($withSummary): ?>
+    <div class="sik-summary">
+        <?php if ($facts['courier'] !== ''): ?>
+            <div class="sik-summary__row">
+                <span class="sik-tracking__k">Delivery partner</span>
+                <span class="sik-tracking__v"><?= e($facts['courier']) ?></span>
+            </div>
+        <?php endif; ?>
+        <?php if ($facts['awb'] !== ''): ?>
+            <div class="sik-summary__row sik-tracking__row--wrap">
+                <span class="sik-tracking__k">Tracking number</span>
+                <span class="sik-tracking__v sik-tracking__awb">
+                    <span class="sik-num"><?= e($facts['awb']) ?></span>
+                    <button type="button" class="sik-iconbtn" data-copy="<?= e_attr($facts['awb']) ?>"
+                            aria-label="Copy tracking number"><?= icon('copy', 'w-4 h-4') ?></button>
+                </span>
+            </div>
+        <?php endif; ?>
+        <?php if ($shipment !== null): ?>
+            <div class="sik-summary__row">
+                <span class="sik-tracking__k">Courier status</span>
+                <span class="sik-tracking__v"><?= e(shipping_status_label((string) $shipment['status'])) ?></span>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($facts['courier_url'] !== ''): ?>
+        <div class="sik-tracking__link">
+            <?php // rel="noopener" because the courier's page is somebody else's. ?>
+            <a class="sik-btn sik-btn--outline sik-btn--sm sik-btn--block"
+               href="<?= e_attr($facts['courier_url']) ?>" target="_blank" rel="noopener nofollow">
+                <?= icon('truck', 'w-4 h-4') ?><span class="sik-btn__label">Track on
+                    <?= e($facts['courier'] !== '' ? $facts['courier'] : 'the courier site') ?></span>
+            </a>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($facts['scans'] !== []): ?>
+        <h3 class="sik-tracking__h" style="margin-top:var(--sp-4)">Courier scans</h3>
+        <?= order_timeline_html($facts['scans']) ?>
+    <?php endif; ?>
+
+    <?php if ($return !== null): ?>
+        <?php $returnAwb = trim((string) ($return['awb'] ?? '')); ?>
+        <h3 class="sik-tracking__h" style="margin-top:var(--sp-4)">Return pickup</h3>
+        <div class="sik-summary">
+            <div class="sik-summary__row">
+                <span class="sik-tracking__k">Status</span>
+                <span class="sik-tracking__v"><?= e(shipping_status_label((string) $return['status'])) ?></span>
+            </div>
+            <?php if ($returnAwb !== ''): ?>
+                <div class="sik-summary__row sik-tracking__row--wrap">
+                    <span class="sik-tracking__k">Return tracking number</span>
+                    <span class="sik-tracking__v sik-tracking__awb">
+                        <span class="sik-num"><?= e($returnAwb) ?></span>
+                        <button type="button" class="sik-iconbtn" data-copy="<?= e_attr($returnAwb) ?>"
+                                aria-label="Copy return tracking number"><?= icon('copy', 'w-4 h-4') ?></button>
+                    </span>
+                </div>
+            <?php endif; ?>
+        </div>
+        <p class="sik-tracking__hint">
+            <?= $returnAwb !== ''
+                ? 'Please hand the parcel over against this number, in its original packaging with all accessories.'
+                : 'The courier has not issued a return waybill yet. We will email it to you as soon as it does.' ?>
+        </p>
+    <?php endif; ?>
+
+    <?php if ($facts['note'] !== ''): ?>
+        <p class="sik-tracking__hint" style="margin-top:var(--sp-3)">
+            <?= icon('info', 'w-4 h-4') ?> <?= e($facts['note']) ?>
+        </p>
+    <?php endif; ?>
+    <?php
+    return (string) ob_get_clean();
+}
+
+// ===========================================================================
 //  RENDERERS
 // ===========================================================================
 
@@ -483,8 +757,12 @@ function order_tracking_panel_html(array $order, ?array $items = null, array $op
         $units += (int) $item['quantity'];
     }
 
-    $courier  = trim((string) ($order['courier_name'] ?? ''));
-    $tracking = trim((string) ($order['tracking_number'] ?? ''));
+    // Courier facts through the one view model, so this page and the account
+    // order page say the same thing about the same consignment - including
+    // whether anything is actually watching the number.
+    $facts    = order_tracking_courier($order);
+    $courier  = $facts['courier'];
+    $tracking = $facts['awb'];
     $eta      = (string) ($order['estimated_delivery'] ?? '');
     $showShipment = $courier !== '' || $tracking !== '' || ($eta !== '' && !$isStopped && !$isDelivered);
 
@@ -598,22 +876,25 @@ function order_tracking_panel_html(array $order, ?array $items = null, array $op
                                 <?php endif; ?>
                             </div>
 
-                            <?php // The courier's own tracking URL is not stored anywhere in this
-                                  // shop, so none is invented. The link that DOES exist is this
-                                  // page - the same one the confirmation email sends - and it is
-                                  // safe to share because it still asks for the email or mobile. ?>
+                            <?php // This page's own link is always offered - it is the one the
+                                  // confirmation email sends, and it is safe to share because it
+                                  // still asks for the email or mobile at the other end. The
+                                  // courier's own link, its scans and any return pickup come from
+                                  // the hub below, and only where the hub really holds them. ?>
                             <div class="sik-tracking__link">
                                 <button type="button" class="sik-btn sik-btn--outline sik-btn--sm sik-btn--block"
                                         data-copy="<?= e_attr($trackUrl) ?>">
                                     <?= icon('copy', 'w-4 h-4') ?><span class="sik-btn__label">Copy tracking link</span>
                                 </button>
-                                <?php if ($tracking !== ''): ?>
+                                <?php if ($tracking !== '' && !$facts['hub']): ?>
                                     <p class="sik-tracking__hint">
                                         Quote the tracking number above to <?= e($courier !== '' ? $courier : 'the delivery partner') ?>
                                         if you contact them directly.
                                     </p>
                                 <?php endif; ?>
                             </div>
+
+                            <?= order_courier_facts_html($facts, false) ?>
                         </div>
                     </div>
                 <?php endif; ?>

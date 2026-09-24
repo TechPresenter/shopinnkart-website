@@ -52,6 +52,11 @@ $errors = $errors ?? [];
                             <?php else: ?>
                                 <span class="sik-help">Leave blank to build it from the name. Used in the brand URL.</span>
                             <?php endif; ?>
+                            <?php
+                            /* Offers to keep the current URL alive as a 301 when the slug
+                               changes. Renders nothing on a create, where there is no old URL. */
+                            seo_slug_keep_checkbox('brand', $isEdit ? (string) ($brand['slug'] ?? '') : '');
+                            ?>
                         </div>
                     </div>
 
@@ -117,6 +122,8 @@ $errors = $errors ?? [];
                             : url(),
                         'title_from'       => 'name',
                         'description_from' => 'description',
+                        'type'             => 'brand',
+                        'id'               => $isEdit ? (int) ($brand['id'] ?? 0) : 0,
                     ]);
                     ?>
                     <?php if (isset($errors['meta_title'])): ?>

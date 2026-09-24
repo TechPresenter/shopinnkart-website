@@ -28,7 +28,14 @@ $section = $id > 0
 // ---------------------------------------------------------------------------
 $ordered = trim((string) request_input('order', ''));
 if ($ordered !== '') {
-    $wanted = array_values(array_filter(array_map('intval', explode(',', $ordered))));
+    // array_unique BEFORE the membership check below. array_intersect() keeps
+    // both copies of a repeated id, so a list that named one section twice and
+    // another not at all would have the right LENGTH and pass the check - then
+    // renumber the repeated one twice and leave the missing one on its old
+    // number, which is two sections sharing a sort_order and a zone whose
+    // order nobody can predict. Collapsing duplicates first makes such a list
+    // come up short, which is exactly what the 409 below is for.
+    $wanted = array_values(array_unique(array_filter(array_map('intval', explode(',', $ordered)))));
     if ($wanted === []) {
         json_validation_error(['order' => 'No sections were supplied.']);
     }

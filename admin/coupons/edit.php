@@ -61,9 +61,9 @@ $pageActions = '<a class="ad-btn" href="' . e(admin_url('coupons/usage.php?id=' 
 if (admin_can('coupons.delete')) {
     // Written out instead of admin_delete_form() so the page action can be a
     // full labelled button rather than an icon.
-    $confirm = json_encode('Delete "' . $coupon['code'] . '"? Its redemption history goes with it.');
+    $confirm = ('Delete "' . $coupon['code'] . '"? Its redemption history goes with it.');
     $pageActions .= '<form method="post" action="' . e(admin_url('coupons/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) $confirm) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

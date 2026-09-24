@@ -45,6 +45,9 @@ function shipping_statuses(): array
         'ready'            => 'Ready to ship',
         'booked'           => 'AWB assigned',
         'pickup_scheduled' => 'Pickup scheduled',
+        // Only ever on a reverse consignment: the courier is going to the
+        // CUSTOMER to collect. The forward leg's equivalent is above it.
+        'return_pickup'    => 'Return pickup scheduled',
         'in_transit'       => 'In transit',
         'failed'           => 'Delivery attempt failed',
         'out_for_delivery' => 'Out for delivery',
@@ -68,6 +71,7 @@ function shipping_status_tone(string $status): string
 {
     return [
         'pending' => 'gray', 'ready' => 'amber', 'booked' => 'blue', 'pickup_scheduled' => 'blue',
+        'return_pickup' => 'amber',
         'in_transit' => 'indigo', 'failed' => 'amber', 'out_for_delivery' => 'teal',
         'delivered' => 'green', 'rto_initiated' => 'red', 'rto_delivered' => 'red',
         'returned' => 'gray', 'cancelled' => 'red', 'failed_booking' => 'red',
@@ -91,6 +95,10 @@ function shipping_status_rank(string $status): int
         'ready'            => 5,
         'booked'           => 10,
         'pickup_scheduled' => 20,
+        // Above "pickup scheduled" and below "in transit" for the same reason
+        // the forward leg's are in that order: the courier has been booked but
+        // does not have the parcel yet.
+        'return_pickup'    => 25,
         'in_transit'       => 30,
         'failed'           => 35,
         'out_for_delivery' => 40,
@@ -122,7 +130,7 @@ function shipping_is_dead(string $status): bool
  */
 function shipping_is_cancellable(string $status): bool
 {
-    return in_array($status, ['ready', 'booked', 'pickup_scheduled'], true);
+    return in_array($status, ['ready', 'booked', 'pickup_scheduled', 'return_pickup'], true);
 }
 
 /** Statuses that say the courier has physically had the parcel. */
@@ -252,7 +260,32 @@ function shipping_order_status_for(string $shipmentStatus): ?string
         'out_for_delivery' => ORDER_STATUS_OUT_FOR_DELIVERY,
         'delivered'        => ORDER_STATUS_DELIVERED,
         'rto_delivered'    => ORDER_STATUS_RETURNED,
+        // No driver reports 'returned' on a FORWARD leg - it is the reverse
+        // leg's arrival - but a row that carries it (older data, a hand edit)
+        // means the same thing, and leaving it unmapped left the Returns desk
+        // offering a Settle button that could never do anything.
+        'returned'         => ORDER_STATUS_RETURNED,
     ][$shipmentStatus] ?? null;
+}
+
+/**
+ * The same question for a consignment whose direction is known.
+ *
+ * A reverse pickup answers almost nothing: the goods are with the customer
+ * until it arrives, and the order must stay exactly where it was. Reading the
+ * forward table for it would move the order to 'packed' the moment the return
+ * was booked, and 'shipped' as it travelled - backwards, on a delivered order.
+ * Only the arrival counts, and that is a return.
+ */
+function shipping_order_status_for_shipment(array $shipment): ?string
+{
+    $status = (string) ($shipment['status'] ?? '');
+
+    if (!shipping_is_return($shipment)) {
+        return shipping_order_status_for($status);
+    }
+
+    return $status === 'returned' ? ORDER_STATUS_RETURNED : null;
 }
 
 /**
@@ -385,12 +418,46 @@ function shipments_for_order(int $orderId): array
     return Database::fetchAll('SELECT * FROM `shipments` WHERE `order_id` = :o ORDER BY `id` DESC', ['o' => $orderId]);
 }
 
-/** The consignment currently holding the order, if any. */
+/**
+ * The consignment currently holding the order, if any.
+ *
+ * FORWARD legs only. A reverse pickup has its own AWB, its own scans and its
+ * own "delivered" - which means the parcel reached OUR warehouse. Letting it
+ * hold the slot put its AWB on the order the customer is looking at, and its
+ * arrival would have marked the order delivered and, for COD, paid.
+ */
 function shipment_live_for_order(int $orderId): ?array
 {
     return Database::fetch(
-        "SELECT * FROM `shipments` WHERE `order_id` = :o AND `status` NOT IN ('cancelled','failed_booking')
+        "SELECT * FROM `shipments`
+          WHERE `order_id` = :o AND `direction` = 'forward' AND `status` NOT IN ('cancelled','failed_booking')
           ORDER BY `id` DESC LIMIT 1",
+        ['o' => $orderId]
+    );
+}
+
+/** Is this row a reverse consignment (a return or an RTO pickup)? */
+function shipping_is_return(array $shipment): bool
+{
+    return (string) ($shipment['direction'] ?? 'forward') === 'return';
+}
+
+/** The reverse consignment currently in force for an order, if any. */
+function shipping_return_live_for_order(int $orderId): ?array
+{
+    return Database::fetch(
+        "SELECT * FROM `shipments`
+          WHERE `order_id` = :o AND `direction` = 'return' AND `status` NOT IN ('cancelled','failed_booking')
+          ORDER BY `id` DESC LIMIT 1",
+        ['o' => $orderId]
+    );
+}
+
+/** Every reverse consignment an order has had, newest first. */
+function shipping_returns_for_order(int $orderId): array
+{
+    return Database::fetchAll(
+        "SELECT * FROM `shipments` WHERE `order_id` = :o AND `direction` = 'return' ORDER BY `id` DESC",
         ['o' => $orderId]
     );
 }
@@ -467,38 +534,100 @@ function shipping_order_owes_cod(array $order): bool
 // ===========================================================================
 
 /**
- * Quotes from every live courier for one order, cheapest first.
+ * Quotes from every live courier for one parcel, cheapest first. No order
+ * needed: this is what the standalone rate calculator asks, and what
+ * shipping_quote_order() asks once it has turned an order into a parcel.
+ *
+ * $request: destination_pin (required), origin_pin (optional - each
+ * integration's own pickup PIN is used when none is forced), weight_grams,
+ * length_cm / width_cm / height_cm, is_cod, cod_amount, declared_value.
  *
  * One failing courier does not fail the lot - its error is carried alongside,
  * so the admin sees "Shiprocket: login failed" next to the mock's rates rather
  * than an empty screen.
+ *
+ * Serviceability is NOT a second round of calls: a courier that quotes serves
+ * the lane, and one that does not says why in `errors` and in `providers`.
+ * Asking twice would double every real integration's API bill for an answer
+ * the rates call has already given.
+ *
+ * @return array{rates:array, errors:string[], blocked:array<string,string>,
+ *               origin_pin:string, providers:array<string,array>}
  */
-function shipping_quote_order(int $orderId, array $parcel = []): array
+function shipping_rate_quote(array $request): array
 {
-    $order = shipping_order_payload($orderId);
-    if ($order === null) {
-        return ['rates' => [], 'errors' => ['Order not found.']];
+    $digits      = static fn ($value): string => preg_replace('/\D+/', '', (string) $value);
+    $destination = $digits($request['destination_pin'] ?? '');
+    $forcedOrigin = $digits($request['origin_pin'] ?? '');
+
+    $out = [
+        'rates'      => [],
+        'errors'     => [],
+        'blocked'    => [],
+        'origin_pin' => $forcedOrigin,
+        'providers'  => [],
+    ];
+
+    $providers = ShippingProviderFactory::available();
+
+    // What the form should show when the admin has not typed an origin: the
+    // default integration's pickup PIN, which is where parcels actually leave
+    // from.
+    if ($out['origin_pin'] === '') {
+        $default = shipping_default_provider();
+        $out['origin_pin'] = (string) ($default['pickup_pincode'] ?? '') ?: (string) setting('store_pincode', '');
     }
 
-    $rates  = [];
-    $errors = [];
+    if (strlen($destination) !== 6) {
+        $out['errors'][] = 'Enter a six-digit destination PIN code.';
+        return $out;
+    }
+    if ($providers === []) {
+        $out['errors'][] = 'No courier integration is active, so nothing can be quoted.';
+        return $out;
+    }
 
-    foreach (ShippingProviderFactory::available() as $provider) {
+    $isCod     = !empty($request['is_cod']);
+    $codAmount = $isCod ? max(0.0, (float) ($request['cod_amount'] ?? 0)) : 0.0;
+    $declared  = max(0.0, (float) ($request['declared_value'] ?? $codAmount));
+    $grams     = max(1, (int) ($request['weight_grams'] ?? 500));
+
+    foreach ($providers as $provider) {
         $driver = ShippingProviderFactory::make($provider);
         if ($driver === null) {
             continue;
         }
+        $code = (string) $provider['code'];
+        $name = (string) $provider['name'];
 
-        if ($order['is_cod'] && (int) $provider['supports_cod'] !== 1) {
-            $errors[] = $provider['name'] . ': COD is switched off for this courier.';
+        // A courier that quotes but cannot book is still worth showing - the
+        // price is real - so it is recorded here and excluded from the
+        // recommendation by shipping_score_rates() rather than dropped.
+        $block = shipping_provider_book_block($provider);
+        if ($block !== null) {
+            $out['blocked'][$code] = $block;
+        }
+
+        $entry = ['name' => $name, 'mode' => (string) $provider['mode'], 'origin_pin' => '',
+                  'serviceable' => null, 'cod' => (int) $provider['supports_cod'] === 1,
+                  'blocked' => $block, 'message' => '', 'rates' => 0];
+
+        if ($isCod && (int) $provider['supports_cod'] !== 1) {
+            $entry['serviceable']  = false;
+            $entry['message']      = 'COD is switched off for this courier.';
+            $out['errors'][]       = $name . ': COD is switched off for this courier.';
+            $out['providers'][$code] = $entry;
             continue;
         }
 
-        $origin = (string) ($provider['pickup_pincode'] ?: setting('store_pincode', ''));
+        $origin = $forcedOrigin !== '' ? $forcedOrigin : (string) ($provider['pickup_pincode'] ?: setting('store_pincode', ''));
         if ($origin === '') {
-            $errors[] = $provider['name'] . ': set a pickup PIN code on the integration first.';
+            $entry['message']        = 'Set a pickup PIN code on the integration first.';
+            $out['errors'][]         = $name . ': set a pickup PIN code on the integration first.';
+            $out['providers'][$code] = $entry;
             continue;
         }
+        $entry['origin_pin'] = $origin;
 
         try {
             // The dimensions go in too, null when not given: couriers bill the
@@ -507,34 +636,143 @@ function shipping_quote_order(int $orderId, array $parcel = []): array
             // null the driver uses the same default box it books with.
             $res = $driver->getRates([
                 'origin_pin'      => $origin,
-                'destination_pin' => (string) $order['shipping_pincode'],
-                'weight_grams'    => (int) ($parcel['weight_grams'] ?? $order['estimated_grams']),
-                'length_cm'       => isset($parcel['length_cm']) ? (float) $parcel['length_cm'] : null,
-                'width_cm'        => isset($parcel['width_cm']) ? (float) $parcel['width_cm'] : null,
-                'height_cm'       => isset($parcel['height_cm']) ? (float) $parcel['height_cm'] : null,
-                'is_cod'          => $order['is_cod'],
-                'cod_amount'      => $order['is_cod'] ? (float) $order['total_amount'] : 0,
-                'declared_value'  => (float) $order['total_amount'],
+                'destination_pin' => $destination,
+                'weight_grams'    => $grams,
+                'length_cm'       => isset($request['length_cm']) ? (float) $request['length_cm'] : null,
+                'width_cm'        => isset($request['width_cm']) ? (float) $request['width_cm'] : null,
+                'height_cm'       => isset($request['height_cm']) ? (float) $request['height_cm'] : null,
+                'is_cod'          => $isCod,
+                'cod_amount'      => $codAmount,
+                'declared_value'  => $declared,
             ]);
         } catch (Throwable $e) {
             $res = ['ok' => false, 'message' => $e->getMessage()];
         }
 
         if (empty($res['ok'])) {
-            $errors[] = $provider['name'] . ': ' . ($res['message'] ?? 'rates unavailable');
+            $entry['message']        = (string) ($res['message'] ?? 'rates unavailable');
+            $out['errors'][]         = $name . ': ' . $entry['message'];
+            $out['providers'][$code] = $entry;
             continue;
         }
-        foreach ((array) ($res['rates'] ?? []) as $rate) {
-            $rates[] = $rate + ['provider' => (string) $provider['code'], 'provider_name' => (string) $provider['name']];
+
+        $offered = (array) ($res['rates'] ?? []);
+        foreach ($offered as $rate) {
+            $out['rates'][] = $rate + [
+                'provider'      => $code,
+                'provider_name' => $name,
+                'origin_pin'    => $origin,
+            ];
         }
-        if (($res['rates'] ?? []) === []) {
-            $errors[] = $provider['name'] . ': ' . ($res['message'] ?? 'no service for this PIN code');
+        $entry['rates']       = count($offered);
+        $entry['serviceable'] = $offered !== [];
+        $entry['message']     = (string) ($res['message'] ?? '');
+        if ($offered === []) {
+            $entry['message'] = $entry['message'] ?: 'no service for this PIN code';
+            $out['errors'][]  = $name . ': ' . $entry['message'];
         }
+        $out['providers'][$code] = $entry;
     }
 
-    usort($rates, static fn (array $a, array $b): int => $a['cost'] <=> $b['cost']);
+    usort($out['rates'], static fn (array $a, array $b): int => $a['cost'] <=> $b['cost']);
 
-    return ['rates' => $rates, 'errors' => $errors, 'order' => $order];
+    return $out;
+}
+
+/**
+ * Quotes from every live courier for one order, cheapest first.
+ *
+ * The order's own parcel - the catalogue weight estimate, the delivery PIN,
+ * whether the courier collects cash - unless the caller overrides it with a
+ * weighed parcel.
+ */
+function shipping_quote_order(int $orderId, array $parcel = []): array
+{
+    $order = shipping_order_payload($orderId);
+    if ($order === null) {
+        return ['rates' => [], 'errors' => ['Order not found.'], 'blocked' => [], 'providers' => []];
+    }
+
+    $quote = shipping_rate_quote([
+        'destination_pin' => (string) $order['shipping_pincode'],
+        'weight_grams'    => (int) ($parcel['weight_grams'] ?? $order['estimated_grams']),
+        'length_cm'       => $parcel['length_cm'] ?? null,
+        'width_cm'        => $parcel['width_cm'] ?? null,
+        'height_cm'       => $parcel['height_cm'] ?? null,
+        'is_cod'          => $order['is_cod'],
+        'cod_amount'      => $order['is_cod'] ? (float) $order['total_amount'] : 0,
+        'declared_value'  => (float) $order['total_amount'],
+    ]);
+
+    return $quote + ['order' => $order];
+}
+
+// ===========================================================================
+//  Choosing a courier
+// ===========================================================================
+
+/**
+ * Score a quote the way the selection does. The calculator and the booking
+ * screen both go through here, so a rate the calculator calls best is the one
+ * the booking screen pre-selects.
+ */
+function shipping_score_quote(array $quote): array
+{
+    return shipping_score_rates(
+        (array) ($quote['rates'] ?? []),
+        ['blocked' => (array) ($quote['blocked'] ?? [])]
+    );
+}
+
+/**
+ * Which courier should carry this order, and why.
+ *
+ * Every live quote is scored on cost, promised days, the courier's own record
+ * and its rating; COD support and serviceability are gates rather than weights
+ * because a courier that will not take the parcel cannot be "nearly right" -
+ * it never reaches the scoring, and says why in `errors` instead.
+ *
+ * The reasoning comes back with the choice so the screen can show WHY this
+ * courier won, and so the sentence stored on the shipment is the one the admin
+ * was shown - the weights are settings and the performance window moves, so a
+ * reason recomputed a month later would not be the reason it was booked for.
+ *
+ * $opts['quote'] lets a caller that has already paid for a quote pass it in
+ * rather than ask every courier twice on one page view.
+ *
+ * @return array{ok:bool, choice:?array, ranked:array, rates:array, reason:string,
+ *                reasons:string[], weights:array, errors:string[], blocked:array,
+ *                order:?array, message:string}
+ */
+function shipping_select_courier(int $orderId, array $parcel = [], array $opts = []): array
+{
+    $quote = is_array($opts['quote'] ?? null) ? $opts['quote'] : shipping_quote_order($orderId, $parcel);
+    $order = $quote['order'] ?? null;
+
+    $scored = shipping_score_quote($quote);
+
+    $message = '';
+    if ($scored['choice'] === null) {
+        $message = $order === null
+            ? 'Order not found.'
+            : ((array) ($quote['rates'] ?? []) === []
+                ? 'No courier quoted for this parcel.'
+                : 'Every courier that quoted is in Test mode and cannot book.');
+    }
+
+    return [
+        'ok'      => $scored['choice'] !== null,
+        'choice'  => $scored['choice'],
+        'ranked'  => $scored['ranked'],
+        'rates'   => (array) ($quote['rates'] ?? []),
+        'reason'  => $scored['reason'],
+        'reasons' => $scored['reasons'],
+        'weights' => $scored['weights'],
+        'errors'  => (array) ($quote['errors'] ?? []),
+        'blocked' => (array) ($quote['blocked'] ?? []),
+        'order'   => $order,
+        'message' => $message,
+    ];
 }
 
 // ===========================================================================
@@ -589,9 +827,26 @@ function shipping_book(int $orderId, string $providerCode, array $opts = []): ar
         ? min(60, (int) $opts['eta_days'])
         : null;
 
+    // How this courier came to be chosen, kept on the consignment. A value
+    // outside the three the column knows is stored as nothing rather than
+    // rejected: a caller that does not record its choice is the old behaviour,
+    // and a booking must not fail over a label.
+    $selectedBy = in_array((string) ($opts['selected_by'] ?? ''), ['manual', 'recommended', 'auto'], true)
+        ? (string) $opts['selected_by']
+        : null;
+    $selectionScore = isset($opts['selection_score']) && is_numeric($opts['selection_score'])
+        ? round(max(0.0, min(100.0, (float) $opts['selection_score'])), 2)
+        : null;
+    // Stored as the screen showed it: the weights are settings and the
+    // performance window moves, so this sentence cannot be recomputed later
+    // and still be the reason the parcel went where it went.
+    $selectionReason = trim((string) ($opts['selection_reason'] ?? ''));
+    $selectionReason = $selectionReason !== '' ? mb_substr($selectionReason, 0, 500) : null;
+
     // --- claim the order's slot, under a lock, before calling out ----------
     try {
-        $claim = Database::transaction(static function () use ($orderId, $provider, $order, $grams, $opts, $courierId, $charge, $etaDays): array {
+        $claim = Database::transaction(static function () use ($orderId, $provider, $order, $grams, $opts, $courierId,
+            $charge, $etaDays, $selectedBy, $selectionScore, $selectionReason): array {
             // FOR UPDATE serialises concurrent bookings of the same order: the
             // second waits here, then sees the first one's pending row. It also
             // serialises against update_order_status(), which takes the same
@@ -629,6 +884,9 @@ function shipping_book(int $orderId, string $providerCode, array $opts = []): ar
                 'courier_name'    => isset($opts['courier']) ? (string) $opts['courier'] : null,
                 'courier_id'      => $courierId !== '' && strlen($courierId) <= 40 ? $courierId : null,
                 'expected_at'     => $etaDays !== null ? date('Y-m-d', strtotime('+' . $etaDays . ' days')) : null,
+                'selected_by'      => $selectedBy,
+                'selection_score'  => $selectionScore,
+                'selection_reason' => $selectionReason,
             ]);
 
             return ['id' => $id, 'is_cod' => $isCod, 'total' => (float) $locked['total_amount']];
@@ -741,6 +999,286 @@ function shipping_book(int $orderId, string $providerCode, array $opts = []): ar
             . ($lag !== null ? ' ' . $lag : ''),
         'awb_ok'      => (bool) ($awb['ok'] ?? false),
     ];
+}
+
+// ===========================================================================
+//  Booking without an admin
+//
+//  Off by default, and it stays off until somebody turns it on: this spends
+//  money, hands parcels to couriers and moves orders with nobody watching.
+//  Every refusal below leaves the order exactly as it was, so it is still
+//  bookable by hand from admin/shipping/book.php - a refusal is never a dead
+//  end, it is "a person should look at this one".
+// ===========================================================================
+
+/** Is unattended booking switched on? */
+function shipping_autoship_enabled(): bool
+{
+    return (string) setting('shipping_auto_book_enabled', '0') === '1';
+}
+
+/**
+ * The most cash an unattended booking will send a courier to collect.
+ *
+ * Zero means no ceiling. A cap exists because a COD parcel is goods handed to
+ * a stranger against a promise of cash, and the loss on a refused one is the
+ * whole order - so the value at which a human should look at it first is a
+ * business decision, not a constant.
+ */
+function shipping_autoship_cod_limit(): float
+{
+    return max(0.0, (float) setting('shipping_auto_book_cod_max', 10000));
+}
+
+/** Order statuses an unattended booking will act on. */
+function shipping_autoship_statuses(): array
+{
+    return [ORDER_STATUS_CONFIRMED, ORDER_STATUS_PROCESSING, ORDER_STATUS_PACKED];
+}
+
+/**
+ * Book one order with the recommended courier, without an admin.
+ *
+ * Returns ['ok' => true, ...] on a booking, else ['ok' => false, 'refused' =>
+ * <code>, 'message' => <why>, 'bookable_by_hand' => true].
+ *
+ * The refusal codes, each proved by its own case in the suite:
+ *
+ *   disabled        the setting is off
+ *   no_order        there is no such order
+ *   blocked         shipping_order_block_reason() says no - cancelled,
+ *                   refunded, returned, delivered, or prepaid and unpaid
+ *   not_confirmed   still pending: nobody has confirmed it
+ *   already_shipped the order is already shipped or beyond
+ *   already_shipping it already holds a live consignment
+ *   manual_tracking someone entered an AWB by hand; a booking would replace it
+ *   cod_over_limit  more cash than the ceiling allows
+ *   no_courier      nothing quoted: a PIN nobody serves, no active
+ *                   integration, or every one that quoted cannot book
+ *   booking_failed  the courier refused the booking itself
+ *
+ * Only decisions ABOUT THIS ORDER are logged. "The feature is off" is not: it
+ * is true of every order in the shop, and logging it would write a row per
+ * order per sweep for as long as the switch stays off. The same reason is not
+ * logged twice in a day either: most refusals here - a COD ceiling, a PIN
+ * nobody serves - do not change on their own, and the order stays in the
+ * sweep's queue, so one row per pass would bury the activity log within a
+ * week. A refusal whose WORDING changes is a new fact and is recorded again.
+ */
+function shipping_autoship_order(int $orderId, array $parcel = []): array
+{
+    $refuse = static function (string $code, string $message, array $extra = []) use ($orderId): array {
+        if (!in_array($code, ['disabled', 'no_order'], true)) {
+            $note = 'Auto-ship refused: ' . $message;
+            $said = Database::exists(
+                'activity_logs',
+                "`action` = 'shipment.autoship_refused' AND `entity` = 'order' AND `entity_id` = :o
+                 AND `description` = :d AND `created_at` >= DATE_SUB(NOW(), INTERVAL 1 DAY)",
+                ['o' => $orderId, 'd' => mb_substr($note, 0, 500)]
+            );
+            if (!$said) {
+                log_activity('shipment.autoship_refused', 'order', $orderId, $note);
+            }
+        }
+        return ['ok' => false, 'refused' => $code, 'message' => $message, 'bookable_by_hand' => true] + $extra;
+    };
+
+    if (!shipping_autoship_enabled()) {
+        return $refuse('disabled', 'Automatic shipping is switched off.');
+    }
+
+    $order = shipping_order_payload($orderId);
+    if ($order === null) {
+        return $refuse('no_order', 'Order not found.');
+    }
+
+    // The same rule booking itself applies, asked of the service rather than
+    // kept here as a second list that would drift from it.
+    if (($blocked = shipping_order_block_reason($order)) !== null) {
+        return $refuse('blocked', $blocked);
+    }
+
+    $status = (string) $order['status'];
+    if ($status === ORDER_STATUS_PENDING) {
+        return $refuse('not_confirmed', 'This order has not been confirmed yet.');
+    }
+    if (!in_array($status, shipping_autoship_statuses(), true)) {
+        return $refuse('already_shipped', 'This order is already '
+            . strtolower(ORDER_STATUSES[$status] ?? $status) . '.');
+    }
+
+    // Before the hand-entered check: a booked order carries the AWB we gave it,
+    // which would otherwise read as somebody's manual entry.
+    if (shipment_live_for_order($orderId) !== null) {
+        return $refuse('already_shipping', 'This order already has a live consignment.');
+    }
+    if (trim((string) ($order['tracking_number'] ?? '')) !== '') {
+        return $refuse('manual_tracking', 'This order already carries tracking number '
+            . trim((string) $order['tracking_number']) . ', entered by hand.');
+    }
+
+    $limit = shipping_autoship_cod_limit();
+    if ($order['is_cod'] && $limit > 0 && (float) $order['total_amount'] > $limit) {
+        return $refuse('cod_over_limit', 'COD of ' . money((float) $order['total_amount'])
+            . ' is over the ' . money($limit) . ' ceiling for automatic shipping.');
+    }
+
+    $pick = shipping_select_courier($orderId, $parcel);
+    if (!$pick['ok'] || $pick['choice'] === null) {
+        return $refuse(
+            'no_courier',
+            ($pick['message'] !== '' ? $pick['message'] : 'No courier quoted for this parcel.')
+                . ($pick['errors'] !== [] ? ' ' . implode(' ', $pick['errors']) : ''),
+            ['errors' => $pick['errors']]
+        );
+    }
+
+    $choice = $pick['choice'];
+    $opts   = [
+        'weight_grams'     => (int) ($parcel['weight_grams'] ?? $order['estimated_grams']),
+        'shipping_charge'  => round((float) $choice['cost'], 2),
+        'courier'          => mb_substr((string) $choice['courier'], 0, 100),
+        'selected_by'      => 'auto',
+        'selection_score'  => (float) $choice['score'],
+        'selection_reason' => 'Chosen automatically: ' . $pick['reason'],
+    ];
+    foreach (['length_cm', 'width_cm', 'height_cm'] as $key) {
+        if (isset($parcel[$key]) && $parcel[$key] !== null) {
+            $opts[$key] = (float) $parcel[$key];
+        }
+    }
+    $courierId = trim((string) ($choice['courier_id'] ?? ''));
+    if ($courierId !== '' && $courierId !== '0') {
+        $opts['courier_id'] = mb_substr($courierId, 0, 40);
+    }
+    if (isset($choice['eta_days']) && is_numeric($choice['eta_days']) && (int) $choice['eta_days'] > 0) {
+        $opts['eta_days'] = (int) $choice['eta_days'];
+    }
+
+    $result = shipping_book($orderId, (string) $choice['provider'], $opts);
+
+    if (empty($result['ok'])) {
+        // The courier refused. The shipment row records the failure; the order
+        // keeps its slot and an admin can book it by hand from the screen.
+        return $refuse('booking_failed', (string) ($result['message'] ?? 'The courier refused the booking.'),
+            ['shipment_id' => $result['shipment_id'] ?? null]);
+    }
+
+    log_activity('shipment.autoship', 'order', $orderId,
+        'Auto-ship booked order #' . $orderId . ' with ' . (string) $choice['courier']
+        . ' (' . (string) ($choice['provider_name'] ?? $choice['provider']) . '), score '
+        . number_format((float) $choice['score'], 1) . '. ' . $pick['reason']);
+
+    return $result + ['refused' => null, 'choice' => $choice, 'reason' => $pick['reason']];
+}
+
+/**
+ * How far back an unattended sweep will reach, in days. 0 means no floor.
+ *
+ * A floor exists because of what the FIRST pass does. The switch ships off, so
+ * by the time anybody turns it on the shop has a tail of old orders that are
+ * confirmed, packed or processing and were never shipped - abandoned, settled
+ * by hand, written off, waiting on stock. Without a floor the very first cron
+ * pass books couriers for all of them, oldest first, with nobody watching:
+ * real money, real parcels, against orders whose customers stopped expecting
+ * anything months ago. On this project's own scratch database an unbounded
+ * first pass booked 24 consignments for orders years past.
+ *
+ * Seven days is the default because that is comfortably longer than any
+ * healthy order spends waiting to be dispatched, and far shorter than a
+ * backlog. Raising it is a deliberate act; 0 removes the floor entirely and
+ * the settings screen says what that means.
+ */
+function shipping_autoship_max_age_days(): int
+{
+    $days = (int) setting('shipping_auto_book_max_age_days', 7);
+    return $days <= 0 ? 0 : max(1, min(3650, $days));
+}
+
+/**
+ * Orders an unattended booking would look at, oldest first.
+ *
+ * "Never attempted" rather than "has no live shipment": an order whose booking
+ * the courier refused must not be retried every five minutes forever - that is
+ * a courier's API being hammered and, on a bad day, a wallet being drained. A
+ * failed booking is left for an admin, who can see what the courier said.
+ *
+ * Bounded in time by shipping_autoship_max_age_days(), for the reason given
+ * there: the first pass after the switch is turned on must not reach into the
+ * shop's whole history. An old order left behind is still bookable by hand,
+ * which is the right way to dispatch one nobody has looked at in months.
+ *
+ * $orderIds narrows it to a chosen list, which is what a bulk "ship these"
+ * action needs; empty means every eligible order. A named list is NOT aged
+ * out: an admin who ticks an old order and presses "ship these" has looked at
+ * it, which is exactly the judgement the floor exists to wait for.
+ *
+ * @return int[]
+ */
+function shipping_autoship_candidates(int $limit = 50, array $orderIds = []): array
+{
+    $limit = max(1, min(500, $limit));
+
+    [$statusSql, $params] = Database::inPlaceholders(shipping_autoship_statuses(), 'st');
+    $where   = ['o.`status` IN (' . $statusSql . ')'];
+    $where[] = "(o.`tracking_number` IS NULL OR o.`tracking_number` = '')";
+    $where[] = 'NOT EXISTS (SELECT 1 FROM `shipments` s WHERE s.`order_id` = o.`id`)';
+
+    $maxAge = shipping_autoship_max_age_days();
+    if ($maxAge > 0 && $orderIds === []) {
+        $where[]       = 'o.`created_at` >= DATE_SUB(NOW(), INTERVAL :age DAY)';
+        $params['age'] = $maxAge;
+    }
+
+    if ($orderIds !== []) {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
+        if ($ids === []) {
+            return [];
+        }
+        [$sql, $bound] = Database::inPlaceholders($ids, 'oid');
+        $where[]       = 'o.`id` IN (' . $sql . ')';
+        $params       += $bound;
+    }
+
+    return array_map('intval', Database::fetchColumnAll(
+        'SELECT o.`id` FROM `orders` o WHERE ' . implode(' AND ', $where)
+        . ' ORDER BY o.`created_at` ASC, o.`id` ASC LIMIT ' . $limit,
+        $params
+    ));
+}
+
+/**
+ * One pass of unattended booking, for a cron runner or a bulk action.
+ *
+ * Returns what it did, per order, so the runner can print it and a bulk action
+ * can show it. Nothing is thrown: one order the courier refuses must not stop
+ * the rest of the queue.
+ */
+function shipping_autoship_sweep(int $limit = 50, array $opts = []): array
+{
+    $out = ['enabled' => shipping_autoship_enabled(), 'looked_at' => 0, 'booked' => 0, 'refused' => 0, 'results' => []];
+    if (!$out['enabled']) {
+        return $out;
+    }
+
+    foreach (shipping_autoship_candidates($limit, (array) ($opts['order_ids'] ?? [])) as $orderId) {
+        $out['looked_at']++;
+        try {
+            $one = shipping_autoship_order($orderId);
+        } catch (Throwable $e) {
+            ErrorHandler::log('warning', 'Auto-ship failed on order #' . $orderId . ': ' . $e->getMessage());
+            $one = ['ok' => false, 'refused' => 'exception', 'message' => $e->getMessage()];
+        }
+        if (!empty($one['ok'])) {
+            $out['booked']++;
+            $out['results'][$orderId] = 'booked';
+            continue;
+        }
+        $out['refused']++;
+        $out['results'][$orderId] = (string) ($one['refused'] ?? 'refused');
+    }
+
+    return $out;
 }
 
 /**
@@ -1277,6 +1815,13 @@ function shipping_refresh_tracking(int $shipmentId): array
     if ($shipment === null) {
         return shipping_fail('Shipment not found.');
     }
+    // A reverse consignment is asked about with checkReturnStatus(). Sent
+    // through trackShipment() its "delivered" would come back meaning the
+    // customer received it - so the poller, the webhook retry and the admin's
+    // Refresh button all come through here and are handed over.
+    if (shipping_is_return($shipment)) {
+        return shipping_refresh_return($shipmentId);
+    }
     if ((string) $shipment['awb'] === '' && (string) $shipment['shipment_ref'] === '') {
         return shipping_fail('No AWB to track yet.');
     }
@@ -1471,6 +2016,11 @@ function shipping_settle(array $shipment): array
         ['s' => $shipmentId]
     );
 
+    // A reverse consignment is travelling TO us, so its scans are read on that
+    // leg: the courier says "delivered" when the parcel reaches OUR warehouse.
+    // Taking that at face value would mark the ORDER delivered - and a COD
+    // order paid - for goods the customer sent back.
+    $isReturn       = shipping_is_return($shipment);
     $inRto          = false;
     $best           = null;   // the most advanced status the timeline reaches
     $firstLeft      = null;   // earliest scan that says the courier had the parcel
@@ -1498,9 +2048,16 @@ function shipping_settle(array $shipment): array
         // the order delivered - and a COD order PAID - for a parcel the
         // customer refused. The stored row is corrected too, so the timeline
         // the admin reads says what happened.
-        if ($status === 'delivered' && $inRto) {
-            Database::query("UPDATE `shipment_events` SET `status` = 'rto_delivered' WHERE `id` = :id", ['id' => (int) $row['id']]);
-            $status = 'rto_delivered';
+        if ($status === 'delivered' && ($inRto || $isReturn)) {
+            // On a reverse consignment the arrival IS the return: 'returned' is
+            // the status a customer return ends at, and the one the order reads
+            // through shipping_order_status_for_shipment(). An RTO leg keeps
+            // its own 'rto_delivered', which says the same thing about a parcel
+            // nobody asked to send back.
+            $arrival = $isReturn ? 'returned' : 'rto_delivered';
+            Database::query('UPDATE `shipment_events` SET `status` = :a WHERE `id` = :id',
+                ['a' => $arrival, 'id' => (int) $row['id']]);
+            $status = $arrival;
         }
 
         if (shipping_status_rank($status) < 0) {
@@ -1588,6 +2145,12 @@ function shipping_after_events(array $settled): void
     }
 
     shipping_sync_order($shipment, (bool) $settled['moved']);
+
+    // Last, and only once the order agrees: the customer is told what the
+    // courier did. After the sync because the order row is what carries the
+    // AWB and the courier name into the mail, and because a sync that throws
+    // is retried - a mail that had already gone out could not be.
+    shipping_notify_shipment($shipment);
 }
 
 /** Remove a dead consignment's AWB from its order - only if the order still points at it. */
@@ -1743,6 +2306,14 @@ function shipping_sync_order(array $shipment, bool $moved = true): void
         return;
     }
 
+    // A reverse consignment never carries its AWB onto the order (the customer
+    // is still looking at the parcel that went out) and never holds the order's
+    // slot. The one thing it can say is that the goods arrived back.
+    if (shipping_is_return($shipment)) {
+        shipping_sync_order_return($shipment, $order);
+        return;
+    }
+
     // Only the shipment that currently holds the order may speak for it. A
     // late webhook for a consignment that was cancelled and rebooked must not
     // overwrite the new one's AWB.
@@ -1834,5 +2405,569 @@ function shipping_sync_order(array $shipment, bool $moved = true): void
     if (empty($result['ok'])) {
         throw new RuntimeException('Shipment #' . (int) $shipment['id'] . ': order #' . $orderId . ' could not be moved to '
             . $target . ': ' . (string) ($result['message'] ?? 'unknown error'));
+    }
+}
+
+// ===========================================================================
+//  The reverse leg - returns and RTO
+// ===========================================================================
+//
+// A parcel comes back in one of two ways, and they are NOT the same thing:
+//
+//   RTO           the courier could not deliver and turned the forward
+//                 consignment round. There is no second consignment and no
+//                 second AWB - the same row moves rto_initiated -> rto_delivered.
+//                 Nobody asked for it, so there is no return_request behind it.
+//
+//   return pickup we book a courier to collect from the CUSTOMER. That is a
+//                 consignment of its own, with its own AWB, its own scans and
+//                 its own timeline - stored as a second `shipments` row with
+//                 direction = 'return'.
+//
+// The reverse row is deliberately an ordinary shipment: the webhook resolves it
+// by AWB, the poller polls it, the events table times it and shipping_settle()
+// moves it, all without a second copy of any of that. What it must never do is
+// speak for the ORDER - see shipment_live_for_order() and
+// shipping_order_status_for_shipment().
+
+/**
+ * Book a courier to collect a return from the customer.
+ *
+ * Creates the reverse consignment against the forward one it is sending back.
+ * Every refusal below is a state the courier would have accepted and we would
+ * then have had to unpick by hand.
+ *
+ * @param array $opts return_request_id, reason, weight_grams
+ * @return array{ok:bool, shipment_id?:int, awb?:?string, message:string}
+ */
+function shipping_book_return(int $forwardShipmentId, array $opts = []): array
+{
+    $forward = shipment_get($forwardShipmentId);
+    if ($forward === null) {
+        return shipping_fail('That consignment no longer exists.');
+    }
+    if (shipping_is_return($forward)) {
+        return shipping_fail('That is already a return pickup. Book the reverse leg against the parcel that went out.');
+    }
+
+    // Only a parcel the customer actually has can be collected from them. One
+    // still in transit is stopped by cancelling it, and one that came back as
+    // an RTO is already here.
+    if ((string) $forward['status'] !== 'delivered') {
+        return shipping_fail('Only a delivered parcel can be collected back. This one is '
+            . strtolower(shipping_status_label((string) $forward['status'])) . '.');
+    }
+
+    $orderId = (int) $forward['order_id'];
+    $order   = shipping_order_payload($orderId);
+    if ($order === null) {
+        return shipping_fail('Order not found.');
+    }
+
+    // The customer's own request, where there is one. An RTO has none, and a
+    // request nobody has approved is a decision still outstanding - booking a
+    // courier for it would settle it by the back door.
+    $requestId = (int) ($opts['return_request_id'] ?? 0);
+    $request   = null;
+    if ($requestId > 0) {
+        $request = Database::fetch('SELECT * FROM `return_requests` WHERE `id` = :id', ['id' => $requestId]);
+        if ($request === null || (int) $request['order_id'] !== $orderId) {
+            return shipping_fail('That return request does not belong to this order.');
+        }
+        if ((string) $request['status'] !== RETURN_STATUS_APPROVED) {
+            return shipping_fail('Approve the ' . (string) $request['type'] . ' request first - a courier booking is not a decision.');
+        }
+    }
+
+    $provider = shipping_provider((string) $forward['provider_code']);
+    if ($provider === null || $provider['status'] !== 'active') {
+        return shipping_fail('The courier this parcel went out with is not active any more.');
+    }
+    if ((int) $provider['supports_return'] !== 1) {
+        return shipping_fail('Reverse pickups are switched off for ' . $provider['name'] . '.');
+    }
+    $driver = ShippingProviderFactory::make($provider);
+    if ($driver === null) {
+        return shipping_fail('No driver is installed for ' . $provider['code'] . '.');
+    }
+
+    $reason = mb_substr(trim((string) preg_replace('/\s+/u', ' ', (string) ($opts['reason'] ?? ''))), 0, 255);
+    if ($reason === '' && $request !== null) {
+        $reason = return_reason_label((string) $request['reason']);
+    }
+    $grams = max(50, (int) ($opts['weight_grams'] ?? ($forward['weight_grams'] ?: $order['estimated_grams'])));
+
+    // --- claim the order's return slot, under a lock, before calling out ---
+    try {
+        $claim = Database::transaction(static function () use ($orderId, $forward, $provider, $requestId, $reason, $grams): int {
+            // The same lock shipping_book() takes, so a second "Book return"
+            // pressed at the same moment waits here and then sees this row.
+            $locked = Database::fetch('SELECT `id` FROM `orders` WHERE `id` = :id FOR UPDATE', ['id' => $orderId]);
+            if ($locked === null) {
+                throw new RuntimeException('Order not found.');
+            }
+            if (shipping_return_live_for_order($orderId) !== null) {
+                throw new RuntimeException('This order already has a return pickup booked. Cancel it before booking another.');
+            }
+
+            return Database::insert('shipments', [
+                'order_id'           => $orderId,
+                'provider_id'        => (int) $provider['id'],
+                'provider_code'      => (string) $provider['code'],
+                'direction'          => 'return',
+                'parent_shipment_id' => (int) $forward['id'],
+                'return_request_id'  => $requestId > 0 ? $requestId : null,
+                'return_reason'      => $reason !== '' ? $reason : null,
+                'status'             => 'pending',
+                // A reverse pickup collects goods, never cash: the courier is
+                // coming to us. Leaving is_cod set would have the RTO rule in
+                // update_order_status() reverse a payment that WAS collected at
+                // the door on the way out.
+                'is_cod'             => 0,
+                'cod_amount'         => 0,
+                'weight_grams'       => $grams,
+                'length_cm'          => $forward['length_cm'],
+                'width_cm'           => $forward['width_cm'],
+                'height_cm'          => $forward['height_cm'],
+                'courier_name'       => $forward['courier_name'],
+            ]);
+        });
+    } catch (RuntimeException $e) {
+        return shipping_fail($e->getMessage());
+    }
+    $returnId = (int) $claim;
+
+    // --- create at the courier ---------------------------------------------
+    try {
+        $created = $driver->createReturn($forward, [
+            'order'        => $order,
+            'reason'       => $reason,
+            'weight_grams' => $grams,
+            'shipment_id'  => $returnId,
+        ]);
+    } catch (Throwable $e) {
+        $created = ['ok' => false, 'message' => 'Driver error: ' . $e->getMessage()];
+    }
+
+    if (empty($created['ok'])) {
+        // Frees the slot the way a refused forward booking does: a booking the
+        // courier never took holds nothing.
+        Database::update('shipments', [
+            'status'        => 'failed_booking',
+            'status_detail' => mb_substr((string) ($created['message'] ?? 'Return booking failed.'), 0, 255),
+        ], "`id` = :id AND `status` = 'pending'", ['id' => $returnId]);
+        return shipping_fail((string) ($created['message'] ?? 'Return booking failed.'), ['shipment_id' => $returnId]);
+    }
+
+    $awb = trim((string) ($created['awb'] ?? ''));
+    $row = [
+        // With an AWB the courier is coming; without one (Shiprocket issues it
+        // later) the consignment exists but nothing is scheduled yet, and
+        // saying otherwise puts a collection in front of a customer that
+        // nobody has booked.
+        'status'        => $awb !== '' ? 'return_pickup' : 'ready',
+        'shipment_ref'  => (string) ($created['shipment_ref'] ?? ''),
+        'order_ref'     => isset($created['order_ref']) && $created['order_ref'] !== '' ? (string) $created['order_ref'] : null,
+        'status_detail' => mb_substr((string) ($created['message'] ?? ''), 0, 255),
+    ];
+    if ($awb !== '') {
+        $row['awb']          = $awb;
+        $row['tracking_url'] = shipping_tracking_url((string) $provider['code'], $awb);
+    }
+    if ((string) ($created['courier_name'] ?? '') !== '') {
+        $row['courier_name'] = (string) $created['courier_name'];
+    }
+
+    // Only from 'pending', for the reason shipping_book() gives: anything that
+    // moved the row meanwhile owns it now, and this answer is orphaned.
+    $claimed = Database::update('shipments', $row, "`id` = :id AND `status` = 'pending'", ['id' => $returnId]);
+    if ($claimed === 0) {
+        $note = 'Order #' . $orderId . ': ' . $provider['name'] . ' created return consignment '
+            . ($row['shipment_ref'] !== '' ? $row['shipment_ref'] : '(no reference)')
+            . ' after its booking #' . $returnId . ' had been released. Cancel it in the courier panel.';
+        log_activity('shipment.orphaned', 'shipment', $returnId, $note);
+        ErrorHandler::log('warning', 'Shipping: ' . $note);
+        return shipping_fail('This return booking was released while the courier was still answering - cancel consignment '
+            . ($row['shipment_ref'] !== '' ? $row['shipment_ref'] : 'without a reference') . ' in the courier panel.',
+            ['shipment_id' => $returnId]);
+    }
+
+    $lag = shipping_record_step($returnId, [
+        'status'      => (string) $row['status'],
+        'message'     => 'Return pickup booked with ' . $provider['name'] . ($reason !== '' ? ' - ' . $reason : ''),
+        'location'    => (string) ($order['shipping_city'] ?? ''),
+        'occurred_at' => date('Y-m-d H:i:s'),
+        'event_key'   => 'return:' . $returnId,
+    ]);
+
+    log_activity('shipment.return_booked', 'shipment', $returnId,
+        'Booked a return pickup for order #' . $orderId . ' with ' . $provider['name']
+            . ($awb !== '' ? ' (AWB ' . $awb . ')' : ''));
+
+    return [
+        'ok'          => true,
+        'shipment_id' => $returnId,
+        'awb'         => $awb !== '' ? $awb : null,
+        'message'     => ($awb !== ''
+            ? 'Return pickup booked. AWB ' . $awb . '.'
+            : 'Return pickup booked. The courier has not issued an AWB yet - it arrives with the first tracking update.')
+            . ($lag !== null ? ' ' . $lag : ''),
+    ];
+}
+
+/**
+ * Ask the courier where a RETURN consignment is.
+ *
+ * The drivers answer this one with checkReturnStatus(), not trackShipment():
+ * a reverse consignment's "delivered" means it reached US, and each driver
+ * translates its own courier's reverse vocabulary. The answer is a status, not
+ * a list of scans, so it is stored as one event with a stable key - a second
+ * poll at the same status adds nothing.
+ */
+function shipping_refresh_return(int $returnShipmentId): array
+{
+    $shipment = shipment_get($returnShipmentId);
+    if ($shipment === null) {
+        return shipping_fail('Shipment not found.');
+    }
+    if (!shipping_is_return($shipment)) {
+        return shipping_fail('That is not a return consignment.');
+    }
+    if ((string) $shipment['awb'] === '' && (string) $shipment['shipment_ref'] === '') {
+        return shipping_fail('The courier has not issued a return AWB yet.');
+    }
+    $driver = ShippingProviderFactory::makeByCode((string) $shipment['provider_code']);
+    if ($driver === null) {
+        return shipping_fail('The courier for this return is no longer installed.');
+    }
+
+    try {
+        $res = $driver->checkReturnStatus($shipment);
+    } catch (Throwable $e) {
+        $res = ['ok' => false, 'message' => 'Driver error: ' . $e->getMessage()];
+    }
+    if (empty($res['ok'])) {
+        return ['return' => true] + $res;
+    }
+
+    $status = (string) ($res['status'] ?? '');
+    if ($status === '' || shipping_status_rank($status) < 0) {
+        // A vocabulary this hub does not have. Recording it would put a status
+        // on the timeline that nothing can rank, label or explain.
+        return ['ok' => true, 'return' => true, 'added' => 0,
+                'message' => 'The courier answered with a status this hub does not recognise ('
+                    . ($status !== '' ? $status : 'blank') . '). Nothing was changed.'];
+    }
+
+    try {
+        $added = shipping_record_events($returnShipmentId, [[
+            'status'      => $status,
+            'message'     => mb_substr((string) ($res['message'] ?? shipping_status_label($status)), 0, 255),
+            'location'    => '',
+            'occurred_at' => date('Y-m-d H:i:s'),
+            // Stable per (consignment, status): the courier sits at one status
+            // for days while the poller comes round every hour.
+            'event_key'   => 'return:' . $returnShipmentId . ':' . $status,
+        ]], 'poll');
+    } catch (Throwable $e) {
+        ErrorHandler::log('error', 'Shipping: return poll for shipment #' . $returnShipmentId . ' failed: ' . $e->getMessage());
+        return shipping_fail('The return update could not be applied just now. Try again in a moment.');
+    }
+
+    return ['ok' => true, 'return' => true, 'added' => $added,
+            'message' => $added === 0 ? 'Already up to date.' : 'Return is ' . strtolower(shipping_status_label($status)) . '.'];
+}
+
+/**
+ * Carry a RETURN consignment's state onto its order.
+ *
+ * Almost nothing does: the goods are with the customer until the parcel is
+ * back. The arrival is the one event that moves the order, and it moves it
+ * through update_order_status() so the stock goes back on the shelf, the
+ * invoice is settled and the customer is told - exactly as a hand-marked
+ * return would.
+ */
+function shipping_sync_order_return(array $shipment, array $order): void
+{
+    // A reverse pickup we wrote off, whose parcel turned up anyway. It no
+    // longer speaks for the order, so nothing below would fire - and goods on
+    // the dock with no record is exactly what wants saying out loud.
+    if (shipping_is_dead((string) $shipment['status'])) {
+        shipping_alert_dead_arrival($shipment, $order);
+        return;
+    }
+
+    $target = shipping_order_status_for_shipment($shipment);
+    if ($target === null) {
+        return;
+    }
+
+    $orderId = (int) $order['id'];
+    $current = (string) $order['status'];
+
+    // A courier may not un-cancel an order. A return arriving against a
+    // cancelled one is stock and money out of step with the books, which is
+    // worth saying out loud rather than swallowing.
+    if (in_array($current, [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED], true)) {
+        $note = 'Return consignment #' . (int) $shipment['id'] . ' (AWB ' . ($shipment['awb'] ?? '-') . ') arrived back for '
+            . strtolower(ORDER_STATUSES[$current] ?? $current) . ' order ' . ($order['order_number'] ?? $orderId)
+            . '. Check stock and any refund by hand.';
+        log_activity('shipment.mismatch', 'shipment', (int) $shipment['id'], $note);
+        ErrorHandler::log('warning', 'Shipping: ' . $note);
+        return;
+    }
+
+    if (shipping_order_rank($target) <= shipping_order_rank($current)) {
+        return;
+    }
+
+    // Only when there IS one. update_order_status() writes whatever is passed,
+    // so an empty reason would blank the words the customer typed into their
+    // own return request.
+    $reason = trim((string) ($shipment['return_reason'] ?? ''));
+
+    $result = update_order_status(
+        $orderId,
+        $target,
+        'Return collected by ' . (trim((string) ($shipment['courier_name'] ?? '')) ?: 'the courier')
+            . ((string) ($shipment['awb'] ?? '') !== '' ? ' (AWB ' . $shipment['awb'] . ')' : '')
+            . ' and received back',
+        'system',
+        true,
+        ($reason !== '' ? ['return_reason' => $reason] : []) + [
+            // Re-checked on the LOCKED order row, for the reason the forward
+            // sync gives: two courier calls for one parcel both passed the
+            // check above and both restocked the order.
+            'precondition' => static fn (array $locked): bool =>
+                !in_array((string) $locked['status'], [ORDER_STATUS_CANCELLED, ORDER_STATUS_REFUNDED], true)
+                && shipping_order_rank($target) > shipping_order_rank((string) $locked['status']),
+            // Never here: a reverse pickup collects no cash, and the forward
+            // leg's COD - if there was one - was collected at the door.
+            'cod_uncollected' => false,
+        ]
+    );
+    if (empty($result['ok'])) {
+        throw new RuntimeException('Return #' . (int) $shipment['id'] . ': order #' . $orderId
+            . ' could not be moved to ' . $target . ': ' . (string) ($result['message'] ?? 'unknown error'));
+    }
+}
+
+/**
+ * What a parcel coming back leaves owing, in the terms an owner asks in.
+ *
+ * Three questions, and none is answered by the shipment status alone:
+ *
+ *   stock_back       has the stock gone back on the shelf? That happens exactly
+ *                    once, when the ORDER first enters a releasing status - see
+ *                    update_order_status() - so the ORDER status is the answer,
+ *                    not the courier's.
+ *   cod_uncollected  cash the courier was told to collect and never did. An RTO
+ *                    of a COD parcel is the whole order value that never came.
+ *   refund_due       money we DID take and have not given back.
+ *
+ * @return array{has_return:bool, stage:string, stock_back:bool, cod_uncollected:float,
+ *               refund_due:float, refund_done:bool, notes:string[]}
+ */
+function shipping_return_money(int $orderId): array
+{
+    $out = ['has_return' => false, 'stage' => 'none', 'stock_back' => false,
+            'cod_uncollected' => 0.0, 'refund_due' => 0.0, 'refund_done' => false, 'notes' => []];
+
+    $order = get_order($orderId);
+    if ($order === null) {
+        return $out;
+    }
+
+    $forward = shipment_live_for_order($orderId);
+    $return  = shipping_return_live_for_order($orderId);
+    $forwardStatus = (string) ($forward['status'] ?? '');
+    $returnStatus  = (string) ($return['status'] ?? '');
+
+    $rtoInFlight = $forwardStatus === 'rto_initiated';
+    $rtoHome     = in_array($forwardStatus, ['rto_delivered', 'returned'], true);
+    $returnHome  = $returnStatus === 'returned';
+    $returnOut   = $return !== null && !$returnHome;
+
+    $out['has_return'] = $rtoInFlight || $rtoHome || $return !== null;
+    $out['stage'] = $rtoInFlight ? 'rto_transit'
+        : ($rtoHome ? 'rto_delivered'
+        : ($returnHome ? 'return_received'
+        : ($returnOut ? 'return_booked' : 'none')));
+
+    if (!$out['has_return']) {
+        return $out;
+    }
+
+    // Stock goes back when the ORDER enters a releasing status, and only then.
+    $out['stock_back'] = in_array((string) $order['status'], STOCK_RELEASING_STATUSES, true);
+    if (!$out['stock_back']) {
+        $out['notes'][] = $rtoInFlight || $returnOut
+            ? 'Stock is still counted as sold: it goes back when the parcel reaches the warehouse.'
+            : 'Stock has NOT gone back on the shelf - the order is still '
+                . strtolower(ORDER_STATUSES[(string) $order['status']] ?? (string) $order['status']) . '.';
+    }
+
+    // Cash the courier was asked for and did not bring. Judged on the FORWARD
+    // consignment, which is the one that carried the COD.
+    $settled = in_array((string) $order['payment_status'], PAYMENT_STATUSES_SETTLED, true);
+    if ($forward !== null && (int) $forward['is_cod'] === 1 && !$settled) {
+        $out['cod_uncollected'] = round((float) ($forward['cod_amount'] ?: $order['total_amount']), 2);
+        $out['notes'][] = 'COD of ' . money($out['cod_uncollected']) . ' was never collected - this order brought in nothing.';
+    }
+
+    // Money we actually took. A COD parcel that came back was never paid, so
+    // there is nothing to give back; promising a refund there is the mistake
+    // {{refund_note}} exists to avoid.
+    if ((string) $order['payment_status'] === PAYMENT_STATUS_REFUNDED) {
+        $out['refund_done'] = true;
+        $out['notes'][] = 'The refund has been made.';
+    } elseif ($settled && (float) $order['total_amount'] > 0) {
+        // What is still owed, not what was charged. A partially refunded order
+        // has already had some of it back, and reporting the whole total again
+        // is how the same money gets sent twice - the desk is where an admin
+        // decides how much to refund.
+        $already = payment_refunded_total($orderId);
+        $out['refund_due'] = round(max(0.0, (float) $order['total_amount'] - $already), 2);
+        if ($out['refund_due'] > 0) {
+            $out['notes'][] = 'A refund of ' . money($out['refund_due']) . ' is owed to the customer and has not been made.'
+                . ($already > 0
+                    ? ' ' . money($already) . ' of ' . money((float) $order['total_amount']) . ' has already gone back.'
+                    : '');
+        } else {
+            $out['refund_done'] = true;
+            $out['notes'][] = 'Everything taken on this order - ' . money($already) . ' - has already been refunded.';
+        }
+    }
+
+    if ($out['notes'] === []) {
+        $out['notes'][] = 'Nothing outstanding: the stock is back and no money changed hands.';
+    }
+
+    return $out;
+}
+
+// ===========================================================================
+//  Telling the customer what the courier did
+// ===========================================================================
+
+/**
+ * The milestone a shipment's CURRENT status is worth an email for, or null.
+ *
+ * Not every status is: 'ready' and 'booked' happen on our own shelf and mean
+ * nothing to a customer, and a failed delivery attempt is followed by another
+ * attempt the next day - mailing that would be alarming and, by the next
+ * morning, wrong.
+ *
+ * Five of the eight reuse the order templates the shop already has, because
+ * they say exactly the right thing and the customer expects one message per
+ * event, not two. The three with no order status behind them - a pickup
+ * booked, a parcel turning round, a reverse pickup - get templates of their own.
+ *
+ * @return array{milestone:string, template:string}|null
+ */
+function shipping_milestone_for(array $shipment): ?array
+{
+    $status = (string) ($shipment['status'] ?? '');
+
+    $map = shipping_is_return($shipment)
+        ? [
+            // The reverse leg. 'ready' is in here because a courier that issues
+            // the AWB later (Shiprocket) still has the pickup booked.
+            'ready'         => ['return_pickup', 'shipment_return_pickup'],
+            'return_pickup' => ['return_pickup', 'shipment_return_pickup'],
+            'booked'        => ['return_pickup', 'shipment_return_pickup'],
+            'returned'      => ['return_received', 'order_returned'],
+        ]
+        : [
+            'pickup_scheduled' => ['pickup_scheduled', 'shipment_pickup_scheduled'],
+            'in_transit'       => ['shipped', 'order_shipped'],
+            'out_for_delivery' => ['out_for_delivery', 'order_out_for_delivery'],
+            'delivered'        => ['delivered', 'order_delivered'],
+            'rto_initiated'    => ['rto', 'shipment_rto'],
+            'rto_delivered'    => ['returned', 'order_returned'],
+            'returned'         => ['returned', 'order_returned'],
+        ];
+
+    if (!isset($map[$status])) {
+        return null;
+    }
+
+    return ['milestone' => $map[$status][0], 'template' => $map[$status][1]];
+}
+
+/**
+ * The consignment's own details, for a message about it.
+ *
+ * These override what order_notification_vars() read off the ORDER row, which
+ * is right for the forward leg and essential for the reverse one: a return
+ * pickup's AWB is never written to the order, so without this the customer
+ * would be told to hand the parcel over against the outbound waybill.
+ */
+function shipping_notification_vars(array $order, array $shipment): array
+{
+    $awb     = trim((string) ($shipment['awb'] ?? ''));
+    $courier = trim((string) ($shipment['courier_name'] ?? '')) ?: trim((string) ($order['courier_name'] ?? ''));
+    $ourPage = canonical_url('track-order.php?order=' . urlencode((string) $order['order_number']));
+
+    // The courier's own page when the hub holds one, this shop's tracking page
+    // otherwise. Never a guess: an invented courier URL is a dead link in the
+    // customer's inbox at the moment they most want it to work.
+    $courierUrl = trim((string) ($shipment['tracking_url'] ?? ''));
+    if ($courierUrl === '' && $awb !== '') {
+        $courierUrl = (string) (shipping_tracking_url((string) ($shipment['provider_code'] ?? ''), $awb) ?? '');
+    }
+
+    return [
+        'courier_name'         => $courier !== '' ? $courier : 'our delivery partner',
+        'tracking_number'      => $awb !== '' ? $awb : 'will be shared shortly',
+        'courier_tracking_url' => $courierUrl !== '' ? $courierUrl : $ourPage,
+        'shipment_status'      => shipping_status_label((string) ($shipment['status'] ?? '')),
+        'pickup_date'          => !empty($shipment['pickup_date'])
+            ? format_date((string) $shipment['pickup_date'], 'd M Y')
+            : 'the next available slot',
+    ];
+}
+
+/**
+ * Tell the customer what this consignment just did - once, ever.
+ *
+ * Returns the milestone that was queued, or null when there was nothing to say
+ * (or it had already been said). Idempotency is two locks, not one:
+ *
+ *   shipment_notifications  one row per (consignment, milestone). A courier
+ *                           that resends an event, and a poller catching up
+ *                           with it, both find the row and stop.
+ *   notification_queue      its unique idempotency key already blocks a second
+ *                           (template, order, recipient). That is what keeps
+ *                           this layer and update_order_status()'s own mail
+ *                           from both landing in the inbox for one event.
+ *
+ * Never throws: a shipment is not left unsettled because a message could not be
+ * queued, and the order sync that runs before this is the part worth retrying.
+ */
+function shipping_notify_shipment(array $shipment): ?string
+{
+    try {
+        $milestone = shipping_milestone_for($shipment);
+        if ($milestone === null) {
+            return null;
+        }
+
+        $order = get_order((int) ($shipment['order_id'] ?? 0));
+        if ($order === null) {
+            return null;
+        }
+
+        return notify_shipment_milestone(
+            $order,
+            (int) ($shipment['id'] ?? 0),
+            $milestone['milestone'],
+            $milestone['template'],
+            shipping_notification_vars($order, $shipment)
+        ) ? $milestone['milestone'] : null;
+    } catch (Throwable $e) {
+        ErrorHandler::log('warning', 'Shipping: milestone notification for shipment #'
+            . (int) ($shipment['id'] ?? 0) . ' failed: ' . $e->getMessage());
+        return null;
     }
 }

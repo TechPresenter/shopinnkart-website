@@ -35,6 +35,15 @@ if (is_post()) {
 
     $parentRaw = (string) input('parent_id', '');
     $seo       = seo_editor_input();
+    // The panel's extended fields. Staged rather than written, so a refused
+    // code field fails the whole save instead of appearing to succeed while
+    // quietly dropping what somebody typed.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    // A slug the admin TYPED that collides with another record or with a
+    // reserved address is refused here, so it joins the validator errors
+    // below. A blank one is still derived and quietly made unique.
+    seo_editor_slug_check('category', (string) input('slug', ''), null, $seoErrors);
     $submitted = [
         'name'         => (string) input('name', ''),
         'slug'         => (string) input('slug', ''),
@@ -61,11 +70,11 @@ if (is_post()) {
         $v->exists('parent_id', 'categories');
     }
 
-    if ($v->fails()) {
-        $errors = $v->errors();
+    if ($v->fails() || $seoErrors !== []) {
+        $errors = $v->errors() + $seoErrors;
         flash('error', 'Please correct the highlighted fields.');
     } else {
-        $slug   = unique_slug('categories', slugify($submitted['slug'] !== '' ? $submitted['slug'] : $submitted['name']));
+        $slug   = seo_editor_slug('category', $submitted['slug'], $submitted['name'], null, $errors);
         $image  = admin_handle_image('image', 'categories');
         $banner = admin_handle_image('banner', 'categories');
 
@@ -83,6 +92,10 @@ if (is_post()) {
             'status'       => $submitted['status'],
             ...$seo,
         ]);
+
+        // The record exists now, so its extended SEO fields have an id to
+        // hang off. A create has no old slug, so there is no redirect to write.
+        seo_entity_meta_save('category', $id, $seoMeta);
 
         log_activity('category.created', 'category', $id, 'Created category "' . $submitted['name'] . '"');
         admin_after_write();

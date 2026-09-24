@@ -69,7 +69,7 @@ seo_from_entity($category, [
     'description' => str_limit((string) $category['description'], 160)
         ?: 'Shop ' . $category['name'] . ' online at the best prices.',
     'og_image'    => (string) ($category['banner'] ?: $category['image']),
-]);
+], 'category');
 seo_add_schema(seo_breadcrumb_schema($crumbs));
 seo_add_schema(seo_item_list_schema($listing['items'], (string) $category['name']));
 

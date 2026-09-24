@@ -219,6 +219,11 @@ if ($held !== []) {
     $confirm = count($held) === 1
         ? 'Print a replacement label for a consignment that is already past pickup? It will be marked REPRINT.'
         : 'Print replacement labels for ' . count($held) . ' consignments that are already past pickup? They will be marked REPRINT.';
+    /* DELIBERATELY the browser's own confirm(), and the only one left in the
+       admin. This is a PRINT document: _print.php ships its own toolbar CSS
+       and loads neither admin.css nor admin.js, so SIK.admin.confirm() is not
+       here to be called and its dialog would have no styles if it were. A
+       native confirm that works beats a data-confirm that does nothing. */
     $actions = '<a class="pr-btn" href="' . e($again) . '" onclick="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
         . icon('printer', 'pr-ico') . '<span>Reprint anyway</span></a>';
 }

@@ -63,3 +63,13 @@ database/shopinnkart-import.sql
 
 # Temporary copies of workflow scripts so they can be resumed after a restart.
 .wf/
+
+# A privacy export is one customer's whole record - orders, addresses,
+# messages - zipped and encrypted for them to download once. Encrypted or
+# not, it is the one file in the project that must never reach a repository.
+# The protection files beside it are kept, the way storage/ does elsewhere.
+storage/privacy/*
+!storage/privacy/.htaccess
+!storage/privacy/index.html
+!storage/privacy/web.config
+!storage/privacy/.gitkeep

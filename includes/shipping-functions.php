@@ -1016,3 +1016,368 @@ function shipping_error_fields($errors): string
     }
     return implode('; ', $parts);
 }
+
+// ===========================================================================
+//  Courier selection: weights, performance and scoring
+//
+//  Everything here is arithmetic over rates a driver already returned plus
+//  counts the hub already records. Nothing in this section calls a courier, so
+//  the booking screen, the standalone rate calculator and the unattended
+//  booker all score the same way from the same numbers.
+// ===========================================================================
+
+/** The default relative weights, used when the settings are missing or unusable. */
+const SHIPPING_SELECT_DEFAULT_WEIGHTS = [
+    'cost'        => 40.0,
+    'speed'       => 25.0,
+    'reliability' => 25.0,
+    'rating'      => 10.0,
+];
+
+/**
+ * The four selection weights, normalised to sum to 1.
+ *
+ * They are stored as relative numbers, not percentages, so 40/25/25/10 and
+ * 4/2.5/2.5/1 mean the same thing. A negative is floored at zero - a weight is
+ * "how much this matters", and negative would mean "prefer the worse one" -
+ * and an all-zero set falls back to the defaults rather than dividing by zero
+ * and scoring every courier NaN.
+ *
+ * @return array{cost:float, speed:float, reliability:float, rating:float}
+ */
+function shipping_selection_weights(): array
+{
+    $keys = [
+        'cost'        => 'shipping_select_weight_cost',
+        'speed'       => 'shipping_select_weight_speed',
+        'reliability' => 'shipping_select_weight_reliability',
+        'rating'      => 'shipping_select_weight_rating',
+    ];
+
+    $raw = [];
+    foreach ($keys as $name => $setting) {
+        $value      = setting($setting, null);
+        $raw[$name] = is_numeric($value)
+            ? max(0.0, (float) $value)
+            : SHIPPING_SELECT_DEFAULT_WEIGHTS[$name];
+    }
+
+    $total = array_sum($raw);
+    if ($total <= 0) {
+        $raw   = SHIPPING_SELECT_DEFAULT_WEIGHTS;
+        $total = array_sum($raw);
+    }
+
+    $out = [];
+    foreach ($raw as $name => $value) {
+        $out[$name] = $value / $total;
+    }
+    return $out;
+}
+
+/** How many days of shipments the performance figure looks back over. */
+function shipping_performance_window(): int
+{
+    $days = (int) setting('shipping_select_window_days', 90);
+    return max(7, min(730, $days ?: 90));
+}
+
+/**
+ * How many settled shipments a courier needs before its record counts as a
+ * judgement rather than an anecdote.
+ *
+ * Below this the reliability score is neutral and the screen says so: three
+ * deliveries out of three is not a 100% courier, and letting that beat one
+ * with 4,000 parcels behind it is how a new integration wins every booking on
+ * its first good day.
+ */
+function shipping_performance_minimum(): int
+{
+    $min = (int) setting('shipping_select_min_shipments', 20);
+    return max(1, min(10000, $min ?: 20));
+}
+
+/**
+ * Settled outcomes per provider and per sub-courier over the window.
+ *
+ * "Settled" means the consignment reached an end the courier is answerable
+ * for: delivered, returned to us, or a booking it refused. A consignment WE
+ * cancelled is not the courier's failure and is left out entirely - counting
+ * it would punish a courier for an admin changing their mind, and an order
+ * cancelled by the customer would read as a delivery failure.
+ *
+ * FORWARD legs only. A reverse consignment ends at 'returned' because the
+ * goods reached US, which is the courier succeeding at the job we gave it -
+ * counting it in the RTO bucket marked every completed return pickup as a
+ * delivery failure, so the courier that handles our returns best scored
+ * worst and quietly stopped being recommended for anything.
+ *
+ * One query, memoised per request and per window: the booking screen scores
+ * every rate from this table, and a query per rate is a query per courier per
+ * page view.
+ *
+ * @return array<string, array{totals:array, couriers:array<string,array>}>
+ */
+function shipping_performance_table(int $windowDays): array
+{
+    static $cache = [];
+
+    $windowDays = max(1, $windowDays);
+    if (isset($cache[$windowDays])) {
+        return $cache[$windowDays];
+    }
+
+    $rows = Database::fetchAll(
+        "SELECT `provider_code`,
+                COALESCE(NULLIF(TRIM(`courier_name`), ''), '') AS `courier`,
+                SUM(`status` = 'delivered')                                   AS `delivered`,
+                SUM(`status` IN ('rto_initiated','rto_delivered','returned')) AS `rto`,
+                SUM(`status` IN ('failed','failed_booking'))                  AS `failed`
+           FROM `shipments`
+          WHERE `created_at` >= DATE_SUB(NOW(), INTERVAL :d DAY)
+            AND `direction` = 'forward'
+            AND `status` IN ('delivered','rto_initiated','rto_delivered','returned','failed','failed_booking')
+          GROUP BY `provider_code`, `courier`",
+        ['d' => $windowDays]
+    );
+
+    $table = [];
+    foreach ($rows as $row) {
+        $code    = (string) $row['provider_code'];
+        $courier = (string) $row['courier'];
+        $counts  = [
+            'delivered' => (int) $row['delivered'],
+            'rto'       => (int) $row['rto'],
+            'failed'    => (int) $row['failed'],
+        ];
+        $counts['settled'] = $counts['delivered'] + $counts['rto'] + $counts['failed'];
+
+        if (!isset($table[$code])) {
+            $table[$code] = ['totals' => ['delivered' => 0, 'rto' => 0, 'failed' => 0, 'settled' => 0], 'couriers' => []];
+        }
+        foreach ($counts as $key => $value) {
+            $table[$code]['totals'][$key] += $value;
+        }
+        if ($courier !== '') {
+            $table[$code]['couriers'][$courier] = $counts;
+        }
+    }
+
+    return $cache[$windowDays] = $table;
+}
+
+/**
+ * One courier's record, and whether there is enough of it to judge.
+ *
+ * The sub-courier's own history is preferred; where it is too thin the whole
+ * integration's record stands in, which is the honest answer for an aggregator
+ * whose sub-couriers come and go. Where even that is too thin nothing is
+ * claimed: `rate` is null, `confident` is false, and `note` is the sentence a
+ * screen prints instead of a percentage.
+ *
+ * @return array{settled:int, delivered:int, rto:int, failed:int, rate:?float,
+ *               confident:bool, scope:string, note:string}
+ */
+function shipping_courier_performance(
+    string $providerCode,
+    string $courierName = '',
+    ?int $windowDays = null,
+    ?int $minimum = null
+): array {
+    $windowDays = $windowDays ?? shipping_performance_window();
+    $minimum    = $minimum ?? shipping_performance_minimum();
+    $table      = shipping_performance_table($windowDays);
+
+    $empty  = ['delivered' => 0, 'rto' => 0, 'failed' => 0, 'settled' => 0];
+    $mine   = $table[$providerCode]['couriers'][trim($courierName)] ?? $empty;
+    $theirs = $table[$providerCode]['totals'] ?? $empty;
+
+    $scope  = 'courier';
+    $counts = $mine;
+    if ($counts['settled'] < $minimum && $theirs['settled'] > $counts['settled']) {
+        $scope  = 'provider';
+        $counts = $theirs;
+    }
+
+    $confident = $counts['settled'] >= $minimum;
+    // Cast: PHP hands back an int for an exact division, and a caller told to
+    // expect ?float then sees 0 where it asked for 0.0.
+    $rate = $confident ? (float) ($counts['delivered'] / max(1, $counts['settled'])) : null;
+
+    if ($confident) {
+        $note = number_format($rate * 100, 1) . '% delivered over ' . $counts['settled']
+            . ' parcel' . ($counts['settled'] === 1 ? '' : 's')
+            . ' in the last ' . $windowDays . ' days'
+            . ($scope === 'provider' ? ' across the whole integration' : '')
+            . ($counts['rto'] > 0 ? ', ' . $counts['rto'] . ' came back' : '');
+    } else {
+        $note  = 'Not enough delivery history to judge yet - ' . $counts['settled'] . ' of '
+            . $minimum . ' parcels needed - so this counts neither for nor against it.';
+        $scope = $counts['settled'] === 0 ? 'none' : $scope;
+    }
+
+    return $counts + ['rate' => $rate, 'confident' => $confident, 'scope' => $scope, 'note' => $note];
+}
+
+/**
+ * Does this provider row quote but refuse to book?
+ *
+ * Shiprocket has no sandbox, so its driver refuses every billable call outside
+ * Live mode while its read-only rates keep working. Those rates are worth
+ * showing and must never be recommended, auto-booked, or offered as a pick
+ * that could only fail. The knowledge lives here rather than in the booking
+ * screen because three callers now need it and a second copy would drift.
+ *
+ * Returns null when the row can book, else why it cannot.
+ */
+function shipping_provider_book_block(array $provider): ?string
+{
+    $code = (string) ($provider['code'] ?? '');
+    if (!in_array($code, ['shiprocket'], true) || (string) ($provider['mode'] ?? '') === 'live') {
+        return null;
+    }
+    return (string) ($provider['name'] ?? $code) . ' is in Test mode and has no sandbox, so it cannot book. '
+        . 'Its rates come from the real account; switch the integration to Live to book with it.';
+}
+
+/**
+ * Score one set of quotes against each other, best first.
+ *
+ * Cost and speed are scored RELATIVE to the other rates in the same answer:
+ * "cheap" only means something next to what else was offered, and an absolute
+ * rupee scale would need a ceiling that is wrong for a 200 g envelope and
+ * wrong again for a 30 kg carton. Reliability and rating are absolute, because
+ * 92% delivered is 92% whoever else quoted.
+ *
+ * A rate that cannot be judged on a component - no ETA, no rating, a courier
+ * with no history - scores 0.5 there rather than 0 or 1, and the reason says
+ * so in words. Scoring an unknown as zero would let a missing field lose a
+ * booking; scoring it as one would let it win one.
+ *
+ * $context: ['blocked' => [providerCode => why]] marks rates that may be shown
+ * but must never be recommended.
+ *
+ * @return array{ranked:array, choice:?array, reason:string, reasons:string[], weights:array}
+ */
+function shipping_score_rates(array $rates, array $context = []): array
+{
+    $weights = shipping_selection_weights();
+    $blocked = (array) ($context['blocked'] ?? []);
+
+    if ($rates === []) {
+        return ['ranked' => [], 'choice' => null, 'reason' => '', 'reasons' => [], 'weights' => $weights];
+    }
+
+    $costs = array_map(static fn (array $r): float => (float) ($r['cost'] ?? 0), $rates);
+    $etas  = array_values(array_filter(
+        array_map(
+            static fn (array $r) => isset($r['eta_days']) && is_numeric($r['eta_days']) ? (float) $r['eta_days'] : null,
+            $rates
+        ),
+        static fn ($v): bool => $v !== null
+    ));
+
+    $costLow  = min($costs);
+    $costHigh = max($costs);
+    $etaLow   = $etas === [] ? null : min($etas);
+    $etaHigh  = $etas === [] ? null : max($etas);
+
+    // A spread of zero means every rate is equal on that axis, so they all get
+    // the full mark and the component simply stops deciding anything.
+    $relative = static function (?float $value, float $low, float $high): float {
+        if ($value === null) {
+            return 0.5;
+        }
+        if ($high - $low <= 0.0001) {
+            return 1.0;
+        }
+        return max(0.0, min(1.0, ($high - $value) / ($high - $low)));
+    };
+
+    $ranked = [];
+    foreach ($rates as $index => $rate) {
+        $code    = (string) ($rate['provider'] ?? '');
+        $courier = (string) ($rate['courier'] ?? '');
+        $eta     = isset($rate['eta_days']) && is_numeric($rate['eta_days']) ? (float) $rate['eta_days'] : null;
+        $rating  = isset($rate['rating']) && is_numeric($rate['rating']) ? (float) $rate['rating'] : null;
+        $perf    = shipping_courier_performance($code, $courier);
+
+        $breakdown = [
+            'cost'        => $relative((float) ($rate['cost'] ?? 0), $costLow, $costHigh),
+            'speed'       => $etaLow === null ? 0.5 : $relative($eta, $etaLow, $etaHigh),
+            'reliability' => $perf['confident'] ? (float) $perf['rate'] : 0.5,
+            'rating'      => $rating === null ? 0.5 : max(0.0, min(1.0, $rating / 5)),
+        ];
+
+        $score = 0.0;
+        foreach ($weights as $name => $weight) {
+            $score += $weight * $breakdown[$name];
+        }
+
+        $why = [];
+        $why[] = (float) ($rate['cost'] ?? 0) <= $costLow + 0.001
+            ? 'cheapest of the ' . count($rates) . ' rates quoted'
+            : money((float) $rate['cost'] - $costLow) . ' dearer than the cheapest quote';
+        if ($eta !== null) {
+            $why[] = ($etaLow !== null && $eta <= $etaLow ? 'the fastest promise, ' : 'delivers in ')
+                . (int) $eta . ' day' . ((int) $eta === 1 ? '' : 's');
+        } else {
+            $why[] = 'gives no delivery estimate, so speed scores neutral';
+        }
+        $why[] = lcfirst($perf['note']);
+        if ($rating !== null) {
+            $why[] = 'rated ' . number_format($rating, 1) . ' out of 5 by the courier';
+        }
+
+        // array_merge, not `+`: what is computed here must win. A driver that
+        // one day returns its own 'score' would otherwise silently keep it and
+        // the ranking would be sorting on a courier's marketing number.
+        $ranked[] = array_merge($rate, [
+            'score'       => round($score * 100, 2),
+            'breakdown'   => $breakdown,
+            'performance' => $perf,
+            'why'         => $why,
+            'blocked'     => $blocked[$code] ?? null,
+            // Kept so the tie-break can fall back on the order the quote came
+            // in, which is cheapest first.
+            'quote_index' => $index,
+        ]);
+    }
+
+    // Best score wins; ties go to the cheaper, then the faster, then whichever
+    // the quote listed first - so two identical runs never disagree.
+    //
+    // Only the SCORE is compared the other way round ($b before $a), because
+    // only the score wants the highest first. The tie-breaks all want the
+    // lowest first and are compared in the usual order: negating them as well
+    // reversed them too, and a dead heat then recommended the dearest and
+    // slowest courier of the set.
+    //
+    // A rate with no usable ETA sorts last on that key rather than first: a
+    // missing field is not a one-day promise.
+    $eta = static fn (array $r): float =>
+        isset($r['eta_days']) && is_numeric($r['eta_days']) ? (float) $r['eta_days'] : 99.0;
+    usort($ranked, static function (array $a, array $b) use ($eta): int {
+        return [$b['score'], (float) $a['cost'], $eta($a), $a['quote_index']]
+            <=> [$a['score'], (float) $b['cost'], $eta($b), $b['quote_index']];
+    });
+
+    $choice = null;
+    foreach ($ranked as $rate) {
+        if ($rate['blocked'] === null) {
+            $choice = $rate;
+            break;
+        }
+    }
+
+    $reason  = '';
+    $reasons = [];
+    if ($choice !== null) {
+        $reasons = $choice['why'];
+        $reason  = $choice['courier'] . ' (' . (string) ($choice['provider_name'] ?? $choice['provider']) . ') at '
+            . money((float) $choice['cost']) . ': ' . implode('; ', $reasons) . '.';
+    }
+
+    return ['ranked' => $ranked, 'choice' => $choice, 'reason' => $reason,
+            'reasons' => $reasons, 'weights' => $weights];
+}

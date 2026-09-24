@@ -17,14 +17,21 @@
  *   RTO                rto_initiated, rto_delivered       coming, or came, back
  *   Cancelled/failed   cancelled, failed_booking          hold no slot on the order
  *
- * `pending` (a booking between our insert and the courier's reply) and
- * `returned` (a customer return) belong to no group. Each gets a tab of its own
- * only while a row sits in it: a pending row that never moved is a booking
- * that died mid-call, and filing it under "All" is how it would go unnoticed.
+ * `pending` (a booking between our insert and the courier's reply),
+ * `return_pickup` and `returned` (a reverse consignment on its way to us, and
+ * one that arrived) belong to no group. Each gets a tab of its own only while a
+ * row sits in it: a pending row that never moved is a booking that died
+ * mid-call, and filing it under "All" is how it would go unnoticed.
+ *
+ * Reverse consignments are in this list like any other row - they ARE shipments
+ * - but what their statuses mean is inverted, so they are labelled in the Order
+ * column and ?dir=return narrows to them. The screen that actually works them,
+ * with the money each one still owes, is returns.php.
  *
  * ?status= takes a group key or a raw status, both checked against allowlists,
  * so a tile, a tab and a hand-typed ?status=booked all work and anything else
- * is ignored. ?pay=cod|prepaid is what the COD and Prepaid tiles link to.
+ * is ignored. ?pay=cod|prepaid is what the COD and Prepaid tiles link to, and
+ * ?dir=forward|return picks a leg.
  *
  * Read-only. Every action on a shipment lives on the order's shipping screen,
  * which goes through shipping-service.php; this page never writes a row.
@@ -94,7 +101,14 @@ if (isset($groups[$statusKey])) {
 $pay = in_array($query('pay'), ['cod', 'prepaid'], true) ? $query('pay') : '';
 $q   = mb_substr($query('q'), 0, 100);
 
-$isFiltered = $statusKey !== '' || $pay !== '' || $q !== '';
+// Which leg. A reverse consignment (a return pickup we booked with a courier)
+// is an ordinary shipment row with direction = 'return', and it is in this list
+// like any other - but "in transit" on it means the parcel is coming TO us, so
+// being able to separate the two legs is worth one filter. The Returns desk is
+// where they are actually worked; this only narrows the list.
+$dir = in_array($query('dir'), ['forward', 'return'], true) ? $query('dir') : '';
+
+$isFiltered = $statusKey !== '' || $pay !== '' || $q !== '' || $dir !== '';
 
 // ---------------------------------------------------------------------------
 //  Counters: one grouped pass over the whole table
@@ -206,6 +220,10 @@ if ($pay !== '') {
     $baseWhere[] = 's.`is_cod` = :is_cod';
     $baseParams['is_cod'] = $pay === 'cod' ? 1 : 0;
 }
+if ($dir !== '') {
+    $baseWhere[] = 's.`direction` = :direction';
+    $baseParams['direction'] = $dir;
+}
 
 $where  = $baseWhere;
 $params = $baseParams;
@@ -239,8 +257,8 @@ $limit  = (int) $pagination['per_page'];
 $offset = (int) $pagination['offset'];
 
 $shipments = Database::fetchAll(
-    'SELECT s.`id`, s.`order_id`, s.`provider_code`, s.`awb`, s.`courier_name`, s.`status`, s.`status_detail`,
-            s.`is_cod`, s.`cod_amount`, s.`weight_grams`, s.`created_at`,
+    'SELECT s.`id`, s.`order_id`, s.`provider_code`, s.`direction`, s.`awb`, s.`courier_name`, s.`status`,
+            s.`status_detail`, s.`is_cod`, s.`cod_amount`, s.`weight_grams`, s.`created_at`,
             o.`order_number`, o.`customer_name`, p.`name` AS provider_name'
     . $from . $whereSql . '
       ORDER BY s.`created_at` DESC, s.`id` DESC
@@ -271,6 +289,8 @@ $breadcrumbs  = [
 $pageActions = ($canSeeSettings
         ? '<a class="ad-btn" href="' . e(admin_url('shipping/')) . '">' . icon('settings', 'w-4 h-4') . ' Integrations</a>'
         : '')
+    . '<a class="ad-btn" href="' . e(admin_url('shipping/returns.php')) . '">'
+        . icon('rotate', 'w-4 h-4') . ' Returns &amp; RTO</a>'
     . '<a class="ad-btn" href="' . e(admin_url('shipping/track.php')) . '">'
     . icon('location', 'w-4 h-4') . ' Tracking</a>';
 
@@ -362,6 +382,15 @@ require ADMIN_PATH . '/includes/header.php';
             <label class="sik-sr" for="filterPay">Payment type</label>
             <select class="sik-select" id="filterPay" name="pay" data-auto-submit>
                 <?= admin_options(['cod' => 'COD', 'prepaid' => 'Prepaid'], $pay, 'COD and prepaid') ?>
+            </select>
+
+            <label class="sik-sr" for="filterDir">Which leg</label>
+            <select class="sik-select" id="filterDir" name="dir" data-auto-submit>
+                <?= admin_options(
+                    ['forward' => 'Going out', 'return' => 'Coming back (returns)'],
+                    $dir,
+                    'Both legs'
+                ) ?>
             </select>
 
             <button type="submit" class="ad-btn ad-btn--sm"><?= icon('search', 'w-4 h-4') ?> Search</button>
@@ -476,6 +505,14 @@ require ADMIN_PATH . '/includes/header.php';
                                                 <?= e((string) $row['order_number']) ?>
                                             </a>
                                             <div class="ad-cellflex__meta"><?= e((string) $row['customer_name']) ?></div>
+                                            <?php // A reverse consignment reads the same as a forward one in
+                                                  // every column except what its statuses MEAN, so it is
+                                                  // labelled rather than left to be mistaken for a dispatch. ?>
+                                            <?php if ((string) ($row['direction'] ?? 'forward') === 'return'): ?>
+                                                <div class="ad-cellflex__meta">
+                                                    <a href="<?= e(admin_url('shipping/returns.php?view=pickup')) ?>">Return pickup</a>
+                                                </div>
+                                            <?php endif; ?>
                                         <?php else: ?>
                                             <?php // The order was deleted; the consignment still happened. ?>
                                             <span class="ad-mono">#<?= $orderId ?></span>

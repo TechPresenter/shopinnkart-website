@@ -59,6 +59,9 @@ $files = array_merge($files, Database::fetchColumnAll(
 
 // Every child table cascades from products, so one delete is enough.
 Database::delete('products', '`id` = :id', ['id' => $productId]);
+// The record is gone, so its extended SEO row has nothing to describe.
+seo_entity_meta_delete('product', $productId);
+
 
 foreach ($files as $file) {
     delete_upload($file === null ? null : (string) $file);

@@ -334,8 +334,18 @@ require ADMIN_PATH . '/includes/header.php';
                         <br><span class="ad-muted"><?= e((string) ($snapshot['reason'] ?? '')) ?></span>
                     </p>
                     <?php if ($canEdit): ?>
+                        <?php
+                        /* Warning, not danger: the current values are
+                           snapshotted on the way past, so this is the one
+                           reset on the screen that can be walked back. */
+                        ?>
                         <form method="post" action="<?= e(admin_url('appearance/reset.php')) ?>"
-                              onsubmit="return confirm('Put every setting back to the snapshot taken <?= e_attr((string) ($snapshot['taken_at'] ?? '')) ?>?\n\nThe values you have now will be snapshotted first, so this is reversible.')">
+                              <?= admin_confirm_form_attrs(
+                                  'Put every setting back to the snapshot taken '
+                                      . (string) ($snapshot['taken_at'] ?? '')
+                                      . '. The values you have now are snapshotted first, so this is reversible.',
+                                  ['title' => 'Roll back to the snapshot?', 'label' => 'Roll back', 'tone' => 'warning']
+                              ) ?>>
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="undo">
                             <input type="hidden" name="confirm" value="1">

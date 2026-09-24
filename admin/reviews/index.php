@@ -159,7 +159,7 @@ require ADMIN_PATH . '/includes/header.php';
             <?php if ($canDelete): ?>
                 <button type="submit" class="ad-btn ad-btn--danger"
                         formaction="<?= e(admin_url('reviews/delete.php')) ?>"
-                        data-confirm="Delete the selected review(s)? This cannot be undone.">
+                        <?= admin_confirm_attrs('The selected reviews are removed for good. This cannot be undone.', ['title' => 'Delete the selected reviews?', 'label' => 'Delete reviews', 'tone' => 'danger']) ?>>
                     <?= icon('trash', 'w-4 h-4') ?> Delete
                 </button>
             <?php endif; ?>

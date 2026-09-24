@@ -285,7 +285,7 @@ require ADMIN_PATH . '/includes/header.php';
                                                 <input type="hidden" name="action" value="revoke_remember">
                                                 <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                                 <button type="submit" class="ad-btn ad-btn--sm ad-btn--danger"
-                                                        data-confirm="Forget this browser? The customer will have to sign in again.">
+                                                        <?= admin_confirm_attrs('The customer has to sign in again on that browser.', ['title' => 'Forget this browser?', 'label' => 'Forget it', 'tone' => 'warning']) ?>>
                                                     Forget
                                                 </button>
                                             </form>
@@ -366,7 +366,7 @@ require ADMIN_PATH . '/includes/header.php';
                                                 <input type="hidden" name="action" value="revoke_token">
                                                 <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
                                                 <button type="submit" class="ad-btn ad-btn--sm ad-btn--danger"
-                                                        data-confirm="Revoke this device's token? The app will be signed out at once.">
+                                                        <?= admin_confirm_attrs('The app is signed out at once.', ['title' => 'Revoke this token?', 'label' => 'Revoke token', 'tone' => 'danger']) ?>>
                                                     Revoke
                                                 </button>
                                             </form>
@@ -377,7 +377,7 @@ require ADMIN_PATH . '/includes/header.php';
                                             <input type="hidden" name="user_type" value="<?= e_attr((string) $row['user_type']) ?>">
                                             <input type="hidden" name="user_id" value="<?= (int) $row['user_id'] ?>">
                                             <button type="submit" class="ad-btn ad-btn--sm"
-                                                    data-confirm="Sign this account out of every device - app tokens, remembered browsers and open sessions?">
+                                                    <?= admin_confirm_attrs('App tokens, remembered browsers and open sessions all go.', ['title' => 'Sign this account out everywhere?', 'label' => 'Sign out everywhere', 'tone' => 'danger']) ?>>
                                                 Sign out everywhere
                                             </button>
                                         </form>

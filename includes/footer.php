@@ -15,6 +15,10 @@ require_once INCLUDES_PATH . '/menu-functions.php';
 require_once INCLUDES_PATH . '/header-actions.php';
 require_once INCLUDES_PATH . '/header-settings.php';
 require_once INCLUDES_PATH . '/skeletons.php';
+// Decides, in one place, whether any third-party tag may run and whether the
+// consent banner is needed. The footer is where the tags are printed and where
+// the "Cookie preferences" control lives, so it is the only page that needs it.
+require_once INCLUDES_PATH . '/consent.php';
 
 // The mobile search dialog lives down here but reads the header's settings.
 // $hd is a local that includes/header.php leaves in the including page's
@@ -333,11 +337,19 @@ $footerColIndex = 0;   // gives every disclosure panel a stable, unique id
                     <?php endif; ?>
                 </p>
 
-                <?php if ($policyLinks !== []): ?>
+                <?php
+                // The preferences control sits with the policies because that is
+                // where a visitor looks for it, and because it is the second half
+                // of what the Cookie Policy promises: a way to change your mind.
+                // It prints nothing on a store with no tags and no opt-in mode.
+                $consentPrefs = consent_preferences_button('sik-consent-link');
+                ?>
+                <?php if ($policyLinks !== [] || $consentPrefs !== ''): ?>
                     <nav class="sik-footer__legal" aria-label="Policies">
                         <?php foreach ($policyLinks as $policy): ?>
                             <a href="<?= e(page_url((string) $policy['slug'])) ?>"><?= e($policy['title']) ?></a>
                         <?php endforeach; ?>
+                        <?= $consentPrefs ?>
                     </nav>
                 <?php endif; ?>
             </div>
@@ -917,6 +929,36 @@ foreach ($popups as $popup):
       // checkout script below is loaded only where there is a checkout. ?>
 <?php skeleton_templates(skeleton_page_templates($currentScript)); ?>
 
+<?php
+/*
+ * First-party analytics: is THIS page view counted?
+ *
+ * The library is loaded only when the owner has switched counting on, so a
+ * store on the shipped default parses nothing and prints nothing - no config,
+ * no script tag, no beacon. When it is on, analytics_js_config() answers null
+ * for a visitor we must not count (a DNT or GPC signal, the signed-in admin
+ * walking their own shop, a bot, an excluded office IP), and the result is the
+ * same: this page ships no tracker at all.
+ *
+ * The token in that config is what the collector trusts instead of a session.
+ * It is minted per render, so it must never be printed into a cached page -
+ * see the note in api/analytics/collect.php.
+ */
+$sikAnalytics = null;
+try {
+    if (setting('analytics_mode', 'off') !== 'off') {
+        require_once INCLUDES_PATH . '/analytics/collect.php';
+        $sikAnalytics = analytics_js_config();
+    }
+} catch (Throwable $e) {
+    // Measuring the storefront must never be able to take the storefront down.
+    // A missing application key, a missing table, a settings read that failed:
+    // the page finishes without a tracker and the reason goes to the log.
+    $sikAnalytics = null;
+    ErrorHandler::log('warning', 'analytics config skipped: ' . $e->getMessage());
+}
+?>
+
 <script>
     window.SIK_CONFIG = <?= e_json([
         'baseUrl'        => SITE_URL,
@@ -936,7 +978,10 @@ foreach ($popups as $popup):
         'compareCount'   => compare_usable() ? compare_count() : 0,
         'freeShipAt'     => setting_float('free_shipping_threshold', 999),
         'cartSubtotal'   => $popupCartSubtotal,
-    ]) ?>;
+        // `an` is present only on a page view that is actually counted, so
+        // "is this visitor tracked?" is one key's existence rather than a
+        // flag the client could disagree with.
+    ] + ($sikAnalytics === null ? [] : ['an' => $sikAnalytics])) ?>;
 </script>
 <script src="<?= e(asset('js/app.js')) ?>" defer></script>
 <script src="<?= e(asset('js/notifications.js')) ?>" defer></script>
@@ -950,6 +995,12 @@ foreach ($popups as $popup):
 <script src="<?= e(asset('js/account.js')) ?>" defer></script>
 <?php if (in_array($currentScript, ['checkout.php'], true)): ?>
 <script src="<?= e(asset('js/checkout.js')) ?>" defer></script>
+<?php endif; ?>
+<?php // Shipped only where there is something to measure. It is first-party,
+      // so no consent banner gates it in the owner's anonymous mode; what
+      // gates it is $sikAnalytics being null above. ?>
+<?php if ($sikAnalytics !== null): ?>
+<script src="<?= e(asset('js/analytics.js')) ?>" defer></script>
 <?php endif; ?>
 
 <?php
@@ -965,64 +1016,24 @@ $sikNoThirdParty = !empty($GLOBALS['SIK_NO_THIRD_PARTY']);
 <?php endif; ?>
 
 <?php
-// Analytics and tag containers.
-//
-// Each block renders only when the operator has configured its id, so a store
-// that uses none of them ships no third-party script at all. The ids are
-// validated against their real formats rather than printed raw: these values
-// end up inside a script URL and a JS call, and an id is a short token from a
-// known alphabet, so anything else is a paste error or an injection attempt.
-$gaId  = trim((string) setting('google_analytics_id', ''));
-$gtmId = trim((string) setting('google_tag_manager_id', ''));
-$pixel = trim((string) setting('meta_pixel_id', ''));
-
-$gaId  = preg_match('/^(G-[A-Z0-9]{4,15}|UA-\d{4,10}-\d{1,4}|AW-\d{6,15})$/i', $gaId) === 1 ? $gaId : '';
-$gtmId = preg_match('/^GTM-[A-Z0-9]{4,10}$/i', $gtmId) === 1 ? $gtmId : '';
-$pixel = preg_match('/^\d{10,20}$/', $pixel) === 1 ? $pixel : '';
-
-if ($sikNoThirdParty) {
-    $gaId = $gtmId = $pixel = '';
-}
+/*
+ * Analytics and tag containers - now gated on consent.
+ *
+ * This block used to load Google Tag Manager, Google Analytics and the Meta
+ * Pixel for every visitor the moment an id was configured, with nothing
+ * anywhere in the storefront to refuse them, while the Cookie Policy claimed
+ * they could be refused. Both halves of that are fixed here: consent.php
+ * decides, and it emits nothing third-party until the visitor has allowed the
+ * marketing category (and never for the signed-in admin, never on a page that
+ * set SIK_NO_THIRD_PARTY, and never against a DNT/GPC signal).
+ *
+ * consent_banner_html() prints the banner, its config and consent.js, and
+ * prints nothing at all when the store has no tags configured and its own
+ * analytics mode needs no opt-in - so a clean store pays nothing for this.
+ */
+echo consent_tag_html();
+echo consent_banner_html();
 ?>
-
-<?php if ($gtmId !== ''): ?>
-<?php // Container. The noscript iframe is what makes it work without JavaScript. ?>
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=<?= e($gtmId) ?>"
-                  height="0" width="0" style="display:none;visibility:hidden"
-                  title="Google Tag Manager"></iframe></noscript>
-<script>
-    (function (w, d, s, l, i) {
-        w[l] = w[l] || []; w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
-        var f = d.getElementsByTagName(s)[0], j = d.createElement(s), dl = l !== 'dataLayer' ? '&l=' + l : '';
-        j.async = true; j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
-        f.parentNode.insertBefore(j, f);
-    })(window, document, 'script', 'dataLayer', <?= e_json($gtmId) ?>);
-</script>
-<?php endif; ?>
-
-<?php if ($gaId !== ''): ?>
-<script async src="https://www.googletagmanager.com/gtag/js?id=<?= e($gaId) ?>"></script>
-<script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', <?= e_json($gaId) ?>);
-</script>
-<?php endif; ?>
-
-<?php if ($pixel !== ''): ?>
-<?php // Stored since the first build but never actually emitted until now. ?>
-<script>
-    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}
-    (window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', <?= e_json($pixel) ?>); fbq('track', 'PageView');
-</script>
-<noscript><img height="1" width="1" style="display:none" alt=""
-     src="https://www.facebook.com/tr?id=<?= e($pixel) ?>&ev=PageView&noscript=1"></noscript>
-<?php endif; ?>
 
 <?php
 /**

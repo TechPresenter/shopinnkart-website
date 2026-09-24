@@ -77,6 +77,13 @@ function csrf_require(): void
         return;
     }
 
+    // Recorded so the security monitor can tell one stale tab (one failure)
+    // from a script posting to forms it never loaded (fifteen in a quarter of
+    // an hour). Guarded because csrf.php is loaded before security-monitor.php.
+    if (function_exists('security_csrf_failed')) {
+        security_csrf_failed('form');
+    }
+
     if (is_ajax() || strpos((string) ($_SERVER['SCRIPT_NAME'] ?? ''), '/api/') !== false) {
         json_error('Your session expired. Please refresh the page and try again.', [], 403, 'csrf');
     }

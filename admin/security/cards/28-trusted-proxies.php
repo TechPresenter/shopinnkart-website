@@ -119,7 +119,7 @@ return [
 
                         <div style="display:flex;gap:8px;flex-wrap:wrap">
                             <button type="submit" class="ad-btn ad-btn--primary"
-                                    data-confirm="Anything listed here is allowed to say who a visitor is. Continue?">
+                                    <?= admin_confirm_attrs('Anything listed here is allowed to say who a visitor is. A wrong entry lets someone forge their own address.', ['title' => 'Trust these proxies?', 'label' => 'Save the list', 'tone' => 'danger']) ?>>
                                 <?= icon('check', 'w-4 h-4') ?> Save proxies
                             </button>
                             <?php if ($value === ''): ?>

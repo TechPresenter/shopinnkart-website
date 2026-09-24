@@ -383,6 +383,93 @@ function email_template_defaults(): array
             . tpl_signoff(),
     ];
 
+    // ------------------------------------------------------ COURIER MILESTONES
+    // The shipping hub's own events, for the moments the ORDER status cannot
+    // express. A pickup being scheduled, a parcel turning round (RTO) and a
+    // reverse pickup being booked all leave the order exactly where it was, so
+    // none of them reaches notify_order_status_changed() - and before these the
+    // customer heard nothing at all.
+    //
+    // {{courier_tracking_url}} is the courier's own page when the hub knows one
+    // and this store's tracking page otherwise, so the button always goes
+    // somewhere real. {{shipment_status}} is the courier's wording.
+    $courierVars = $orderVars . ', {{courier_tracking_url}}, {{shipment_status}}, {{pickup_date}}';
+
+    $t['shipment_pickup_scheduled'] = [
+        'name' => 'Courier Pickup Scheduled',
+        'description' => 'Sent when the courier has been booked to collect the parcel from us.',
+        'subject' => 'Your order {{order_number}} is booked for courier pickup',
+        'recipient_type' => 'customer',
+        'attach_invoice' => 0,
+        'variables' => $courierVars,
+        'body' => tpl_greeting()
+            . '<p style="margin:0 0 16px 0">Good news - <strong>{{courier_name}}</strong> is booked to collect order '
+            . '<strong>{{order_number}}</strong> from our warehouse. It moves to the courier network next.</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;margin:20px 0">'
+            . '<tr><td style="padding:16px 20px">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px">'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Courier</td><td style="padding:4px 0;text-align:right">{{courier_name}}</td></tr>'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Tracking number</td><td style="padding:4px 0;text-align:right"><strong>{{tracking_number}}</strong></td></tr>'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Pickup booked for</td><td style="padding:4px 0;text-align:right">{{pickup_date}}</td></tr>'
+            . '</table></td></tr></table>'
+            . tpl_button('Track your parcel', '{{tracking_url}}')
+            . '<p style="margin:16px 0 0 0;font-size:13px;color:#6b7280">The courier\'s own page is at '
+            . '<a href="{{courier_tracking_url}}" style="color:#F4511E">{{courier_tracking_url}}</a>. '
+            . 'Scans usually start appearing a few hours after collection.</p>'
+            . tpl_signoff(),
+    ];
+
+    $t['shipment_rto'] = [
+        'name' => 'Parcel Returning To Us (RTO)',
+        'description' => 'Sent when the courier turns a parcel round and sends it back to the warehouse.',
+        'subject' => 'Your order {{order_number}} is on its way back to us',
+        'recipient_type' => 'customer',
+        'attach_invoice' => 0,
+        'variables' => $courierVars . ', {{refund_note}}',
+        'body' => tpl_greeting()
+            . '<p style="margin:0 0 16px 0">Your parcel for order <strong>{{order_number}}</strong> could not be delivered, '
+            . 'and <strong>{{courier_name}}</strong> is returning it to our warehouse.</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;margin:20px 0">'
+            . '<tr><td style="padding:16px 20px">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px">'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Courier</td><td style="padding:4px 0;text-align:right">{{courier_name}}</td></tr>'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Tracking number</td><td style="padding:4px 0;text-align:right"><strong>{{tracking_number}}</strong></td></tr>'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Courier status</td><td style="padding:4px 0;text-align:right">{{shipment_status}}</td></tr>'
+            . '</table></td></tr></table>'
+            . '<p style="margin:16px 0 0 0;font-size:14px">{{refund_note}}</p>'
+            . '<p style="margin:12px 0 0 0;font-size:14px">If you still want this order, reply to this email and we will '
+            . 'arrange a fresh dispatch as soon as the parcel is back with us.</p>'
+            . tpl_button('See the order', '{{order_url}}')
+            . tpl_support()
+            . tpl_signoff(),
+    ];
+
+    $t['shipment_return_pickup'] = [
+        'name' => 'Return Pickup Booked',
+        'description' => 'Sent when a courier has been booked to collect a return from the customer.',
+        'subject' => 'A courier is booked to collect your return for order {{order_number}}',
+        'recipient_type' => 'customer',
+        'attach_invoice' => 0,
+        'variables' => $courierVars . ', {{return_reason}}, {{refund_note}}',
+        'body' => tpl_greeting()
+            . '<p style="margin:0 0 16px 0">We have booked <strong>{{courier_name}}</strong> to collect your return for order '
+            . '<strong>{{order_number}}</strong> from your delivery address.</p>'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;margin:20px 0">'
+            . '<tr><td style="padding:16px 20px">'
+            . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px">'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Courier</td><td style="padding:4px 0;text-align:right">{{courier_name}}</td></tr>'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Return tracking number</td><td style="padding:4px 0;text-align:right"><strong>{{tracking_number}}</strong></td></tr>'
+            . '<tr><td style="padding:4px 0;color:#6b7280">Collecting from</td><td style="padding:4px 0;text-align:right">{{shipping_city}}</td></tr>'
+            . '</table></td></tr></table>'
+            . '<p style="margin:16px 0 0 0;font-size:14px">Please keep the item in its original packaging with all accessories '
+            . 'and the invoice, and hand the parcel over against the tracking number above.</p>'
+            . '<p style="margin:12px 0 0 0;font-size:14px">{{refund_note}}</p>'
+            . '<p style="margin:16px 0 0 0;font-size:13px;color:#6b7280">Follow the pickup at '
+            . '<a href="{{courier_tracking_url}}" style="color:#F4511E">{{courier_tracking_url}}</a>.</p>'
+            . tpl_support()
+            . tpl_signoff(),
+    ];
+
     // --------------------------------------------------------------- RETURNS
     $t['return_requested'] = [
         'name' => 'Return Requested',

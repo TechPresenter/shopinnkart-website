@@ -22,6 +22,9 @@ if ($post === null) {
 // The row owns its featured image, so the file goes with it.
 delete_upload($post['featured_image']);
 Database::delete('blog_posts', '`id` = :id', ['id' => $id]);
+// The record is gone, so its extended SEO row has nothing to describe.
+seo_entity_meta_delete('post', $id);
+
 
 log_activity('blog_post.deleted', 'blog_post', $id, 'Deleted post "' . $post['title'] . '"');
 admin_after_write();

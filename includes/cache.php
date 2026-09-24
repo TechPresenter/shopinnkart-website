@@ -32,9 +32,24 @@ final class Cache
         return setting_bool('cache_enabled', true);
     }
 
+    /**
+     * What a cached entry belongs to.
+     *
+     * One checkout of this code can be served by two sites pointing at two
+     * different databases - that is exactly how this install is verified,
+     * the live database on :80 and a scratch one on :8099, sharing a single
+     * storage directory. A key that ignores which database answered lets the
+     * scratch site hand its menu to the live one. So the database name is
+     * part of every key and the two never read each other's entries.
+     */
+    private static function scope(): string
+    {
+        return defined('DB_NAME') ? (string) DB_NAME : '';
+    }
+
     private static function path(string $key): string
     {
-        return self::dir() . '/' . sha1($key) . '.cache';
+        return self::dir() . '/' . sha1(self::scope() . '::' . $key) . '.cache';
     }
 
     /** Fetch a cached value, or null when missing/expired. */

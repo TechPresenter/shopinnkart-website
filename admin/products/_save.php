@@ -426,6 +426,17 @@ function product_form_save(?int $productId): array
     $variants = product_form_variants();
     $errors   = product_form_validate($in, $variants, $productId);
 
+    // The SEO panel's extended fields (keywords, the Twitter trio, the
+    // breadcrumb controls and the per-page custom code). Staged before the
+    // early return so a refused code field fails the save rather than being
+    // dropped after the product has already been written.
+    // A typed slug that collides with a reserved address is refused here.
+    // The validator above already refuses one another product holds; this adds
+    // the names the rewrite rules own, which it cannot know about.
+    seo_editor_slug_check('product', (string) input('slug', ''), $productId, $errors);
+
+    $seoMeta = seo_editor_meta_input($errors);
+
     if ($errors !== []) {
         return ['ok' => false, 'id' => $productId, 'errors' => $errors];
     }
@@ -554,6 +565,15 @@ function product_form_save(?int $productId): array
 
         return $id;
     });
+
+    seo_entity_meta_save('product', $savedId, $seoMeta);
+
+    // A renamed product keeps its old /product/<slug> alive as a 301 unless
+    // the admin unticked the box beside the slug field. That URL is the one
+    // already in every ad, every share and every customer's history.
+    if (!$isCreate && $current !== null) {
+        seo_editor_slug_change('product', (string) $current['slug'], (string) $row['slug']);
+    }
 
     log_activity(
         $isCreate ? 'product.created' : 'product.updated',

@@ -211,9 +211,11 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php endif; ?>
 
                     <?php if (admin_can('reviews.delete')): ?>
-                        <?php $confirm = 'Delete this review from "' . $review['customer_name'] . '"? This cannot be undone.'; ?>
                         <form method="post" action="<?= e(admin_url('reviews/delete.php')) ?>"
-                              onsubmit="return confirm(<?= e_attr((string) json_encode($confirm)) ?>)">
+                              <?= admin_confirm_form_attrs(
+                                  'The review from "' . $review['customer_name'] . '" is removed for good.',
+                                  ['title' => 'Delete this review?', 'label' => 'Delete review']
+                              ) ?>>
                             <?= csrf_field() ?>
                             <input type="hidden" name="id" value="<?= $id ?>">
                             <button type="submit" class="ad-btn ad-btn--danger ad-btn--block">

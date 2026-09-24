@@ -254,6 +254,18 @@ function create_order(array $input): array
             $input, $userId, $cartId, $shippingMethod, $paymentMethod, $gateway, $pincodeRow, $fail
         ) {
             // ---- 3. Re-read the cart INSIDE the transaction, locking stock --
+            // The STORED quantity is the truth, and it is the same number the
+            // shopper was shown: cart_items() reconciles a line against live
+            // stock and writes the clamp back, rather than clamping for
+            // display and leaving this read to charge something else. The two
+            // used to disagree in both directions - a page showing 3 over a
+            // stored 8 either refused the order for 8 or, once stock came
+            // back, charged for 8.
+            //
+            // Nothing below clamps. A basket the shelf can no longer cover is
+            // REFUSED by name and by number (STOCK:/MAXQTY: further down), so
+            // a quantity is never quietly reduced at the till.
+            //
             // By product, not by the order the lines were added in: the loop
             // below locks each product row, and two checkouts holding the same
             // two products in opposite cart order deadlocked on
@@ -949,6 +961,18 @@ function create_order(array $input): array
         notify_order_placed($orderRow);
     } catch (Throwable $e) {
         ErrorHandler::log('warning', 'Order confirmation email failed to queue: ' . $e->getMessage());
+    }
+
+    // Analytics, last and outside the transaction. The revenue recorded is
+    // read back from the committed order row, never from the cart and never
+    // from the browser - a purchase total the client can influence is a
+    // revenue figure nobody can defend. analytics_record_purchase() has a
+    // try/catch of its own, and events.php refuses to write at all while a
+    // transaction is open, so there is no path from a counter back to the
+    // order. The order is already placed by the time this line runs; the worst
+    // an analytics failure can do is lose the row it was about to write.
+    if (analytics_library()) {
+        analytics_record_purchase($orderRow);
     }
 
     return ['ok' => true, 'message' => 'Order placed successfully.', 'order' => $orderRow, 'errors' => []];

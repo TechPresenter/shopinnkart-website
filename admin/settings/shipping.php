@@ -67,6 +67,64 @@ $spec = [
         'min_value' => 7, 'max_value' => 3650, 'default' => '30',
         'help' => 'Every courier call and webhook push is recorded. The polling cron deletes older rows on each run.',
     ],
+
+    // --- Automatic courier selection ---------------------------------------
+    // Relative weights, not percentages: they are normalised when they are
+    // read, so 40/25/25/10 and 4/2.5/2.5/1 choose the same courier. Setting
+    // them all to zero is allowed and falls back to the defaults, because the
+    // alternative is a screen that scores every courier NaN.
+    'shipping_select_weight_cost' => [
+        'type' => 'number', 'label' => 'Weight: cost', 'required' => true,
+        'min_value' => 0, 'max_value' => 100, 'default' => '40',
+        'help' => 'How much the price matters, next to the other three.',
+    ],
+    'shipping_select_weight_speed' => [
+        'type' => 'number', 'label' => 'Weight: delivery speed', 'required' => true,
+        'min_value' => 0, 'max_value' => 100, 'default' => '25',
+        'help' => 'A courier that gives no estimate scores neutral here rather than badly.',
+    ],
+    'shipping_select_weight_reliability' => [
+        'type' => 'number', 'label' => 'Weight: courier performance', 'required' => true,
+        'min_value' => 0, 'max_value' => 100, 'default' => '25',
+        'help' => 'Delivered against returned and refused, from your own shipments.',
+    ],
+    'shipping_select_weight_rating' => [
+        'type' => 'number', 'label' => 'Weight: courier rating', 'required' => true,
+        'min_value' => 0, 'max_value' => 100, 'default' => '10',
+        'help' => "The courier's own published rating, where it publishes one.",
+    ],
+    'shipping_select_window_days' => [
+        'type' => 'number', 'label' => 'Performance window (days)', 'required' => true,
+        'min_value' => 7, 'max_value' => 730, 'default' => '90',
+        'help' => 'How far back the delivered/returned count looks. Shorter reacts faster and is noisier.',
+    ],
+    'shipping_select_min_shipments' => [
+        'type' => 'number', 'label' => 'Parcels needed before judging a courier', 'required' => true,
+        'min_value' => 1, 'max_value' => 10000, 'default' => '20',
+        'help' => 'Below this, the screens say there is not enough history and score performance neutral '
+            . 'instead of treating three deliveries out of three as a perfect courier.',
+    ],
+    'shipping_auto_book_enabled' => [
+        'type' => 'bool', 'label' => 'Ship confirmed orders automatically',
+        'help' => 'Off by default. On, a confirmed order books the recommended courier with nobody watching. '
+            . 'Unpaid prepaid orders, blocked orders, PIN codes nobody serves and COD above the ceiling '
+            . 'are always left for a human, and every refusal is in the activity log.',
+    ],
+    'shipping_auto_book_cod_max' => [
+        'type' => 'number', 'label' => 'Auto-ship COD ceiling', 'required' => true,
+        'min_value' => 0, 'max_value' => 10000000, 'step' => '0.01', 'default' => '10000',
+        'help' => 'A COD order above this is never booked automatically: it is goods handed over against '
+            . 'a promise of cash. 0 removes the ceiling.',
+    ],
+    'shipping_auto_book_max_age_days' => [
+        'type' => 'number', 'label' => 'Auto-ship only orders newer than (days)', 'required' => true,
+        'min_value' => 0, 'max_value' => 3650, 'default' => '7',
+        'help' => 'What the FIRST pass may touch. The switch above ships off, so by the time it is turned on '
+            . 'there is usually a tail of old confirmed orders that were settled by hand, written off or are '
+            . 'waiting on stock. Without this the first cron pass books couriers for all of them, oldest '
+            . 'first, with nobody watching. Older orders are still bookable by hand. 0 removes the limit and '
+            . 'lets the sweep reach the whole order history.',
+    ],
 ];
 
 $action = (string) input('action', '');
@@ -547,7 +605,52 @@ require ADMIN_PATH . '/includes/header.php';
             </div>
         </div>
 
-        <?php // Full width under both cards, so the form keeps one save bar. ?>
+        <?php // Full width under both cards: eight fields do not fit a half. ?>
+        <div class="ad-card" style="margin:0;grid-column:1/-1">
+            <div class="ad-card__head">
+                <div>
+                    <div class="ad-card__title">Automatic courier selection</div>
+                    <div class="ad-card__sub">
+                        How the booking screen, the rate calculator and unattended shipping decide which
+                        courier wins.
+                    </div>
+                </div>
+                <a class="ad-btn ad-btn--sm" href="<?= e(admin_url('shipping/rates.php')) ?>">
+                    <?= icon('truck', 'w-4 h-4') ?> Try it in the rate calculator
+                </a>
+            </div>
+            <div class="ad-card__body">
+                <p class="ad-muted" style="font-size:12.5px;margin:0 0 12px">
+                    The four weights are relative, not percentages: 40/25/25/10 and 4/2.5/2.5/1 pick the
+                    same courier. A courier that cannot be judged on something &mdash; no delivery
+                    estimate, no rating, not enough history &mdash; scores neutral there, and the screen
+                    says so in words rather than guessing.
+                </p>
+                <div class="ad-grid ad-grid--4" style="gap:12px 16px">
+                    <?= settings_field('shipping_select_weight_cost', $spec, $values, $errors) ?>
+                    <?= settings_field('shipping_select_weight_speed', $spec, $values, $errors) ?>
+                    <?= settings_field('shipping_select_weight_reliability', $spec, $values, $errors) ?>
+                    <?= settings_field('shipping_select_weight_rating', $spec, $values, $errors) ?>
+                </div>
+                <div class="ad-row ad-row--2">
+                    <?= settings_field('shipping_select_window_days', $spec, $values, $errors) ?>
+                    <?= settings_field('shipping_select_min_shipments', $spec, $values, $errors) ?>
+                </div>
+                <hr style="border:0;border-top:1px solid var(--ad-border);margin:18px 0">
+                <?= settings_field('shipping_auto_book_enabled', $spec, $values, $errors) ?>
+                <div class="ad-row ad-row--2">
+                    <?= settings_field('shipping_auto_book_cod_max', $spec, $values, $errors) ?>
+                    <?= settings_field('shipping_auto_book_max_age_days', $spec, $values, $errors) ?>
+                </div>
+                <p class="ad-muted" style="font-size:12.5px;margin:0">
+                    Unattended booking needs the shipment cron (<code>bin/refresh-shipments.php</code>)
+                    to be running: that is what walks the queue. Nothing is ever booked twice, a booking
+                    the courier refuses is left for a human rather than retried forever, and an order it
+                    declines to touch stays bookable by hand on its own shipping screen.
+                </p>
+            </div>
+        </div>
+
         <div class="ad-card" style="margin:0;grid-column:1/-1">
             <div class="ad-card__head">
                 <div>

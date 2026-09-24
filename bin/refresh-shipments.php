@@ -43,6 +43,14 @@
  * (ShiprocketShippingProvider::$failedLogins), so dead credentials cost one
  * /auth/login per run rather than one per shipment.
  *
+ * It also runs one pass of UNATTENDED BOOKING, which is what makes the "Ship
+ * confirmed orders automatically" setting actually unattended: confirmed
+ * orders nobody has booked are handed to the recommended courier. That setting
+ * ships OFF, and the sweep returns immediately while it is, so this costs a
+ * shop that never turns it on one settings read per run. Never on --dry-run,
+ * which must call no courier and spend nothing, and never on --ids, which
+ * names shipments to poll and says nothing about orders waiting to be booked.
+ *
  * It also prunes shipping_api_logs past shipping_log_retention_days, because
  * the courier webhook is an unauthenticated endpoint and a cron is the only
  * thing that visits often enough to keep a ceiling on that table.
@@ -107,6 +115,10 @@ $summary = [
     'resettle' => [], 'resettled' => 0,
     'skipped_no_driver' => 0, 'skipped_simulated' => 0, 'skipped_after_failures' => 0,
     'abandoned' => [], 'pruned_logs' => 0, 'errors' => [],
+    // Filled by the unattended-booking sweep below. Always present, so a
+    // runner reading the JSON does not have to guess whether the key is
+    // missing because the sweep is off or because the run died before it.
+    'autoship' => null,
 ];
 $finish = static function (array $summary, int $exitCode) use ($asJson): void {
     if ($asJson) {
@@ -244,9 +256,16 @@ try {
         // The status first, so the index on it narrows the table before the
         // per-row subquery below is ever run.
         [$sstIn, $sstParams] = Database::inPlaceholders($settleStatuses, 'sin');
-        $settleWhere = "s.`status` IN ($sstIn) AND s.`provider_code` IN ($codeIn)
+        // direction = 'forward' on both sides, by the same rule
+        // shipment_live_for_order() applies: a reverse pickup booked after the
+        // parcel was delivered has a HIGHER id than the forward leg, so
+        // without it a late RTO scan on that forward leg could never be
+        // re-settled - and the order would sit behind its own shipment
+        // forever, its stock still counted as sold.
+        $settleWhere = "s.`status` IN ($sstIn) AND s.`provider_code` IN ($codeIn) AND s.`direction` = 'forward'
               AND s.`id` = (SELECT MAX(x.`id`) FROM `shipments` x
-                             WHERE x.`order_id` = s.`order_id` AND x.`status` NOT IN ('cancelled', 'failed_booking'))
+                             WHERE x.`order_id` = s.`order_id` AND x.`direction` = 'forward'
+                               AND x.`status` NOT IN ('cancelled', 'failed_booking'))
               AND EXISTS (SELECT 1 FROM `orders` o
                            WHERE o.`id` = s.`order_id`
                              AND (" . implode(' OR ', $settleParts) . '))';
@@ -336,6 +355,46 @@ try {
         rewind($lock);
         fwrite($lock, (string) json_encode(['cursor' => $last, 'finished_at' => date('Y-m-d H:i:s')]));
         fflush($lock);
+    }
+
+    // Unattended booking, the pass that makes "Ship automatically" actually
+    // unattended. This is the trigger the settings help text and the Shipping
+    // > Integrations card both point at: without it the switch was ON, the
+    // screen counted orders "waiting for the next cron pass", and no pass ever
+    // came.
+    //
+    // Here rather than in its own cron line because it wants exactly what this
+    // runner already holds: the single-instance lock (two sweeps at once would
+    // race for the same orders), a batch ceiling, and a summary an operator
+    // reads. It returns immediately when the setting is off, which is the
+    // shipped default, so a poller on a shop that never turns it on pays one
+    // settings read per run.
+    //
+    // Never on --dry-run (it spends money and hands parcels to couriers) and
+    // never on --ids, which names shipments to poll and says nothing about
+    // orders waiting to be booked.
+    if (!$dryRun && $ids === []) {
+        try {
+            $auto = shipping_autoship_sweep($limit);
+            $summary['autoship'] = $auto;
+            if ($auto['enabled'] && $auto['looked_at'] > 0) {
+                $say(sprintf('Auto-ship: %d booked, %d refused, of %d order(s) looked at.',
+                    $auto['booked'], $auto['refused'], $auto['looked_at']));
+            }
+        } catch (Throwable $e) {
+            // A sweep that falls over must not cost the run its cursor write or
+            // its log pruning - the polling half has already done its work.
+            //
+            // Reported on its own rather than into $summary['errors'], which is
+            // keyed by shipment id and printed as "shipment #N": a sweep
+            // failure is about orders, and filing it there would print it as
+            // shipment #0.
+            $summary['autoship'] = ['enabled' => null, 'error' => mb_substr($e->getMessage(), 0, 200)];
+            fwrite(STDERR, sprintf('[%s] Auto-ship sweep failed: %s%s',
+                date('Y-m-d H:i:s'), $e->getMessage(), PHP_EOL));
+            ErrorHandler::log('warning', 'Auto-ship sweep failed: ' . mb_substr($e->getMessage(), 0, 300));
+            $exitCode = 1;
+        }
     }
 
     // Housekeeping, while a cron is here anyway: the API log is written by an

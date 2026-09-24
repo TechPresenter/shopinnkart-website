@@ -1,146 +1,69 @@
 <?php
 /**
- * ShopInnKart - XML sitemap (served as /sitemap.xml).
+ * ShopInnKart - XML sitemaps.
  *
- * Only live rows are listed: active products, categories, brands and CMS
- * pages, plus published blog posts. Routes whose PHP file is not present are
- * skipped so the sitemap never advertises a 404.
+ * One route, several files:
+ *
+ *     /sitemap.xml                  the index (this file, no parameters)
+ *     /sitemap-products-1.xml       a section file, via the .htaccess rewrite
+ *     /sitemap.php?type=products&page=1   the same file where there is no
+ *                                         rewrite engine (the built-in server)
+ *
+ * All of the building lives in includes/sitemap-functions.php so that the
+ * admin screen and the CLI job can produce and check exactly what a crawler
+ * gets, without going over HTTP to do it.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/includes/init.php';
 require_once INCLUDES_PATH . '/content-functions.php';
+require_once INCLUDES_PATH . '/sitemap-functions.php';
 
-/** @var array<string,array{loc:string,lastmod:?string,changefreq:string,priority:string}> */
-$entries = [];
+// Both parameters are read as scalars before anything else touches them.
+// `?type[]=products` hands PHP an array, and casting one to string is a
+// diagnostic and an HTTP 500 - on a URL a crawler can request.
+$rawType = $_GET['type'] ?? 'index';
+$rawPage = $_GET['page'] ?? 1;
 
-$add = static function (string $loc, ?string $lastmod, string $changefreq, string $priority) use (&$entries): void {
-    // Keyed by URL so a slug that owns both a fixed route and a CMS row is
-    // only listed once.
-    if (isset($entries[$loc])) {
-        return;
-    }
-    $timestamp = $lastmod === null ? false : strtotime($lastmod);
-    $entries[$loc] = [
-        'loc'        => $loc,
-        'lastmod'    => $timestamp === false ? null : date('c', $timestamp),
-        'changefreq' => $changefreq,
-        'priority'   => $priority,
-    ];
-};
-
-$routeExists = static fn (string $script): bool => is_file(ROOT_PATH . '/' . $script);
-
-// --- Homepage --------------------------------------------------------------
-$newestProduct = Database::fetchColumn('SELECT MAX(`updated_at`) FROM `products`');
-$add(url(), is_string($newestProduct) ? $newestProduct : null, 'daily', '1.0');
-
-// --- Static catalogue and support routes -----------------------------------
-$staticRoutes = [
-    'shop'          => ['shop.php', 'daily', '0.9'],
-    'deals'         => ['deals.php', 'daily', '0.9'],
-    'new-arrivals'  => ['new-arrivals.php', 'daily', '0.8'],
-    'best-sellers'  => ['best-sellers.php', 'daily', '0.8'],
-    'brands'        => ['brands.php', 'weekly', '0.7'],
-    'blog'          => ['blog.php', 'daily', '0.7'],
-    'contact'       => ['contact.php', 'monthly', '0.6'],
-    'about'         => ['about.php', 'monthly', '0.5'],
-    'faq'           => ['faq.php', 'monthly', '0.6'],
-    'track-order'   => ['track-order.php', 'monthly', '0.5'],
-];
-foreach ($staticRoutes as $path => [$script, $changefreq, $priority]) {
-    if ($routeExists($script)) {
-        $add(url($path), null, $changefreq, $priority);
-    }
+$type = is_scalar($rawType) ? strtolower(trim((string) $rawType)) : '';
+$page = is_scalar($rawPage) ? (int) $rawPage : 1;
+if ($page < 1) {
+    $page = 1;
 }
 
-// --- Categories ------------------------------------------------------------
-if ($routeExists('category.php')) {
-    foreach (Database::fetchAll(
-        "SELECT `slug`, `updated_at` FROM `categories` WHERE `status` = 'active' ORDER BY `sort_order`, `name`"
-    ) as $row) {
-        $add(category_url((string) $row['slug']), (string) $row['updated_at'], 'weekly', '0.8');
-    }
-}
+// The type has to be one we know before anything else happens: it is used to
+// pick a builder and to build a cache key, and neither should ever see an
+// arbitrary string from the query.
+$known = array_merge(['index'], array_keys(sitemap_sections()));
+$xml = in_array($type, $known, true) ? sitemap_cached($type, $page) : null;
 
-// --- Brands ----------------------------------------------------------------
-if ($routeExists('brand.php')) {
-    foreach (Database::fetchAll(
-        "SELECT `slug`, `updated_at` FROM `brands` WHERE `status` = 'active' ORDER BY `sort_order`, `name`"
-    ) as $row) {
-        $add(brand_url((string) $row['slug']), (string) $row['updated_at'], 'weekly', '0.6');
-    }
-}
-
-// --- Products --------------------------------------------------------------
-if ($routeExists('product.php')) {
-    foreach (Database::fetchAll(
-        'SELECT p.`slug`, p.`updated_at` FROM `products` p
-          WHERE ' . product_visible_sql('p') . '
-          ORDER BY p.`updated_at` DESC'
-    ) as $row) {
-        $add(product_url((string) $row['slug']), (string) $row['updated_at'], 'weekly', '0.8');
-    }
-}
-
-// --- CMS pages -------------------------------------------------------------
-// Both sections below are switchable from Admin > Settings > SEO. A store that
-// keeps its policies and blog out of search should not have to edit this file,
-// and excluding them here is the honest counterpart to a noindex directive:
-// nothing is submitted that the operator does not want indexed.
-if (setting_bool('sitemap_include_pages', true)):
-foreach (Database::fetchAll(
-    "SELECT `slug`, `updated_at` FROM `pages` WHERE `status` = 'active' ORDER BY `sort_order`, `title`"
-) as $row) {
-    $slug = (string) $row['slug'];
-    $fixed = cms_fixed_routes()[$slug] ?? null;
-
-    // A slug with a fixed route is only listed if that route's file exists;
-    // otherwise it is still reachable through /page/<slug>.
-    if ($fixed !== null && !$routeExists($fixed . '.php')) {
-        $fixed = null;
-    }
-    $loc = $fixed !== null ? url($fixed) : page_url($slug);
-
-    $add($loc, (string) $row['updated_at'], 'monthly', $fixed !== null ? '0.6' : '0.4');
-}
-endif;
-
-// --- Blog posts ------------------------------------------------------------
-if (setting_bool('sitemap_include_blog', true) && $routeExists('blog-post.php')) {
-    foreach (Database::fetchAll(
-        'SELECT p.`slug`, p.`updated_at` FROM `blog_posts` p
-          WHERE ' . blog_visible_sql('p') . '
-          ORDER BY p.`published_at` DESC'
-    ) as $row) {
-        $add(blog_url((string) $row['slug']), (string) $row['updated_at'], 'monthly', '0.6');
-    }
-}
-
-// ---------------------------------------------------------------------------
-//  Output
-// ---------------------------------------------------------------------------
+// Nothing buffered may reach a crawler: one stray byte of HTML in front of the
+// declaration makes the whole file unparseable.
 while (ob_get_level() > 0) {
     ob_end_clean();
 }
 
+if ($xml === null) {
+    // A section that is switched off, empty, or asked for past its last page
+    // is genuinely not there. 404 says so; an empty <urlset> would be reported
+    // by Search Console as a sitemap that lists nothing, which is a different
+    // and misleading complaint.
+    http_response_code(404);
+    if (!headers_sent()) {
+        header('Content-Type: text/plain; charset=utf-8');
+        header('X-Robots-Tag: noindex');
+    }
+    echo "Not found\n";
+    exit;
+}
+
 if (!headers_sent()) {
     header('Content-Type: application/xml; charset=utf-8');
+    // Crawlers re-fetch sitemaps often. An hour at the edge is long enough to
+    // spare the database and short enough that a new product is found today.
+    header('Cache-Control: public, max-age=3600');
+    header('X-Robots-Tag: noindex');   // the file is for crawlers, not results
 }
 
-echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
-
-foreach ($entries as $entry) {
-    echo '  <url>' . "\n";
-    echo '    <loc>' . e($entry['loc']) . '</loc>' . "\n";
-    if ($entry['lastmod'] !== null) {
-        echo '    <lastmod>' . e($entry['lastmod']) . '</lastmod>' . "\n";
-    }
-    echo '    <changefreq>' . e($entry['changefreq']) . '</changefreq>' . "\n";
-    echo '    <priority>' . e($entry['priority']) . '</priority>' . "\n";
-    echo '  </url>' . "\n";
-}
-
-echo '</urlset>' . "\n";
+echo $xml;

@@ -56,6 +56,11 @@ function admin_menu(): array
                 ['label' => 'Shipments',    'url' => 'shipping/shipments.php', 'permission' => 'orders.view',
                  'also' => ['shipping/book.php']],
                 ['label' => 'Tracking',     'url' => 'shipping/track.php',     'permission' => 'orders.view'],
+                ['label' => 'Rate calculator', 'url' => 'shipping/rates.php', 'permission' => 'orders.view'],
+                // Not the same screen as Orders > Returns. That one decides whether
+                // a customer may return something; this one tracks what is
+                // physically travelling back and what it still owes.
+                ['label' => 'Returns & RTO',   'url' => 'shipping/returns.php', 'permission' => 'orders.view'],
                 // The directory entry catches index.php and configure.php.
                 ['label' => 'Integrations', 'url' => 'shipping/',              'permission' => 'settings.view'],
             ],
@@ -122,6 +127,25 @@ function admin_menu(): array
             ],
         ],
         [
+            // A work queue, not a settings page: broken links to fix, images
+            // still missing alt text, structured data to check. That is why it
+            // sits out here beside Reports rather than inside Settings, where
+            // settings/seo.php stays - that one is the store's defaults, this
+            // one is the list of what is wrong today. Without this entry the
+            // whole section existed and nothing in the panel linked to it.
+            'label' => 'SEO', 'icon' => 'search', 'permission' => 'settings.view',
+            'children' => [
+                ['label' => 'Overview',       'url' => 'seo/index.php',   'permission' => 'settings.view'],
+                ['label' => 'Broken links',   'url' => 'seo/404s.php',    'permission' => 'settings.view'],
+                ['label' => 'Image alt text', 'url' => 'seo/images.php',  'permission' => 'settings.view'],
+                ['label' => 'Schema',         'url' => 'seo/schema.php',  'permission' => 'settings.view'],
+                ['label' => 'Sitemap',        'url' => 'seo/sitemap.php', 'permission' => 'settings.view'],
+                // Readable with settings.view; changing it needs settings.scripts,
+                // which only a Super Admin can grant. The screen says so itself.
+                ['label' => 'Injected code',  'url' => 'seo/scripts.php', 'permission' => 'settings.view'],
+            ],
+        ],
+        [
             'label' => 'Settings', 'icon' => 'settings', 'permission' => 'settings',
             'children' => [
                 ['label' => 'General',  'url' => 'settings/general.php',  'permission' => 'settings.view'],
@@ -130,6 +154,7 @@ function admin_menu(): array
                 ['label' => 'Shipping', 'url' => 'settings/shipping.php', 'permission' => 'settings.view'],
                 ['label' => 'Tax',      'url' => 'settings/tax.php',      'permission' => 'settings.view'],
                 ['label' => 'Email',    'url' => 'settings/email.php',    'permission' => 'settings.view'],
+                ['label' => 'Analytics','url' => 'settings/analytics.php','permission' => 'settings.view'],
                 ['label' => 'SEO',      'url' => 'settings/seo.php',      'permission' => 'settings.view'],
                 ['label' => 'Theme',    'url' => 'settings/theme.php',    'permission' => 'settings.view'],
                 ['label' => 'Social',   'url' => 'settings/social.php',   'permission' => 'settings.view'],
@@ -142,7 +167,10 @@ function admin_menu(): array
             'label' => 'Security', 'icon' => 'lock', 'permission' => 'security',
             'children' => [
                 ['label' => 'Security Settings', 'url' => 'security/settings.php', 'permission' => 'security.view'],
+                ['label' => 'Security Log',      'url' => 'security/events.php',   'permission' => 'security.view'],
+                ['label' => 'IP Rules',          'url' => 'security/ip-rules.php', 'permission' => 'security.view'],
                 ['label' => 'Devices & Tokens',  'url' => 'security/devices.php',  'permission' => 'security.view'],
+                ['label' => 'Privacy Requests',  'url' => 'security/privacy.php',  'permission' => 'security.view'],
             ],
         ],
         [
@@ -491,12 +519,23 @@ function admin_empty(string $title, string $text, ?string $actionLabel = null, ?
     return $html . '</div>';
 }
 
-/** Confirm-and-post button for destructive actions (never a bare GET link). */
-function admin_delete_form(string $action, int $id, string $confirmText, string $label = '', string $extraClass = ''): string
+/**
+ * Confirm-and-post button for destructive actions (never a bare GET link).
+ *
+ * A3: the guard is admin_confirm_attrs() rather than a hand-written
+ * onsubmit. It still emits that onsubmit as the no-JS fallback, so nothing
+ * loses its guard - but the dialog and the fallback now come out of one
+ * call and cannot say different things. ui.php is loaded by auth.php, which
+ * every one of this helper's callers requires first.
+ *
+ * @param array $o Passed through to admin_confirm_attrs(): title, label,
+ *                 cancel, tone, require. Most callers need none of it.
+ */
+function admin_delete_form(string $action, int $id, string $confirmText, string $label = '', string $extraClass = '', array $o = []): string
 {
     $buttonLabel = $label !== '' ? e($label) : icon('trash', 'w-4 h-4');
     return '<form method="post" action="' . e($action) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr(json_encode($confirmText)) . ')">'
+        . admin_confirm_form_attrs($confirmText, $o + ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<button type="submit" class="ad-btn ad-btn--icon ad-btn--danger-ghost ' . e_attr($extraClass) . '"'
@@ -778,4 +817,126 @@ function admin_safe_return(string $candidate, string $fallback): string
     }
 
     return $candidate;
+}
+
+// ===========================================================================
+//  ASSETS AND ICONS  (A1)
+// ===========================================================================
+
+/**
+ * Ask the layout to load an optional admin JS module on this page.
+ *
+ * admin.js is the core every admin page needs. Charts, the dashboard's
+ * customise mode and the snippet builder are not - loading them everywhere
+ * would spend the budget the asset diet just recovered. A helper that needs
+ * a module records it here and admin/includes/footer.php prints the tag, so
+ * a page never has to remember (admin_chart() will call this itself).
+ *
+ * Calling it after the footer has run is a no-op with a debug notice rather
+ * than a silent miss, because the symptom - a chart that never draws - looks
+ * nothing like the cause.
+ *
+ * @param string $name Module suffix: `charts` loads assets/js/admin-charts.js
+ */
+function admin_require_script(string $name): void
+{
+    $name = strtolower(trim($name));
+    // An allowlist, not a path: the value ends up inside a <script src>, and
+    // by A13 the caller is a widget definition that came out of the database.
+    if (!in_array($name, ['charts', 'dash'], true)) {
+        return;
+    }
+    admin_required_scripts($name);
+}
+
+/**
+ * The recorded module list. footer.php calls it once with $seal, after the
+ * page body has run; anything recorded later cannot be printed any more, and
+ * says so in debug rather than failing silently - the symptom (a chart that
+ * never draws) looks nothing like the cause.
+ *
+ * @param string|null $add  Module to record.
+ * @param bool        $seal Called by the footer once the tags are printed.
+ * @return array<int, string>
+ */
+function admin_required_scripts(?string $add = null, bool $seal = false): array
+{
+    static $scripts = [];
+    static $sealed  = false;
+
+    if ($seal) {
+        $sealed = true;
+        return $scripts;
+    }
+    if ($add !== null && !in_array($add, $scripts, true)) {
+        if ($sealed) {
+            if (APP_DEBUG) {
+                trigger_error("admin_require_script('$add') ran after the footer printed", E_USER_NOTICE);
+            }
+            return $scripts;
+        }
+        $scripts[] = $add;
+    }
+    return $scripts;
+}
+
+/**
+ * Icon names an admin-built snippet or widget may choose from.
+ *
+ * Deliberately narrower than icon_names(): the full set carries payment
+ * marks, social glyphs and storefront-only drawings that mean nothing on a
+ * KPI tile, and a picker of 136 is a wall. A name outside this list is
+ * refused at save time rather than rendered as the `info` fallback, so a
+ * widget never quietly shows the wrong glyph.
+ *
+ * @return array<int, string>
+ */
+function admin_icon_allowlist(): array
+{
+    $names = [
+        // measures and data
+        'chart', 'trending', 'activity', 'pie', 'target', 'database', 'table', 'rows', 'columns',
+        // commerce
+        'cart', 'bag', 'package', 'truck', 'credit-card', 'tag', 'gift', 'percent', 'rupee',
+        // people
+        'user', 'users', 'star', 'heart', 'message',
+        // state
+        'check-circle', 'x-circle', 'alert', 'info', 'help', 'clock', 'refresh', 'zap',
+        // places and things
+        'store', 'map', 'globe', 'layers', 'grid', 'list', 'bookmark', 'pin', 'image',
+        // actions
+        'search', 'filter', 'funnel', 'download', 'upload', 'link', 'send', 'megaphone', 'settings',
+    ];
+
+    // Never offer a name the set cannot draw: the picker would show an
+    // information circle and the operator would pick it on purpose.
+    $paths = icon_paths();
+    return array_values(array_filter($names, static fn (string $n): bool => isset($paths[$n])));
+}
+
+/**
+ * Is this request asking for the page BODY only, with no shell? (phase A2)
+ *
+ * The quick-view mechanism (SIK.admin.remote) fetches a real admin page with
+ * `partial=1`; header.php then prints only an .ad-partial wrapper and footer
+ * prints only its closing tag. Nothing about authorisation changes - the page
+ * has already run admin_require()/admin_require_action() before it includes
+ * the header - so a partial URL fetched while logged out gets exactly the
+ * same redirect a full page would.
+ *
+ * The header is checked too, and only accepted as confirmation, never as the
+ * trigger: a partial is a GET of a page the operator may equally open in a
+ * tab, and a bookmarked ?partial=1 should render the fragment rather than
+ * silently fall back to the shell.
+ */
+function admin_partial_request(): bool
+{
+    static $is = null;
+
+    if ($is === null) {
+        $is = ($_GET['partial'] ?? '') === '1'
+            && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET';
+    }
+
+    return $is;
 }

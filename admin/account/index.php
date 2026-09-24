@@ -294,7 +294,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?= admin_reauth_field('issue new backup codes', (string) ($errors['reauth_password'] ?? '')) ?>
                         <div>
                             <button type="submit" class="ad-btn"
-                                    data-confirm="Your current backup codes stop working immediately. Continue?">
+                                    <?= admin_confirm_attrs('The codes you have now stop working the moment the new ones are issued.', ['title' => 'Issue new backup codes?', 'label' => 'Issue new codes', 'tone' => 'warning']) ?>>
                                 <?= icon('refresh', 'w-4 h-4') ?> Issue ten new backup codes
                             </button>
                         </div>
@@ -328,7 +328,7 @@ require ADMIN_PATH . '/includes/header.php';
                                 </div>
                                 <div>
                                     <button type="submit" class="ad-btn ad-btn--danger"
-                                            data-confirm="Switch two-step sign in off for your account?">
+                                            <?= admin_confirm_attrs('Your account will be protected by its password alone.', ['title' => 'Switch off two-step sign in?', 'label' => 'Switch it off', 'tone' => 'danger']) ?>>
                                         Switch it off
                                     </button>
                                 </div>
@@ -453,7 +453,7 @@ require ADMIN_PATH . '/includes/header.php';
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="revoke_devices">
                         <button type="submit" class="ad-btn ad-btn--danger ad-btn--sm"
-                                data-confirm="Every trusted browser, including this one, will be asked for a code next time. Continue?">
+                                <?= admin_confirm_attrs('Every trusted browser, including this one, is asked for a code next time.', ['title' => 'Forget every trusted browser?', 'label' => 'Forget them all', 'tone' => 'warning']) ?>>
                             Revoke all
                         </button>
                     </form>

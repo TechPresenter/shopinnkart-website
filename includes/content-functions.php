@@ -302,7 +302,7 @@ function cms_page_seo(array $page): void
     seo_from_entity($page, [
         'title'       => (string) $page['title'],
         'description' => $description,
-    ]);
+    ], 'page');
 
     // WebPage rather than Article: a policy document is not editorial content,
     // and claiming otherwise to chase a rich result is what gets a site's

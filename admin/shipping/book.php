@@ -76,12 +76,32 @@ $blockReason = shipping_order_block_reason($order);
 
 /**
  * Does this provider row quote but refuse to book? A courier with no sandbox
- * (see the docblock) outside Live mode - and, as its driver does, a row with no
- * mode at all counts as Test.
+ * (see the docblock) outside Live mode.
+ *
+ * The rule itself lives in shipping_provider_book_block(), because the
+ * recommendation and the unattended booker have to obey the same one and a
+ * second copy here would drift from it.
  */
 $quotesOnly = static function (array $provider): bool {
-    return in_array((string) ($provider['code'] ?? ''), ['shiprocket'], true)
-        && (string) ($provider['mode'] ?? '') !== 'live';
+    return shipping_provider_book_block($provider) !== null;
+};
+
+/**
+ * Are these two quotes the same offer? By the aggregator's sub-courier id
+ * where there is one, else by the name it displays - the same test the POST
+ * uses to find the chosen rate in a fresh quote.
+ */
+$sameRate = static function (?array $a, ?array $b): bool {
+    if ($a === null || $b === null || (string) ($a['provider'] ?? '') !== (string) ($b['provider'] ?? '')) {
+        return false;
+    }
+    $idA = trim((string) ($a['courier_id'] ?? ''));
+    $idB = trim((string) ($b['courier_id'] ?? ''));
+    if ($idA !== '' && $idA !== '0' && $idB !== '' && $idB !== '0') {
+        return $idA === $idB;
+    }
+    $nameA = trim((string) ($a['courier'] ?? ''));
+    return $nameA !== '' && $nameA === trim((string) ($b['courier'] ?? ''));
 };
 
 /**
@@ -207,15 +227,19 @@ if (is_post()) {
     // The price, from the courier: the same parcel quoted again and the chosen
     // rate found in the answer - by the aggregator's courier id where there is
     // one, else by name. See the docblock for why the browser never sends it.
+    //
+    // Scored, not merely quoted, so the row can record whether the admin took
+    // the recommendation or overrode it. The recommendation is recomputed here
+    // rather than posted from the page: a hidden field saying "this was the
+    // recommendation" is a hidden field anybody can change, and the audit
+    // trail is the whole point of recording it.
     $quoteParcel = array_filter($parcel, static fn ($v): bool => $v !== null);
-    $fresh       = shipping_quote_order($orderId, $quoteParcel);
+    $pick        = shipping_select_courier($orderId, $quoteParcel);
+    $fresh       = ['rates' => $pick['rates'], 'errors' => $pick['errors']];
     $rate        = null;
-    foreach ($fresh['rates'] as $offered) {
-        if ((string) ($offered['provider'] ?? '') !== $providerCode) {
-            continue;
-        }
-        $offeredId = trim((string) ($offered['courier_id'] ?? ''));
-        if ($byId ? $offeredId === $courierId : trim((string) ($offered['courier'] ?? '')) === $courierName) {
+    $posted      = ['provider' => $providerCode, 'courier_id' => $courierId, 'courier' => $courierName];
+    foreach ($pick['ranked'] as $offered) {
+        if ($sameRate($offered, $posted)) {
             $rate = $offered;
             break;
         }
@@ -256,7 +280,29 @@ if (is_post()) {
         $opts['courier'] = mb_substr($rateName, 0, 100);
     }
 
+    // Which of the two this was: the recommendation taken, or an override.
+    // Both are legitimate - the admin knows things the scoring does not - but
+    // the difference is what makes "why did this parcel go with them?"
+    // answerable six weeks later.
+    $tookRecommendation = $sameRate($pick['choice'], $rate);
+    $opts['selected_by']     = $tookRecommendation ? 'recommended' : 'manual';
+    $opts['selection_score'] = (float) ($rate['score'] ?? 0);
+    $opts['selection_reason'] = $tookRecommendation
+        ? $pick['reason']
+        : ($pick['choice'] === null
+            ? 'Chosen by hand; nothing was recommended for this parcel.'
+            : 'Chosen by hand over ' . (string) $pick['choice']['courier']
+                . ' at ' . money((float) $pick['choice']['cost']) . '. This rate: '
+                . implode('; ', (array) ($rate['why'] ?? [])) . '.');
+
     $result = shipping_book($orderId, $providerCode, $opts);
+
+    if (!empty($result['ok']) && !$tookRecommendation) {
+        log_activity('shipment.override', 'shipment', (int) $result['shipment_id'],
+            'Order #' . $orderId . ': booked with ' . (string) ($rate['courier'] ?? $providerCode)
+            . ' instead of the recommended '
+            . ($pick['choice'] === null ? '(none)' : (string) $pick['choice']['courier']) . '.');
+    }
 
     // A booking writes a shipment row whether or not the courier accepted it,
     // and a success moves the order the storefront shows.
@@ -291,9 +337,13 @@ $providerModes = array_column($available, 'mode', 'code');
 // code => name, for the live providers whose rates are shown but not bookable.
 $quoteOnlyNames = array_column(array_filter($available, $quotesOnly), 'name', 'code');
 
-$quote = null;
+$quote  = null;
+$select = null;
 if ($canEdit && $blockReason === null && $live === null && $available !== [] && $parcelErrors === []) {
     $quote = shipping_quote_order($orderId, array_filter($parcel, static fn ($v): bool => $v !== null));
+    // The same quote, scored - passed in so the couriers are asked once per
+    // page view rather than once for the table and again for the advice.
+    $select = shipping_select_courier($orderId, [], ['quote' => $quote]);
 }
 
 $grams = static function (int $g): string {
@@ -336,6 +386,13 @@ require ADMIN_PATH . '/includes/header.php';
     .bk-stale { margin: 0; font-size: 13px; color: var(--ad-danger, #B91C1C); }
     .bk-stale[hidden] { display: none; }
     .bk-rate-label { cursor: pointer; }
+    /* The recommendation, above the price list it is pre-selected in. */
+    .bk-rec { border-top: 1px solid var(--ad-border); background: var(--ad-bg); }
+    .bk-pick { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+               text-transform: uppercase; padding: 2px 6px; border-radius: 4px; vertical-align: 1px;
+               background: var(--ad-primary); color: #fff; }
+    .bk-why { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 13px; line-height: 1.6; }
+    .bk-why li::before { content: '\2022'; margin-right: 7px; color: var(--ad-muted); }
 </style>
 
 <div class="ad-container">
@@ -514,6 +571,36 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php endif; ?>
                         </dd>
                     </div>
+                    <?php
+                    // Why THIS courier, in the words the screen showed when the
+                    // booking was made. Read off the row rather than recomputed:
+                    // the weightings are settings and the performance window
+                    // moves, so a reason worked out today would not be the
+                    // reason the parcel went where it went. Older consignments
+                    // were booked through a screen that recorded none, and say
+                    // nothing rather than inventing one.
+                    $chosenBy = (string) ($live['selected_by'] ?? '');
+                    $chosenWhy = trim((string) ($live['selection_reason'] ?? ''));
+                    if ($chosenBy !== '' || $chosenWhy !== ''):
+                        $chosenLabel = [
+                            'recommended' => 'The recommendation, taken',
+                            'manual'      => 'Chosen by hand',
+                            'auto'        => 'Booked automatically, with nobody watching',
+                        ][$chosenBy] ?? 'Recorded at booking';
+                    ?>
+                        <div>
+                            <dt>Chosen by</dt>
+                            <dd>
+                                <?= e($chosenLabel) ?>
+                                <?php if ($live['selection_score'] !== null && $live['selection_score'] !== ''): ?>
+                                    &middot; score <?= e(number_format((float) $live['selection_score'], 1)) ?>
+                                <?php endif; ?>
+                                <?php if ($chosenWhy !== ''): ?>
+                                    <br><span class="ad-muted"><?= e($chosenWhy) ?></span>
+                                <?php endif; ?>
+                            </dd>
+                        </div>
+                    <?php endif; ?>
                     <div>
                         <dt>AWB</dt>
                         <dd>
@@ -645,12 +732,21 @@ require ADMIN_PATH . '/includes/header.php';
                             <?php
                             // Releasing a dead booking calls no courier, so the
                             // confirm says where to look instead of "void".
+                            // A3 splits the old run-on question into the title
+                            // the dialog asks and the body that says what happens.
+                            $cancelTitle = $pendingStale
+                                ? 'Release this booking?'
+                                : 'Cancel this shipment' . ($hasAwb ? ' and void AWB ' . (string) $live['awb'] : '') . '?';
                             $cancelConfirm = $pendingStale
-                                ? 'Release this booking that never finished? The order can be booked again - first check the courier panel for a consignment it may have created.'
-                                : 'Cancel this shipment' . ($hasAwb ? ' and void AWB ' . (string) $live['awb'] : '')
-                                    . '? The order stays open and can be booked again.';
+                                ? 'It never finished, so no courier is called. The order can be booked again - first check the courier panel for a consignment it may have created.'
+                                : 'The order stays open and can be booked again.';
                             ?>
-                            <button type="submit" class="ad-btn ad-btn--danger" data-confirm="<?= e_attr($cancelConfirm) ?>">
+                            <button type="submit" class="ad-btn ad-btn--danger"
+                                    <?= admin_confirm_attrs($cancelConfirm, [
+                                        'title' => $cancelTitle,
+                                        'label' => $pendingStale ? 'Release it' : 'Cancel shipment',
+                                        'tone'  => 'danger',
+                                    ]) ?>>
                                 <?= icon('close', 'w-4 h-4') ?> Cancel shipment
                             </button>
                         </form>
@@ -780,6 +876,25 @@ require ADMIN_PATH . '/includes/header.php';
         $rates       = $quote['rates'] ?? [];
         $quoteErrors = $quote['errors'] ?? [];
         $anyLive     = in_array('live', $providerModes, true);
+        // The recommendation, and the score for every rate. The TABLE stays in
+        // the courier's cheapest-first order, because that is the order an
+        // admin scans a price list in; the recommendation is marked inside it
+        // rather than lifted to the top, so the cheapest is always the first
+        // row whatever the weightings say this week.
+        $recommended  = $select['choice'] ?? null;
+        $recReasons   = (array) ($select['reasons'] ?? []);
+        $selWeights   = $select['weights'] ?? shipping_selection_weights();
+        $scoreOf      = [];
+        $historyOf    = [];
+        foreach ((array) ($select['ranked'] ?? []) as $scoredRate) {
+            $key             = (string) $scoredRate['provider'] . '|' . (string) ($scoredRate['courier'] ?? '')
+                . '|' . trim((string) ($scoredRate['courier_id'] ?? ''));
+            $scoreOf[$key]   = (float) $scoredRate['score'];
+            $historyOf[$key] = (string) ($scoredRate['performance']['note'] ?? '');
+        }
+        $rateKey = static fn (array $r): string => (string) $r['provider'] . '|' . (string) ($r['courier'] ?? '')
+            . '|' . trim((string) ($r['courier_id'] ?? ''));
+        $pctOf   = static fn (float $share): string => number_format($share * 100, 0) . '%';
         // Split once: the note names only quote-only couriers that actually
         // quoted, and Book is drawn only when at least one rate can be picked.
         $quotedOnly = [];
@@ -888,6 +1003,37 @@ require ADMIN_PATH . '/includes/header.php';
                                 </div>
                             </div>
                         <?php endforeach; ?>
+                        <?php if ($recommended !== null): ?>
+                            <div class="ad-card__body bk-rec">
+                                <p style="margin:0 0 6px">
+                                    <span class="bk-pick">Recommended</span>
+                                    <strong><?= e((string) $recommended['courier']) ?></strong>
+                                    &middot; <?= e(money((float) $recommended['cost'])) ?>
+                                    <span class="ad-muted">
+                                        (<?= e((string) ($recommended['provider_name'] ?? $recommended['provider'])) ?>,
+                                        scores <?= e(number_format((float) $recommended['score'], 1)) ?>/100)
+                                    </span>
+                                </p>
+                                <p class="ad-muted" style="margin:0 0 6px;font-size:13px">
+                                    It is pre-selected below. Pick any other row to overrule it - that is one click,
+                                    and the shipment records that you chose by hand.
+                                </p>
+                                <ul class="bk-why">
+                                    <?php foreach ($recReasons as $why): ?>
+                                        <li><?= e(ucfirst((string) $why)) ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                                <p class="ad-muted" style="margin:8px 0 0;font-size:12.5px">
+                                    Weighted cost <?= e($pctOf((float) $selWeights['cost'])) ?>,
+                                    speed <?= e($pctOf((float) $selWeights['speed'])) ?>,
+                                    performance <?= e($pctOf((float) $selWeights['reliability'])) ?>,
+                                    rating <?= e($pctOf((float) $selWeights['rating'])) ?>.
+                                    <a href="<?= e(admin_url('shipping/rates.php?origin_pin=&destination_pin='
+                                        . rawurlencode((string) $order['shipping_pincode'])
+                                        . '&weight_grams=' . (int) $parcel['weight_grams'])) ?>">Open in the rate calculator</a>
+                                </p>
+                            </div>
+                        <?php endif; ?>
                         <div class="ad-tablewrap" style="border-top:1px solid var(--ad-border)">
                             <table class="ad-table">
                                 <thead>
@@ -899,6 +1045,7 @@ require ADMIN_PATH . '/includes/header.php';
                                         <th class="ad-table__num">COD fee</th>
                                         <th class="ad-table__num">Delivery</th>
                                         <th class="ad-table__num">Rating</th>
+                                        <th class="ad-table__num">Score</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -913,18 +1060,26 @@ require ADMIN_PATH . '/includes/header.php';
                                         $eta      = $rate['eta_days'] ?? null;
                                         $rating   = $rate['rating'] ?? null;
                                         $pickable = !isset($quotedOnly[$code]);
+                                        $isRec    = $pickable && $sameRate($recommended, $rate);
+                                        $key      = $rateKey($rate);
                                         ?>
                                         <tr<?= $pickable ? '' : ' class="ad-muted"' ?>>
                                             <td class="ad-table__check">
                                                 <input type="radio" name="rate" id="rate<?= (int) $i ?>" required
-                                                       value="<?= e_attr($value) ?>"<?= $pickable ? '' : ' disabled' ?>
+                                                       value="<?= e_attr($value) ?>"<?= $isRec ? ' checked data-recommended="1"' : '' ?><?= $pickable ? '' : ' disabled' ?>
                                                        aria-label="<?= e_attr(($pickable ? 'Book with ' : 'Cannot book in Test mode: ') . (string) ($rate['courier'] ?? $code)) ?>">
                                             </td>
                                             <td>
                                                 <label class="bk-rate-label" for="rate<?= (int) $i ?>">
-                                                    <span class="ad-cellflex__name" style="display:block"><?= e((string) ($rate['courier'] ?? '')) ?></span>
+                                                    <span class="ad-cellflex__name" style="display:block">
+                                                        <?= e((string) ($rate['courier'] ?? '')) ?>
+                                                        <?php if ($isRec): ?><span class="bk-pick">Recommended</span><?php endif; ?>
+                                                    </span>
                                                     <?php if ((string) ($rate['service'] ?? '') !== ''): ?>
                                                         <span class="ad-cellflex__meta"><?= e((string) $rate['service']) ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if (($historyOf[$key] ?? '') !== ''): ?>
+                                                        <span class="ad-cellflex__meta"><?= e($historyOf[$key]) ?></span>
                                                     <?php endif; ?>
                                                 </label>
                                             </td>
@@ -940,6 +1095,9 @@ require ADMIN_PATH . '/includes/header.php';
                                                 <?= $eta === null ? '&mdash;' : e((int) $eta . ' day' . ((int) $eta === 1 ? '' : 's')) ?>
                                             </td>
                                             <td class="ad-table__num"><?= $rating === null ? '&mdash;' : e(number_format((float) $rating, 1)) ?></td>
+                                            <td class="ad-table__num" data-rate-score="<?= e_attr(number_format((float) ($scoreOf[$key] ?? 0), 2, '.', '')) ?>">
+                                                <?= isset($scoreOf[$key]) ? e(number_format($scoreOf[$key], 1)) : '&mdash;' ?>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>

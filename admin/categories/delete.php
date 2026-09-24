@@ -43,6 +43,9 @@ if ($childCount > 0 || $productCount > 0) {
 delete_upload($category['image']);
 delete_upload($category['banner']);
 Database::delete('categories', '`id` = :id', ['id' => $id]);
+// The record is gone, so its extended SEO row has nothing to describe.
+seo_entity_meta_delete('category', $id);
+
 
 log_activity('category.deleted', 'category', $id, 'Deleted category "' . $category['name'] . '"');
 admin_after_write();

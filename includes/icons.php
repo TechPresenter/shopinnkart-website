@@ -139,6 +139,45 @@ function icon_paths(): array
         'linkedin'      => '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M8 10.5V17M8 7.5v.01M12 17v-3.6c0-1.1.8-1.9 1.8-1.9s1.7.8 1.7 1.9V17"/><path d="M12 10.5V17"/>',
         'pinterest'     => '<circle cx="12" cy="12" r="9"/><path d="M12 7.5c-2.2 0-3.6 1.4-3.6 3.1 0 .8.4 1.7 1 2l-.4 1.6"/><path d="M10.6 16.8c.4.1.9.2 1.4.2 2.5 0 4.4-2.2 4.4-5 0-2.3-1.9-4-4.4-4"/>',
         'whatsapp'      => '<path d="M3 21l1.4-4.6A8.4 8.4 0 1112 20.4a8.5 8.5 0 01-4.2-1.1z"/><path d="M9 9.2c0 2.6 2.3 4.9 4.9 4.9l1-1.2 1.6.8-.4 1.4c-2 .6-6.6-2-7.6-5.6l1.3-.7z"/>',
+
+        // --- admin control centre (A1) ---------------------------------------
+        // Drawn to the same rules as everything above: a 24x24 box, 1.8 stroke
+        // applied by icon(), currentColor, and geometry that still reads at
+        // 16px. These are the names the admin components in A2-A13 ask for; a
+        // name that is not here falls back to `info`, which is how "Easy EMI"
+        // once rendered an information circle.
+        'grip'          => '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
+        'image'         => '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 17l4.5-4.5 3 3 3.5-3.5L20 16"/>',
+        'link'          => '<path d="M10 13.5a3.8 3.8 0 005.6.3l2.6-2.6a3.8 3.8 0 00-5.4-5.4l-1.5 1.5"/><path d="M14 10.5a3.8 3.8 0 00-5.6-.3l-2.6 2.6a3.8 3.8 0 005.4 5.4l1.5-1.5"/>',
+        'message'       => '<path d="M20.5 12.5A7.5 7.5 0 0113 20H4.5l2-3.2A7.5 7.5 0 1120.5 12.5z"/>',
+        'send'          => '<path d="M21 3L10.5 13.5"/><path d="M21 3l-6.8 18-3.7-7.5L3 9.8z"/>',
+        'pie'           => '<path d="M12 3v9h9a9 9 0 10-9-9z"/><path d="M20.4 15.5A9 9 0 1112 3"/>',
+        'activity'      => '<path d="M3 12h4l3 7 4-15 3 8h4"/>',
+        'eye-off'       => '<path d="M4 4l16 16"/><path d="M9.9 5.7A9.7 9.7 0 0112 5.5c6.4 0 10 6.5 10 6.5a17 17 0 01-3.3 4.1"/><path d="M6.5 7.6A16.6 16.6 0 002 12s3.6 6.5 10 6.5a9.9 9.9 0 004.1-.9"/><path d="M9.8 10a2.8 2.8 0 003.9 3.9"/>',
+        'help'          => '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 114 2.3c-.9.6-1.6 1.1-1.6 2.3"/><path d="M12 17.2h.01"/>',
+        'x-circle'      => '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
+        'code'          => '<path d="M9 7.5L4.5 12 9 16.5"/><path d="M15 7.5L19.5 12 15 16.5"/><path d="M13.4 4.5l-2.8 15"/>',
+        'database'      => '<ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/>',
+        'megaphone'     => '<path d="M4 10v4a2 2 0 002 2h1l1.4 4.2a1 1 0 001 .8h.8a1 1 0 001-1.2L10.4 16H11l8 4V4l-8 4H6a2 2 0 00-2 2z"/>',
+        'maximize'      => '<path d="M9 4H4v5"/><path d="M15 4h5v5"/><path d="M15 20h5v-5"/><path d="M9 20H4v-5"/>',
+        'minimize'      => '<path d="M4 9h5V4"/><path d="M20 9h-5V4"/><path d="M20 15h-5v5"/><path d="M4 15h5v5"/>',
+        'play'          => '<path d="M7 4.7l12 7.3-12 7.3z"/>',
+        'pause'         => '<path d="M9 5v14M15 5v14"/>',
+        'undo'          => '<path d="M4 9h9.5a5.5 5.5 0 010 11H8"/><path d="M8 5L4 9l4 4"/>',
+        'panel-left'    => '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
+        'command'       => '<path d="M8.5 5.5a2.5 2.5 0 110 5h7a2.5 2.5 0 110-5v13a2.5 2.5 0 11 0-5h-7a2.5 2.5 0 11 0 5z"/>',
+        'target'        => '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.8"/><circle cx="12" cy="12" r="1.3"/>',
+        'layers'        => '<path d="M12 3l9 4.8-9 4.8-9-4.8z"/><path d="M3 12.5l9 4.8 9-4.8"/><path d="M3 17l9 4.8 9-4.8"/>',
+        'bookmark'      => '<path d="M6 4h12v17l-6-4.2L6 21z"/>',
+        'wifi-off'      => '<path d="M4 4l16 16"/><path d="M2.5 9a16 16 0 015.2-3.2"/><path d="M21.5 9a16 16 0 00-8.4-3.4"/><path d="M6 12.6a11 11 0 013-1.8"/><path d="M18 12.6a11 11 0 00-2.7-1.7"/><path d="M9.2 16a6 6 0 013-1.2"/><path d="M12 19.5h.01"/>',
+        'more-vertical' => '<circle cx="12" cy="5.5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="18.5" r="1.4"/>',
+        'columns'       => '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15M14.5 4.5v15"/>',
+        'funnel'        => '<path d="M3.5 5h17l-6.6 7.6V20l-3.8-2v-5.4z"/>',
+        'map'           => '<path d="M3 6.5l6-2.5 6 2.5 6-2.5v13l-6 2.5-6-2.5-6 2.5z"/><path d="M9 4v13M15 6.5v13"/>',
+        'table'         => '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M9.5 9.5v10"/>',
+        'arrow-down'    => '<path d="M12 4v15"/><path d="M6 13l6 6 6-6"/>',
+        'rows'          => '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M3.5 14.5h17"/>',
+        'pin'           => '<path d="M12 21v-6"/><path d="M8.5 3h7l-1 5.3 2.8 2.6a1 1 0 01-.7 1.7H7.4a1 1 0 01-.7-1.7l2.8-2.6z"/>',
     ];
 
     // Aliases resolve here rather than being drawn twice, so `card` can never

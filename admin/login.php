@@ -86,16 +86,29 @@ if (is_post()) {
 $storeName = (string) setting('store_name', SITE_NAME);
 ?>
 <!doctype html>
-<html lang="en">
+<html lang="en" class="no-js">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>Admin Sign In &middot; <?= e($storeName) ?></title>
     <?= brand_favicon_links() ?>
-    <link rel="stylesheet" href="<?= e(asset('css/tailwind.css')) ?>">
+    <?php // utilities.css, not tailwind.css: see admin/includes/header.php. ?>
+    <link rel="stylesheet" href="<?= e(asset('css/utilities.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('css/admin.css')) ?>">
+    <?php
+    /* The same two INPUT tokens the signed-in layout prints. Without them the
+       sign-in page fell back to admin.css's defaults while every page behind
+       it used the operator's colours - so the store's own admin colour only
+       appeared AFTER you were through the door. */
+    ?>
+    <style>
+        :root {
+            --ad-primary: <?= e(setting('admin_primary', '#D4134E')) ?>;
+            --ad-sidebar: <?= e(setting('admin_sidebar_bg', '#4A041C')) ?>;
+        }
+    </style>
 </head>
 <body class="ad-login">
 
@@ -106,8 +119,8 @@ $storeName = (string) setting('store_name', SITE_NAME);
                  alt="<?= e($storeName) ?>" width="200" height="42">
         </a>
 
-        <h1 style="font-size:19px;text-align:center;margin-bottom:5px">Admin Sign In</h1>
-        <p style="text-align:center;color:var(--ad-muted);font-size:13.5px;margin-bottom:24px">
+        <h1 style="font-size:var(--ad-text-xl);text-align:center;margin-bottom:5px">Admin Sign In</h1>
+        <p style="text-align:center;color:var(--ad-muted);font-size:var(--ad-text-sm);margin-bottom:var(--ad-space-6)">
             Sign in to manage your store.
         </p>
 

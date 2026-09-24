@@ -77,13 +77,35 @@
 
         if (overlay) overlay.addEventListener('click', closeDrawer);
 
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape' && sidebar.classList.contains('is-open')) {
-                closeDrawer();
-                toggle.focus();
-                return;
-            }
+        /* The phone nav drawer predates the layer stack and is not on it (A4
+           owns the shell). Its Escape still has to obey the one rule the stack
+           exists for: Escape closes the TOP layer only. If a menu, popover or
+           modal is open over the drawer, app.js is closing that one and this
+           listener must keep its hands off, or a single Escape takes the nav
+           with it.
 
+           MEASURED (A2): reading the count in the BUBBLE phase does not work,
+           and the guard that used to live in the Tab listener below silently
+           did nothing. Both listeners sit on `document`; app.js registers
+           first, so app.js's Escape had already run SIK.closeTop() and popped
+           the menu by the time this one looked - it saw a count of 0 and
+           closed the navigation too. Instrumented on the phone dashboard with
+           the nav out and a menu over it: capture phase sees layers=1, bubble
+           phase sees layers=0 and navOpen=false, i.e. both had gone.
+
+           Capture runs before any bubble listener, so the count here is the
+           one that was true when the key was pressed. When nothing is stacked
+           this closes the drawer and app.js's closeTop() then finds an empty
+           stack and returns. */
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'Escape') return;
+            if (!sidebar.classList.contains('is-open')) return;
+            if (window.SIK && SIK.layers && SIK.layers.count() > 0) return;
+            closeDrawer();
+            toggle.focus();
+        }, true);
+
+        document.addEventListener('keydown', function (e) {
             // Trap Tab while the drawer is open. Only while it IS open and
             // only on mobile: on desktop the sidebar is part of the page and
             // trapping there would strand the keyboard in the nav.
@@ -140,60 +162,900 @@
         });
     }
 
+    /* ======================================================================
+       OVERLAY CORE  (phase A2)
+
+       Menus, context menus, tooltips, help popovers, modals, drawers and the
+       remote quick view. Five components, ONE rule about who is on top:
+
+         Every overlay pushes a handle onto SIK.layers (app.js) and pops it on
+         close. The page has exactly ONE Escape listener, in app.js boot(),
+         and it closes the TOP layer. That is why a menu opened inside a
+         drawer closes the menu and leaves the drawer standing - nothing here
+         listens for Escape on its own behalf, and nothing here closes a layer
+         it did not open.
+
+       The one keydown listener this file adds is for the tooltip, which is
+       not a layer: it is a transient hint that belongs to whatever is
+       focused, it never traps or blocks anything, and hiding it must not cost
+       the operator the Escape that closes the dialog underneath.
+       ====================================================================== */
+
+    const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const FINE_POINTER = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const PHONE = window.matchMedia('(max-width: 639px)');
+
+    /** Anything that can take focus, for the modal's Tab trap. */
+    const AD_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]),'
+        + ' select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    function visible(el) {
+        return !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+    }
+
+    function pushLayer(el, close, opts) {
+        if (!SIK.layers) return null;          // app.js older than this file
+        const handle = { type: 'admin', el: el, close: close };
+        if (opts) Object.keys(opts).forEach(k => { handle[k] = opts[k]; });
+        return SIK.layers.push(handle);
+    }
+
+    function popLayer(el) {
+        if (SIK.layers) SIK.layers.pop(el);
+    }
+
+    /** Fire a namespaced event that bubbles from the component. */
+    function emit(el, name, detail) {
+        el.dispatchEvent(new CustomEvent(name, { bubbles: true, detail: detail || {} }));
+    }
+
+    /**
+     * Run fn when a transition on `el` ends, or after `ms`, whichever is
+     * first, and never twice. Reduced motion collapses every duration to
+     * .01ms, so the transitionend path still fires and the timeout is only
+     * ever the safety net for a transition that is never started at all
+     * (a hidden element, a browser that skipped it).
+     */
+    function afterTransition(el, ms, fn) {
+        let done = false;
+        const finish = function () {
+            if (done) return;
+            done = true;
+            el.removeEventListener('transitionend', onEnd);
+            fn();
+        };
+        const onEnd = function (e) { if (e.target === el) finish(); };
+        el.addEventListener('transitionend', onEnd);
+        setTimeout(finish, REDUCED.matches ? 20 : ms);
+    }
+
     /* ----------------------------------------------------------------------
-       Dropdowns
+       Menus and dropdowns
+
+       Markup: admin_dropdown() in admin/includes/ui.php. The legacy
+       [data-dropdown] / .ad-dropdown markup (the topbar account menu before
+       A2, and anything a page still hand-writes) is driven by the SAME code -
+       the only difference is which panel selector matches.
        ---------------------------------------------------------------------- */
+    const PANEL_SEL = '.ad-menu__panel, .ad-dropdown__panel';
+    const ITEM_SEL  = '.ad-menu__item, .ad-dropdown__item';
+
+    let openMenuEl = null;     // only one menu is open at a time
+    let typeAhead = '';
+    let typeAheadTimer = null;
+
+    function menuPanel(menu) { return menu.querySelector(PANEL_SEL); }
+    function menuToggle(menu) { return menu.querySelector('[data-dropdown-toggle]'); }
+
+    function menuItems(menu) {
+        const panel = menuPanel(menu);
+        if (!panel) return [];
+        return Array.prototype.filter.call(
+            panel.querySelectorAll(ITEM_SEL),
+            el => el.getAttribute('aria-disabled') !== 'true' && visible(el)
+        );
+    }
+
+    /**
+     * Put the panel where it fits, in VIEWPORT coordinates.
+     *
+     * The panel is position:fixed (section 45 says why: an absolute one is
+     * clipped by .ad-card's overflow and by the table wrapper's), so the
+     * browser cannot anchor it to the trigger on its own and this does it:
+     * it measures the trigger and the panel, picks a side, and writes left and
+     * top. Measured AFTER opening, because a visibility:hidden panel has no
+     * useful box until its own rules are live.
+     *
+     * A menu closes on scroll and on resize, so the coordinates never have to
+     * follow anything; they only have to be right at the moment it opens.
+     */
+    function placeMenu(menu) {
+        const panel = menuPanel(menu);
+        if (!panel) return;
+
+        // Whatever a previous opening wrote, so a sheet is not left holding
+        // desktop coordinates that would beat its own `inset` rule.
+        panel.style.left = '';
+        panel.style.top = '';
+        panel.style.maxHeight = '';
+        if (menu.classList.contains('is-sheet')) return;          // docked to the bottom
+        if (menu.classList.contains('ad-menu--context')) return;   // placed at the pointer
+
+        // Remember what the server asked for, so a flip on one opening does
+        // not become the permanent alignment on the next.
+        if (panel._adAlign === undefined) {
+            panel._adAlign = panel.classList.contains('is-start') ? 'start' : 'end';
+        }
+        panel.classList.remove('is-up');
+        panel.classList.toggle('is-start', panel._adAlign === 'start');
+
+        const pad = 8, gap = 8;
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const trigger = menuToggle(menu) || menu;
+        const tr = trigger.getBoundingClientRect();
+        // offsetWidth/Height, NOT getBoundingClientRect: the entrance is a
+        // transition from scale(.98), so for the first frames the rect is the
+        // SCALED box and every sum below would be a couple of pixels out. The
+        // layout box ignores transforms and is what the panel will settle at.
+        let pw = panel.offsetWidth, ph = panel.offsetHeight;
+
+        // Vertical: below by default. Flip up only when there is genuinely
+        // more room above - a panel taller than both gaps is better left
+        // below, where it can scroll.
+        const below = vh - tr.bottom - gap - pad;
+        const above = tr.top - gap - pad;
+        const up = ph > below && above > below;
+        panel.classList.toggle('is-up', up);
+        // A panel taller than the side it ended on scrolls inside itself
+        // rather than running off the screen.
+        const room = Math.max(120, up ? above : below);
+        if (ph > room) {
+            panel.style.maxHeight = Math.round(room) + 'px';
+            ph = panel.offsetHeight;
+        }
+        const top = up ? Math.max(pad, tr.top - ph - gap) : Math.min(tr.bottom + gap, vh - ph - pad);
+
+        // Horizontal: the panel's end edge sits on the trigger's end edge by
+        // default (`is-start` puts its start edge on the trigger's start
+        // edge). Either alignment can run off a screen edge, so each one flips
+        // to the other before anything is clamped - and the class follows the
+        // alignment actually used, because it is also the corner the entrance
+        // grows from.
+        let start = panel.classList.contains('is-start');
+        let left = start ? tr.left : tr.right - pw;
+        if (left + pw > vw - pad) { start = false; left = tr.right - pw; }
+        if (left < pad) { start = true; left = tr.left; }
+        panel.classList.toggle('is-start', start);
+        left = Math.min(Math.max(pad, left), Math.max(pad, vw - pw - pad));
+
+        panel.style.left = Math.round(left) + 'px';
+        panel.style.top = Math.round(Math.max(pad, top)) + 'px';
+    }
+
+    /**
+     * Move roving focus to one item. The trigger keeps the only tab stop.
+     *
+     * preventScroll is not a nicety: focusing an item in a tall menu makes the
+     * browser scroll the nearest scrollable ancestor, and a menu closes on
+     * scroll - so without it, arrow-keying into a menu closed the menu.
+     * The panel is scrolled by hand instead, which fires on the panel and is
+     * the one scroll the close handler ignores.
+     */
+    function focusItem(menu, item) {
+        if (!item) return;
+        menuItems(menu).forEach(el => el.classList.remove('is-active'));
+        item.classList.add('is-active');
+        try { item.focus({ preventScroll: true }); } catch (err) { item.focus(); }
+
+        const panel = menuPanel(menu);
+        if (!panel || panel.scrollHeight <= panel.clientHeight) return;
+        const pr = panel.getBoundingClientRect();
+        const ir = item.getBoundingClientRect();
+        if (ir.top < pr.top) panel.scrollTop -= (pr.top - ir.top) + 4;
+        else if (ir.bottom > pr.bottom) panel.scrollTop += (ir.bottom - pr.bottom) + 4;
+    }
+
+    function openMenu(menu, opts) {
+        if (!menu || menu.classList.contains('is-open')) return;
+        opts = opts || {};
+        closeMenu();                                   // one at a time
+
+        // The sheet decision is taken per opening, not per page load: a
+        // rotation or a resize between two clicks must get the right frame.
+        const asSheet = menu.dataset.menuSheet === '1' && PHONE.matches;
+        menu.classList.toggle('is-sheet', asSheet);
+        menu.classList.add('is-open');
+
+        const toggle = menuToggle(menu);
+        if (toggle) toggle.setAttribute('aria-expanded', 'true');
+        // The context menu has no toggle and sets this itself before opening,
+        // so it must not be cleared here or Escape would have nowhere to
+        // hand focus back to.
+        menu._adReturnFocus = toggle || menu._adReturnFocus || null;
+
+        placeMenu(menu);
+        openMenuEl = menu;
+        menu._adOpenedAt = Date.now();
+        // A desktop menu does NOT lock scrolling: the page is still usable
+        // behind it and the menu closes on scroll. The phone sheet does,
+        // because it is a modal surface with a scrim.
+        pushLayer(menu, function () { closeMenu(menu, { returnFocus: true }); }, { lock: asSheet });
+        emit(menu, 'sik:menu:open');
+
+        if (opts.focus === 'first') focusItem(menu, menuItems(menu)[0]);
+        else if (opts.focus === 'last') {
+            const items = menuItems(menu);
+            focusItem(menu, items[items.length - 1]);
+        }
+    }
+
+    function closeMenu(menu, opts) {
+        menu = menu || openMenuEl;
+        if (!menu || !menu.classList.contains('is-open')) return;
+        opts = opts || {};
+
+        menu.classList.remove('is-open');
+        const toggle = menuToggle(menu);
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        menuItems(menu).forEach(el => el.classList.remove('is-active'));
+        popLayer(menu);
+        if (openMenuEl === menu) openMenuEl = null;
+        emit(menu, 'sik:menu:close');
+
+        // Only when focus is still INSIDE the panel that is going away. A
+        // click elsewhere has already moved it, and yanking it back to the
+        // trigger would undo the operator's own choice.
+        const back = menu._adReturnFocus;
+        if (back && document.contains(back)
+            && (opts.returnFocus === true || menu.contains(document.activeElement))) {
+            back.focus();
+        }
+        // The panel keeps `is-sheet` until the exit transition has run, or the
+        // sheet would jump to the corner on its way out.
+        afterTransition(menuPanel(menu) || menu, 400, function () {
+            if (!menu.classList.contains('is-open')) menu.classList.remove('is-sheet');
+        });
+    }
+
+    function typeAheadJump(menu, ch) {
+        const items = menuItems(menu);
+        if (!items.length) return;
+        clearTimeout(typeAheadTimer);
+        typeAhead += ch.toLowerCase();
+        typeAheadTimer = setTimeout(function () { typeAhead = ''; }, 700);
+
+        // "ddd" cycles through every item starting with d; "de" refines and
+        // looks for "de" from where the caret already is. That is the
+        // behaviour a menu in any desktop toolkit has.
+        const allSame = typeAhead.split('').every(c => c === typeAhead[0]);
+        const needle = allSame ? typeAhead.charAt(0) : typeAhead;
+        const cur = items.indexOf(document.activeElement);
+        const from = (allSame || typeAhead.length === 1) ? cur + 1 : Math.max(cur, 0);
+
+        for (let n = 0; n < items.length; n++) {
+            const item = items[((from + n) % items.length + items.length) % items.length];
+            if ((item.textContent || '').trim().toLowerCase().indexOf(needle) === 0) {
+                focusItem(menu, item);
+                return;
+            }
+        }
+    }
+
     function initDropdowns() {
         SIK.on('click', '[data-dropdown-toggle]', function (e) {
             e.preventDefault();
-            e.stopPropagation();
-            const dropdown = this.closest('[data-dropdown]');
-            if (!dropdown) return;
-
-            $$('[data-dropdown]').forEach(d => { if (d !== dropdown) d.classList.remove('is-open'); });
-            const open = dropdown.classList.toggle('is-open');
-            this.setAttribute('aria-expanded', String(open));
+            const menu = this.closest('[data-dropdown], .ad-menu, .ad-dropdown');
+            if (!menu) return;
+            if (menu.classList.contains('is-open')) closeMenu(menu, { returnFocus: true });
+            else openMenu(menu);
         });
 
-        document.addEventListener('click', function (e) {
-            if (!e.target.closest('[data-dropdown]')) {
-                $$('[data-dropdown].is-open').forEach(function (d) {
-                    d.classList.remove('is-open');
-                    const button = d.querySelector('[data-dropdown-toggle]');
-                    if (button) button.setAttribute('aria-expanded', 'false');
-                });
+        SIK.on('click', '[data-dropdown-close]', function () { closeMenu(); });
+
+        // Opening from the keyboard lands on an item; opening with the mouse
+        // leaves focus on the trigger, which is what a pointer user expects.
+        SIK.on('keydown', '[data-dropdown-toggle]', function (e) {
+            const menu = this.closest('[data-dropdown], .ad-menu, .ad-dropdown');
+            if (!menu) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!menu.classList.contains('is-open')) openMenu(menu);
+                const items = menuItems(menu);
+                focusItem(menu, e.key === 'ArrowDown' ? items[0] : items[items.length - 1]);
+            } else if (e.key === 'Tab' && menu.classList.contains('is-open')) {
+                // Tabbing off an open trigger closes the panel and lets focus
+                // carry on; it must not leave a panel open behind the caret.
+                closeMenu(menu, { returnFocus: false });
             }
+        });
+
+        // One keydown listener for every panel, on the document. Escape is
+        // NOT handled here: app.js owns it and closes the top layer.
+        //
+        // The test is the PANEL, not the menu: the trigger is inside the menu
+        // too, and when both handlers ran the roving focus moved twice on a
+        // single ArrowDown (the toggle handler put it on item 1, this one
+        // then stepped it on to item 2).
+        document.addEventListener('keydown', function (e) {
+            if (!openMenuEl) return;
+            // The toggle's own handler ran first on this very event and has
+            // already moved the roving focus INTO the panel; without this the
+            // second listener would step it on again and one ArrowDown would
+            // skip an item.
+            if (e.defaultPrevented) return;
+            const menu = openMenuEl;
+            const panel = menuPanel(menu);
+            if (!panel || !panel.contains(document.activeElement)) return;
+
+            const items = menuItems(menu);
+            const i = items.indexOf(document.activeElement);
+
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    focusItem(menu, items[(i + 1) % items.length]);
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    focusItem(menu, items[(i - 1 + items.length) % items.length]);
+                    break;
+                case 'Home':
+                    e.preventDefault();
+                    focusItem(menu, items[0]);
+                    break;
+                case 'End':
+                    e.preventDefault();
+                    focusItem(menu, items[items.length - 1]);
+                    break;
+                case 'Tab':
+                    // Close and let focus carry on from the trigger, which is
+                    // where the panel logically sits in the reading order.
+                    closeMenu(menu, { returnFocus: true });
+                    break;
+                case ' ':
+                    // Space activates a link item, which it does not do natively.
+                    if (document.activeElement && document.activeElement.tagName === 'A') {
+                        e.preventDefault();
+                        document.activeElement.click();
+                    }
+                    break;
+                default:
+                    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                        e.preventDefault();
+                        typeAheadJump(menu, e.key);
+                    }
+            }
+        });
+
+        // An outside press closes. pointerdown rather than click, so the menu
+        // is already gone by the time the click lands on whatever is under it.
+        document.addEventListener('pointerdown', function (e) {
+            if (!openMenuEl) return;
+            if (openMenuEl.contains(e.target)) return;
+            if (e.target.closest && e.target.closest('.ad-menu__scrim')) { closeMenu(); return; }
+            closeMenu();
+        }, true);
+
+        // A menu is anchored to its trigger and cannot follow it, so it closes
+        // rather than drifting. Scrolling INSIDE the panel is not that, and
+        // neither is the scroll the browser performs while the menu is still
+        // opening (focusing an item, the page settling under a sheet).
+        window.addEventListener('scroll', function (e) {
+            if (!openMenuEl) return;
+            if (Date.now() - (openMenuEl._adOpenedAt || 0) < 250) return;
+            const panel = menuPanel(openMenuEl);
+            if (panel && (e.target === panel || panel.contains(e.target))) return;
+            closeMenu();
+        }, true);
+        window.addEventListener('resize', function () { closeMenu(); });
+
+        // Activating an item closes the menu. A form item is left alone: its
+        // own submit handler (and, from A3, the confirm dialog) runs first.
+        SIK.on('click', ITEM_SEL, function (e) {
+            if (this.getAttribute('aria-disabled') === 'true') { e.preventDefault(); return; }
+            const menu = this.closest('[data-dropdown], .ad-menu, .ad-dropdown');
+            if (menu) setTimeout(function () { closeMenu(menu); }, 0);
+        });
+    }
+
+    Admin.menu = { open: openMenu, close: closeMenu };
+
+    /* ----------------------------------------------------------------------
+       Context menu
+
+       `data-context-menu="auto"` on a row mirrors that row's own kebab;
+       `data-context-menu="#tplId"` clones a <template>. It is never the only
+       path to an action - it can only ever show what is already in the kebab,
+       so an operator who never right-clicks loses nothing.
+       ---------------------------------------------------------------------- */
+    let ctxMenu = null;
+
+    function contextHost() {
+        if (ctxMenu && document.contains(ctxMenu)) return ctxMenu;
+        ctxMenu = document.createElement('div');
+        ctxMenu.className = 'ad-menu ad-menu--context';
+        ctxMenu.id = 'adContextMenu';
+        ctxMenu.setAttribute('data-dropdown', 'menu');
+        ctxMenu.innerHTML = '<div class="ad-menu__panel" role="menu"></div>';
+        document.body.appendChild(ctxMenu);
+        return ctxMenu;
+    }
+
+    /** The source of truth for a row's context items: its own kebab. */
+    function contextSource(row) {
+        const spec = row.dataset.contextMenu || 'auto';
+        if (spec !== 'auto') {
+            const tpl = document.querySelector(spec);
+            return (tpl && tpl.content) ? tpl.content.cloneNode(true) : null;
+        }
+        const kebab = row.querySelector('.ad-rowmenu ' + PANEL_SEL) || row.querySelector(PANEL_SEL);
+        if (!kebab) return null;
+        const frag = document.createDocumentFragment();
+        Array.prototype.forEach.call(kebab.children, n => frag.appendChild(n.cloneNode(true)));
+        return frag;
+    }
+
+    function openContextMenu(row, x, y) {
+        const items = contextSource(row);
+        if (!items || !items.childNodes.length) return false;
+
+        const host = contextHost();
+        const panel = host.querySelector(PANEL_SEL);
+        panel.textContent = '';
+        panel.appendChild(items);
+        // Clones keep their roving tabindex; the panel is opened the same way
+        // an anchored menu is, so every key behaves identically.
+        Array.prototype.forEach.call(panel.querySelectorAll(ITEM_SEL), el => el.setAttribute('tabindex', '-1'));
+
+        host.style.setProperty('--ad-cm-x', Math.round(x) + 'px');
+        host.style.setProperty('--ad-cm-y', Math.round(y) + 'px');
+        host._adReturnFocus = (document.activeElement instanceof HTMLElement
+            && document.activeElement !== document.body) ? document.activeElement : row;
+        if (!row.hasAttribute('tabindex')) row.setAttribute('tabindex', '-1');
+        // A context menu takes focus however it was opened. A native one
+        // does, and without it the arrow keys have nothing to rove over and
+        // Escape has nothing to give focus back to.
+        openMenu(host, { focus: 'first' });
+
+        // Placed at the pointer, so it is nudged back inside the viewport
+        // rather than flipped around an anchor it does not have.
+        const r = panel.getBoundingClientRect();
+        if (r.right > window.innerWidth - 8) {
+            host.style.setProperty('--ad-cm-x', Math.max(8, Math.round(x - r.width)) + 'px');
+        }
+        if (r.bottom > window.innerHeight - 8) {
+            host.style.setProperty('--ad-cm-y', Math.max(8, Math.round(y - r.height)) + 'px');
+        }
+        return true;
+    }
+
+    function initContextMenus() {
+        document.addEventListener('contextmenu', function (e) {
+            const row = e.target.closest && e.target.closest('[data-context-menu]');
+            if (!row) return;
+            // Shift + right-click is the escape hatch to the browser's own
+            // menu, and a link, a field or a live selection keeps it too:
+            // "copy link address" and "search for this" are real actions.
+            if (e.shiftKey) return;
+            if (e.target.closest('a[href], input, textarea, select, [contenteditable]')) return;
+            const sel = window.getSelection();
+            if (sel && !sel.isCollapsed && row.contains(sel.anchorNode)) return;
+            if (openContextMenu(row, e.clientX, e.clientY)) e.preventDefault();
+        });
+
+        // Long press, coarse pointers only. 8px of movement is a scroll, not
+        // a press, and cancels it - the same SLOP the drag engine uses.
+        let pressTimer = null, pressX = 0, pressY = 0;
+        document.addEventListener('pointerdown', function (e) {
+            if (e.pointerType === 'mouse') return;
+            const row = e.target.closest && e.target.closest('[data-context-menu]');
+            if (!row) return;
+            pressX = e.clientX; pressY = e.clientY;
+            pressTimer = setTimeout(function () {
+                pressTimer = null;
+                openContextMenu(row, pressX, pressY);
+            }, 500);
+        }, true);
+        const cancelPress = function () {
+            if (pressTimer === null) return;
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        };
+        document.addEventListener('pointermove', function (e) {
+            if (pressTimer !== null
+                && (Math.abs(e.clientX - pressX) > 8 || Math.abs(e.clientY - pressY) > 8)) cancelPress();
+        }, true);
+        document.addEventListener('pointerup', cancelPress, true);
+        document.addEventListener('pointercancel', cancelPress, true);
+
+        // Shift+F10 and the ContextMenu key, placed under the focused element
+        // rather than at a pointer that a keyboard user does not have.
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+            const row = document.activeElement && document.activeElement.closest
+                ? document.activeElement.closest('[data-context-menu]') : null;
+            if (!row) return;
+            const r = document.activeElement.getBoundingClientRect();
+            if (openContextMenu(row, r.left, r.bottom + 4)) e.preventDefault();
         });
     }
 
     /* ----------------------------------------------------------------------
-       Modals
+       Tooltip
+
+       ONE node, reused. It is never an accessible name (icon buttons keep
+       their aria-label) and it never appears on touch, so nothing essential
+       may live only here. While it is showing, the element it describes
+       points at it with aria-describedby; that is removed again on hide, so
+       a stale reference can never outlive the tip.
        ---------------------------------------------------------------------- */
-    Admin.openModal = function (id) {
-        const modal = document.getElementById(id);
-        if (!modal) return;
-        modal.classList.add('is-open');
-        document.body.classList.add('sik-no-scroll');
-        const focusable = modal.querySelector('input:not([type=hidden]), select, textarea, button');
-        if (focusable) setTimeout(() => focusable.focus(), 80);
+    let tipEl = null, tipTimer = null, tipOwner = null, tipPrevDescribedBy = null;
+
+    function tipNode() {
+        if (tipEl && document.contains(tipEl)) return tipEl;
+        tipEl = document.createElement('div');
+        tipEl.className = 'ad-tooltip';
+        tipEl.id = 'adTip';
+        tipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(tipEl);
+        return tipEl;
+    }
+
+    function placeTip(owner, tip) {
+        const pos = owner.dataset.tooltipPos || 'top';
+        const r = owner.getBoundingClientRect();
+        const t = tip.getBoundingClientRect();
+        const gap = 8, pad = 8;
+        let top, left;
+
+        if (pos === 'bottom')      { top = r.bottom + gap; left = r.left + (r.width - t.width) / 2; }
+        else if (pos === 'left')   { top = r.top + (r.height - t.height) / 2; left = r.left - t.width - gap; }
+        else if (pos === 'right')  { top = r.top + (r.height - t.height) / 2; left = r.right + gap; }
+        else                       { top = r.top - t.height - gap; left = r.left + (r.width - t.width) / 2; }
+
+        // Auto-flip: a tip that would leave the viewport goes to the other
+        // side rather than being clipped at the edge.
+        if (top < pad) top = r.bottom + gap;
+        if (top + t.height > window.innerHeight - pad) top = Math.max(pad, r.top - t.height - gap);
+        left = Math.min(Math.max(pad, left), window.innerWidth - t.width - pad);
+
+        // left/top, not transform: transform is what the entrance animates,
+        // and an inline one would silently cancel it.
+        tip.style.left = Math.round(left) + 'px';
+        tip.style.top = Math.round(top) + 'px';
+    }
+
+    function showTip(owner) {
+        const text = (owner.getAttribute('data-tooltip') || '').trim();
+        if (!text) return;
+        const tip = tipNode();
+        tip.textContent = text;                      // textContent, never innerHTML
+        tip.classList.add('is-open');
+        placeTip(owner, tip);
+        tipOwner = owner;
+
+        tipPrevDescribedBy = owner.getAttribute('aria-describedby');
+        owner.setAttribute('aria-describedby', 'adTip');
+    }
+
+    function hideTip() {
+        if (!tipEl) return;
+        clearTimeout(tipTimer);
+        tipEl.classList.remove('is-open');
+        if (tipOwner) {
+            if (tipPrevDescribedBy) tipOwner.setAttribute('aria-describedby', tipPrevDescribedBy);
+            else tipOwner.removeAttribute('aria-describedby');
+        }
+        tipOwner = null;
+        tipPrevDescribedBy = null;
+    }
+
+    function initTooltips() {
+        // Hover: fine pointers only, after a beat, so running the mouse across
+        // a toolbar does not flash six tips on the way past.
+        //
+        // mouseover/mouseout, not mouseenter/mouseleave: SIK.on delegates from
+        // the document and the enter/leave pair does not bubble, so a
+        // delegated mouseenter never fires at all.
+        SIK.on('mouseover', '[data-tooltip]', function (e) {
+            if (!FINE_POINTER.matches) return;
+            if (this === tipOwner) return;
+            if (e.relatedTarget && this.contains(e.relatedTarget)) return;   // moved within
+            const el = this;
+            clearTimeout(tipTimer);
+            tipTimer = setTimeout(function () { showTip(el); }, 350);
+        });
+        SIK.on('mouseout', '[data-tooltip]', function (e) {
+            if (e.relatedTarget && this.contains(e.relatedTarget)) return;
+            hideTip();
+        });
+
+        // Focus shows it at once and on EVERY pointer type: a keyboard on a
+        // tablet is still a keyboard, and waiting 350ms after a deliberate
+        // Tab is just a delay.
+        SIK.on('focusin', '[data-tooltip]', function () {
+            clearTimeout(tipTimer);
+            if (this.matches(':focus-visible')) showTip(this);
+        });
+        SIK.on('focusout', '[data-tooltip]', hideTip);
+        SIK.on('click', '[data-tooltip]', hideTip);
+
+        // A tip is anchored to an element it cannot follow.
+        window.addEventListener('scroll', hideTip, true);
+        window.addEventListener('resize', hideTip);
+
+        // The ONE keydown this file adds. A tooltip is not a layer: it traps
+        // nothing and blocks nothing, so hiding it must not consume the
+        // Escape that closes the dialog underneath. Nothing is prevented and
+        // no layer is touched.
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') hideTip();
+        });
+    }
+
+    /* ----------------------------------------------------------------------
+       Help popover
+
+       Click to toggle, not hover: hover help cannot be read on a phone, and
+       it replaces the 11-12px grey paragraphs under settings fields, which
+       are exactly the text a small screen has no room for.
+       ---------------------------------------------------------------------- */
+    let openPopover = null;
+
+    /**
+     * Park a fixed-position panel under (or over) the control that opened it,
+     * inside the viewport. The plain version of what placeMenu() does for
+     * menus, for a panel with no alignment options of its own.
+     */
+    function anchorTo(el, trigger, gap) {
+        gap = gap || 6;
+        const pad = 8;
+        const tr = trigger.getBoundingClientRect();
+        el.style.left = '0px';
+        el.style.top = '0px';
+        // The layout box, not the rect: the entrance transitions a transform.
+        const pw = el.offsetWidth, ph = el.offsetHeight;
+        const below = window.innerHeight - tr.bottom - gap - pad;
+        const top = (ph > below && tr.top - gap - pad > below)
+            ? Math.max(pad, tr.top - ph - gap)                // more room above
+            : Math.min(tr.bottom + gap, Math.max(pad, window.innerHeight - ph - pad));
+        const left = Math.min(Math.max(pad, tr.left), Math.max(pad, window.innerWidth - pw - pad));
+        el.style.left = Math.round(left) + 'px';
+        el.style.top = Math.round(top) + 'px';
+    }
+
+    function closePopover(pop, returnFocus) {
+        pop = pop || openPopover;
+        if (!pop) return;
+        pop.classList.remove('is-open');
+        const trigger = document.querySelector('[data-popover="' + pop.id + '"]');
+        if (trigger) {
+            trigger.setAttribute('aria-expanded', 'false');
+            if (returnFocus !== false && pop.contains(document.activeElement)) trigger.focus();
+        }
+        popLayer(pop);
+        if (openPopover === pop) openPopover = null;
+    }
+
+    function initPopovers() {
+        SIK.on('click', '[data-popover]', function (e) {
+            e.preventDefault();
+            const pop = document.getElementById(this.dataset.popover);
+            if (!pop) return;
+            if (pop.classList.contains('is-open')) { closePopover(pop); return; }
+
+            closePopover();
+            pop.classList.add('is-open');
+            this.setAttribute('aria-expanded', 'true');
+            openPopover = pop;
+            pushLayer(pop, function () { closePopover(pop); });
+
+            // Anchored under the (i) in VIEWPORT coordinates, for the same
+            // measured reason the menu panel is (section 45): a 320px popover
+            // opened from a settings field is wider than the space left
+            // inside .ad-card, and an absolutely-positioned one was cut off
+            // at the card's edge instead of sliding back into view.
+            anchorTo(pop, this, 6);
+            // Focusing the dialog is what makes the help readable to a screen
+            // reader, and it is what lets Escape hand focus back to the (i).
+            pop.setAttribute('tabindex', '-1');
+            pop.focus();
+        });
+
+        document.addEventListener('pointerdown', function (e) {
+            if (!openPopover) return;
+            if (openPopover.contains(e.target)) return;
+            if (e.target.closest && e.target.closest('[data-popover="' + openPopover.id + '"]')) return;
+            closePopover(openPopover, false);
+        }, true);
+
+        // A fixed panel cannot follow the (i) it belongs to, so it closes
+        // instead of drifting away from it - the same rule as the menu.
+        // Scrolling INSIDE the help text is not that.
+        window.addEventListener('scroll', function (e) {
+            if (!openPopover) return;
+            if (e.target === openPopover || openPopover.contains(e.target)) return;
+            closePopover(openPopover, false);
+        }, true);
+        window.addEventListener('resize', function () { closePopover(openPopover, false); });
+    }
+
+    /* ----------------------------------------------------------------------
+       Modals
+
+       Compatibility first: Admin.openModal(id) / Admin.closeModal(),
+       [data-modal-open], [data-modal-close], the .ad-modal__backdrop click
+       and the data-field-* prefill all keep their exact meanings. What is new
+       is the entrance, the Tab trap, `inert` on the rest of the page, focus
+       return and the layer handle.
+       ---------------------------------------------------------------------- */
+    const modalState = new WeakMap();
+
+    function modalEl(target) {
+        if (typeof target === 'string') return document.getElementById(target);
+        if (target && target.closest) return target.closest('.ad-modal') || target;
+        return target;
+    }
+
+    /**
+     * Make everything OUTSIDE the modal inert, so the page behind it is
+     * genuinely unreachable and not merely covered.
+     *
+     * It walks the modal's ancestor chain and inerts each level's other
+     * children, rather than only the children of <body>. That is not
+     * pedantry: every modal in this admin is rendered inside the page
+     * content, so it is a descendant of .ad-shell - inerting .ad-shell as a
+     * body child made the MODAL ITSELF inert, and focus stayed on <body>.
+     *
+     * The toast region is left alive on purpose: an operator must still hear
+     * "Saved" while a dialog is open, and it is aria-live, not a focus
+     * target. The count on data-ad-inert lets two stacked modals unwind in
+     * any order without one of them un-inerting the other's page.
+     */
+    function inertSiblings(modal, on) {
+        const keep = [document.getElementById('sikToasts'), tipEl, ctxMenu].filter(Boolean);
+        let node = modal;
+        while (node && node.parentElement) {
+            const parent = node.parentElement;
+            const branch = node;
+            Array.prototype.forEach.call(parent.children, function (child) {
+                if (child === branch) return;
+                if (keep.indexOf(child) !== -1) return;
+                const n = parseInt(child.getAttribute('data-ad-inert') || '0', 10);
+                if (on) {
+                    if (n === 0 && !child.hasAttribute('inert')) child.setAttribute('inert', '');
+                    child.setAttribute('data-ad-inert', String(n + 1));
+                } else if (n > 0) {
+                    if (n === 1) {
+                        child.removeAttribute('inert');
+                        child.removeAttribute('data-ad-inert');
+                    } else {
+                        child.setAttribute('data-ad-inert', String(n - 1));
+                    }
+                }
+            });
+            if (parent === document.body) break;
+            node = parent;
+        }
+    }
+
+    function modalTrap(modal) {
+        return function (e) {
+            if (e.key !== 'Tab') return;
+            const panel = modal.querySelector('.ad-modal__panel') || modal;
+            const items = Array.prototype.filter.call(panel.querySelectorAll(AD_FOCUSABLE), visible);
+            if (!items.length) { e.preventDefault(); panel.focus(); return; }
+            const i = items.indexOf(document.activeElement);
+            if (e.shiftKey && i <= 0) { e.preventDefault(); items[items.length - 1].focus(); }
+            else if (!e.shiftKey && i === items.length - 1) { e.preventDefault(); items[0].focus(); }
+        };
+    }
+
+    /**
+     * Take ownership of a modal that the SERVER rendered open - the
+     * validation-error path on blog/categories.php and settings/shipping.php.
+     * Without this the entrance would never run and the panel would sit at
+     * opacity 0 behind its own scrim. Called from boot(), in the same tick as
+     * the no-js -> js swap, so nothing paints in between.
+     */
+    function adoptOpenModal(modal) {
+        if (modalState.has(modal)) return;
+        modal.hidden = false;
+        modal.classList.add('is-open', 'is-shown');
+        wireOpenModal(modal, { returnFocus: null });
+    }
+
+    function wireOpenModal(modal, opts) {
+        const panel = modal.querySelector('.ad-modal__panel') || modal;
+        const trap = modalTrap(modal);
+        modal.addEventListener('keydown', trap);
+        inertSiblings(modal, true);
+        modalState.set(modal, {
+            trap: trap,
+            returnFocus: opts.returnFocus,
+            onClose: opts.onClose || null
+        });
+        pushLayer(modal, function () { Admin.modal.close(modal); }, { lock: true });
+
+        // [autofocus], else the first real field, else the panel. The panel is
+        // tabindex="-1" so a dialog with nothing to type in still moves the
+        // caret inside, which is what makes Escape and the trap meaningful.
+        const auto = panel.querySelector('[autofocus]');
+        const field = panel.querySelector('input:not([type=hidden]):not([disabled]), select, textarea');
+        const target = auto || field || panel;
+        if (target === panel && !panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+        setTimeout(function () { try { target.focus(); } catch (err) { /* detached */ } }, 20);
+
+        emit(modal, 'sik:modal:open');
+    }
+
+    Admin.modal = {
+        open: function (target, opts) {
+            const modal = modalEl(target);
+            if (!modal || modal.classList.contains('is-open')) return modal;
+            opts = opts || {};
+
+            // Remember whether this modal's resting state is `hidden`, so a
+            // helper-built modal goes back to it on close and a legacy one
+            // (four pages, no `hidden` attribute) is left exactly as it was.
+            if (modal.dataset.adRest === undefined) {
+                modal.dataset.adRest = modal.hasAttribute('hidden') ? 'hidden' : 'open';
+            }
+            modal.hidden = false;
+            modal.classList.add('is-open');
+            modal.removeAttribute('aria-hidden');
+            // The entrance is a class flip on the NEXT frame, not
+            // @starting-style: you cannot transition out of display:none, and
+            // this works in every engine including the headless one the
+            // screenshots are taken in.
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () { modal.classList.add('is-shown'); });
+            });
+
+            const opener = opts.returnFocus !== undefined
+                ? opts.returnFocus
+                : (document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+                    ? document.activeElement : null);
+            wireOpenModal(modal, { returnFocus: opener, onClose: opts.onClose });
+            return modal;
+        },
+
+        close: function (target) {
+            const modal = modalEl(target) || document.querySelector('.ad-modal.is-open');
+            if (!modal || !modal.classList.contains('is-open')) return;
+            const state = modalState.get(modal) || {};
+
+            modal.classList.remove('is-shown');
+            if (state.trap) modal.removeEventListener('keydown', state.trap);
+            modalState.delete(modal);
+            popLayer(modal);
+            inertSiblings(modal, false);
+
+            const panel = modal.querySelector('.ad-modal__panel') || modal;
+            afterTransition(panel, 400, function () {
+                if (modal.classList.contains('is-shown')) return;   // reopened meanwhile
+                modal.classList.remove('is-open');
+                if (modal.dataset.adRest === 'hidden') modal.hidden = true;
+            });
+
+            if (state.returnFocus && document.contains(state.returnFocus)) state.returnFocus.focus();
+            if (typeof state.onClose === 'function') state.onClose();
+            emit(modal, 'sik:modal:close');
+        }
     };
 
-    Admin.closeModal = function (target) {
-        const modal = typeof target === 'string' ? document.getElementById(target) : target;
-        if (!modal) return;
-        modal.classList.remove('is-open');
-        if (!$('.ad-modal.is-open')) document.body.classList.remove('sik-no-scroll');
-    };
+    // The pre-A2 names, unchanged. Four pages and the roll-out waves call them.
+    Admin.openModal = function (id, opts) { return Admin.modal.open(id, opts); };
+    Admin.closeModal = function (target) { Admin.modal.close(target); };
 
     function initModals() {
         SIK.on('click', '[data-modal-open]', function (e) {
             e.preventDefault();
-            Admin.openModal(this.dataset.modalOpen);
-
-            // Prefill the modal form from data-field-* attributes on the trigger.
             const modal = document.getElementById(this.dataset.modalOpen);
             if (!modal) return;
 
+            // Prefill BEFORE opening, so the field the caret lands on already
+            // holds its value: data-field-* on the trigger -> input names.
             Object.keys(this.dataset).forEach(function (key) {
                 if (key.indexOf('field') !== 0 || key === 'field') return;
                 // dataset key "fieldFirstName" -> input name "first_name"
@@ -202,28 +1064,671 @@
                     .replace(/[A-Z]/g, m => '_' + m.toLowerCase());
                 const input = modal.querySelector('[name="' + name + '"]');
                 if (!input) return;
-
                 if (input.type === 'checkbox') input.checked = this.dataset[key] === '1';
                 else input.value = this.dataset[key];
             }, this);
+
+            Admin.modal.open(modal, { returnFocus: this });
         });
 
         SIK.on('click', '[data-modal-close]', function (e) {
             e.preventDefault();
-            Admin.closeModal(this.closest('.ad-modal'));
+            Admin.modal.close(this.closest('.ad-modal'));
         });
 
         SIK.on('click', '.ad-modal__backdrop', function () {
-            Admin.closeModal(this.closest('.ad-modal'));
+            const modal = this.closest('.ad-modal');
+            if (modal && modal.dataset.modalStatic === '1') return;
+            Admin.modal.close(modal);
         });
 
-        document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') {
-                const open = $('.ad-modal.is-open');
-                if (open) Admin.closeModal(open);
+        // Escape is app.js's, through the layer stack. The listener this
+        // function used to own has gone with it - a second one would have
+        // closed a modal that a menu on top of it was supposed to close.
+        $$('.ad-modal.is-open').forEach(adoptOpenModal);
+    }
+
+    /* ----------------------------------------------------------------------
+       Confirm dialog  (A3)
+
+       SIK.admin.confirm({...}) -> Promise<boolean>, built on the A2 modal, so
+       the layer stack, the Tab trap, `inert` on the rest of the page, focus
+       return, Escape and the reduced-motion rules are the ones already proved
+       in A2 rather than a second set written here.
+
+       The declarative half is [data-confirm] on a link, a button or a form.
+
+       NOTHING MAY LOSE ITS GUARD IN THE SWAP, so the guard is three layers
+       deep and each one is measurable on its own:
+
+         1. the dialog;
+         2. if the dialog cannot be BUILT or OPENED - no .ad-modal CSS, an
+            exception in the builder, a body that is not there yet - the same
+            handler falls back to window.confirm() synchronously and still
+            blocks the action. It never lets the click through;
+         3. if admin.js never runs at all, the inline onsubmit/onclick that
+            admin_confirm_attrs() emits beside the data-confirm is still on
+            the element, and the browser's own confirm() blocks. Layer 3 is
+            disarmed the instant layer 1 is armed, so nobody ever sees two
+            prompts.
+
+       ORDER MATTERS in that last sentence: the listeners are attached first
+       and the inline attributes are stripped afterwards, never the other way
+       round. A throw in between would otherwise take the guard away and put
+       nothing back.
+
+       The listeners are armed at PARSE time (see the arming block below), not
+       inside boot(). A delete button must stay guarded even if some later
+       init() throws on a page this file has never seen.
+       ---------------------------------------------------------------------- */
+
+    const CONFIRM_TONES = ['danger', 'warning', 'default'];
+    let confirmSeq = 0;
+
+    /* Compare what was typed with what was asked for: trimmed, inner runs of
+       whitespace collapsed, case folded. The operator is re-typing a name that
+       is on the screen in front of them - "Acme  Ltd" against "acme ltd" is
+       the same intent, and a guard that rejects it only teaches people to
+       copy-paste, which defeats the point of asking. */
+    function confirmNorm(value) {
+        return String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+
+    function confirmDefaults(o) {
+        o = o || {};
+        return {
+            title:        String(o.title || 'Are you sure?'),
+            text:         String(o.text || ''),
+            confirmLabel: String(o.confirmLabel || 'Confirm'),
+            cancelLabel:  String(o.cancelLabel || 'Cancel'),
+            tone:         CONFIRM_TONES.indexOf(o.tone) !== -1 ? o.tone : 'danger',
+            requireText:  String(o.requireText || ''),
+            returnFocus:  o.returnFocus
+        };
+    }
+
+    /**
+     * Build the dialog with DOM calls, never innerHTML.
+     *
+     * Every string here is operator-supplied - a product name, a role name, a
+     * file name - and reaches this function through a data- attribute. Setting
+     * it as textContent is the JS half of the e() rule: there is no markup
+     * context for it to break out of.
+     */
+    function buildConfirm(o) {
+        const id = 'adConfirm' + (++confirmSeq);
+
+        const modal = document.createElement('div');
+        modal.className = 'ad-modal ad-modal--sm ad-confirm'
+            + (o.tone === 'danger' || o.tone === 'warning' ? ' ad-modal--' + o.tone : '');
+        modal.id = id;
+        modal.setAttribute('role', 'alertdialog');
+        modal.setAttribute('aria-modal', 'true');
+        modal.setAttribute('aria-labelledby', id + '-title');
+        if (o.text) modal.setAttribute('aria-describedby', id + '-text');
+        modal.hidden = true;
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'ad-modal__backdrop';
+        backdrop.setAttribute('data-modal-close', '');
+        modal.appendChild(backdrop);
+
+        const panel = document.createElement('div');
+        panel.className = 'ad-modal__panel';
+        panel.setAttribute('tabindex', '-1');
+        modal.appendChild(panel);
+
+        const head = document.createElement('header');
+        head.className = 'ad-modal__head';
+        const headBox = document.createElement('div');
+        headBox.className = 'ad-minw0';
+        const h2 = document.createElement('h2');
+        h2.className = 'ad-modal__title';
+        h2.id = id + '-title';
+        h2.textContent = o.title;
+        headBox.appendChild(h2);
+        head.appendChild(headBox);
+        panel.appendChild(head);
+
+        const body = document.createElement('div');
+        body.className = 'ad-modal__body';
+        if (o.text) {
+            const p = document.createElement('p');
+            p.className = 'ad-confirm__text';
+            p.id = id + '-text';
+            p.textContent = o.text;
+            body.appendChild(p);
+        }
+
+        let input = null;
+        if (o.requireText) {
+            const field = document.createElement('div');
+            field.className = 'ad-confirm__require';
+
+            const label = document.createElement('label');
+            label.className = 'ad-confirm__label';
+            label.setAttribute('for', id + '-type');
+            /* Split so the name itself is a <strong> the eye can read off,
+               without ever concatenating it into markup. */
+            label.appendChild(document.createTextNode('Type '));
+            const strong = document.createElement('strong');
+            strong.textContent = o.requireText;
+            label.appendChild(strong);
+            label.appendChild(document.createTextNode(' to confirm'));
+            field.appendChild(label);
+
+            input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'sik-input ad-confirm__input';
+            input.id = id + '-type';
+            input.autocomplete = 'off';
+            input.setAttribute('autocapitalize', 'off');
+            input.setAttribute('spellcheck', 'false');
+            field.appendChild(input);
+            body.appendChild(field);
+        }
+        panel.appendChild(body);
+
+        const foot = document.createElement('footer');
+        foot.className = 'ad-modal__foot';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'ad-btn';
+        cancel.setAttribute('data-confirm-cancel', '');
+        cancel.textContent = o.cancelLabel;
+
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'ad-btn ' + (o.tone === 'warning' ? 'ad-btn--primary' : 'ad-btn--danger');
+        go.setAttribute('data-confirm-go', '');
+        go.textContent = o.confirmLabel;
+
+        /* Cancel takes the caret, not the destructive button. A2's
+           wireOpenModal() looks for [autofocus] FIRST and a text field second,
+           so this wins - unless there is something to type, and then the field
+           is the right place to land anyway. */
+        if (input) input.setAttribute('autofocus', '');
+        else cancel.setAttribute('autofocus', '');
+
+        foot.appendChild(cancel);
+        foot.appendChild(go);
+        panel.appendChild(foot);
+
+        return { modal: modal, go: go, cancel: cancel, input: input };
+    }
+
+    /**
+     * What layers 2 and 3 look like: the browser's own dialog, carrying the
+     * same words. A typed confirmation has no native equivalent, so it
+     * degrades to prompt() - and still checks the answer.
+     */
+    function confirmNative(o) {
+        const lines = [o.title, o.text].filter(Boolean).join('\n\n') || 'Are you sure?';
+        if (o.requireText) {
+            const typed = window.prompt(lines + '\n\nType "' + o.requireText + '" to confirm:', '');
+            return typed !== null && confirmNorm(typed) === confirmNorm(o.requireText);
+        }
+        return window.confirm(lines);
+    }
+
+    /**
+     * @param {{title?:string, text?:string, confirmLabel?:string,
+     *          cancelLabel?:string, tone?:'danger'|'warning'|'default',
+     *          requireText?:string, returnFocus?:Element}} opts
+     * @returns {Promise<boolean>}
+     */
+    Admin.confirm = function (opts) {
+        const o = confirmDefaults(opts);
+
+        return new Promise(function (resolve) {
+            let built = null;
+            try {
+                built = document.body ? buildConfirm(o) : null;
+            } catch (err) {
+                built = null;
+            }
+            if (!built || !Admin.modal || typeof Admin.modal.open !== 'function') {
+                resolve(confirmNative(o));                  // layer 2
+                return;
+            }
+
+            const modal = built.modal;
+            document.body.appendChild(modal);
+
+            let answer = false;
+            let settled = false;
+            const settle = function (value) {
+                if (settled) return;
+                settled = true;
+                resolve(value);
+            };
+
+            built.cancel.addEventListener('click', function () {
+                answer = false;
+                Admin.modal.close(modal);
+            });
+            built.go.addEventListener('click', function () {
+                if (built.go.disabled) return;
+                answer = true;
+                Admin.modal.close(modal);
+            });
+
+            if (built.input) {
+                built.go.disabled = true;
+                const sync = function () {
+                    built.go.disabled = confirmNorm(built.input.value) !== confirmNorm(o.requireText);
+                };
+                built.input.addEventListener('input', sync);
+                /* There is no form here, so Enter would otherwise do nothing
+                   at all. An operator who has just typed the name expects it
+                   to fire. */
+                built.input.addEventListener('keydown', function (e) {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    sync();
+                    if (!built.go.disabled) built.go.click();
+                });
+                sync();
+            }
+
+            /* open() is wrapped because a THROW here used to be the one way
+               the guard could fail closed and stay closed. new Promise()
+               catches a synchronous throw in its executor and rejects, and a
+               rejected confirm resolves to nothing at all - so a broken modal
+               engine turned every Delete button on the page into a control
+               that did nothing, for ever, with no message. It now falls to
+               layer 2 like every other way the dialog can fail to open. */
+            let opened = null;
+            try {
+                opened = Admin.modal.open(modal, {
+                    returnFocus: o.returnFocus,
+                    onClose: function () {
+                        /* Take the node out once the exit has run. Reduced
+                           motion collapses the transition and
+                           afterTransition() still fires on its own timeout,
+                           so the node never leaks. */
+                        afterTransition(modal.querySelector('.ad-modal__panel') || modal, 400, function () {
+                            if (modal.parentNode) modal.parentNode.removeChild(modal);
+                        });
+                        settle(answer);
+                    }
+                });
+            } catch (err) {
+                opened = null;
+            }
+
+            if (!opened || !modal.classList.contains('is-open')) {
+                if (modal.parentNode) modal.parentNode.removeChild(modal);
+                settle(confirmNative(o));                   // layer 2, open refused
             }
         });
+    };
+
+    /* ---------------- the declarative half: [data-confirm] ---------------- */
+
+    const CONFIRM_FLAG = 'adConfirmed';
+
+    function confirmOptsFrom(el) {
+        const d = el.dataset;
+        return {
+            title:        d.confirmTitle || 'Are you sure?',
+            text:         d.confirm || '',
+            confirmLabel: d.confirmLabel || 'Confirm',
+            cancelLabel:  d.confirmCancel || 'Cancel',
+            tone:         d.confirmTone || 'danger',
+            requireText:  d.confirmRequire || '',
+            returnFocus:  el
+        };
     }
+
+    /**
+     * Strip layer 3 from the elements this file is now guarding.
+     *
+     * The attribute is renamed rather than thrown away: it is the only
+     * evidence that the page shipped a no-JS guard at all, and the test reads
+     * it back to prove the fallback was really there before it was disarmed.
+     */
+    function disarmNative(root) {
+        const scope = root && root.querySelectorAll ? root : document;
+        const list = Array.prototype.slice.call(scope.querySelectorAll('[data-confirm]'));
+        if (scope !== document && scope.matches && scope.matches('[data-confirm]')) list.push(scope);
+
+        list.forEach(function (el) {
+            ['onsubmit', 'onclick'].forEach(function (name) {
+                const value = el.getAttribute(name);
+                if (!value || value.indexOf('confirm(') === -1) return;
+                el.setAttribute('data-confirm-native', name);
+                el.removeAttribute(name);
+            });
+        });
+    }
+    Admin.disarmNative = disarmNative;
+
+    function isSubmitControl(el) {
+        const tag = el.tagName;
+        if (tag === 'BUTTON') return el.type === 'submit' || !el.hasAttribute('type');
+        if (tag === 'INPUT') return el.type === 'submit' || el.type === 'image';
+        return false;
+    }
+
+    /**
+     * Replay the action in a NEW TASK, never in this one.
+     *
+     * When the answer comes from the dialog it arrives tasks later and this
+     * makes no difference. When it comes from the native confirm it arrives
+     * SYNCHRONOUSLY, still inside the submit event that was just cancelled -
+     * and while a form is "firing submission events" the HTML spec has
+     * requestSubmit() do nothing at all. The operator pressed OK and watched
+     * the page sit there. setTimeout puts the replay after the dispatch
+     * finishes, which is the only place it is allowed to work.
+     */
+    function replayLater(replay) {
+        setTimeout(replay, 0);
+    }
+
+    /** Ask, then replay the original action exactly as the browser would. */
+    function confirmThen(el, replay) {
+        let promise;
+        try {
+            promise = Admin.confirm(confirmOptsFrom(el));
+        } catch (err) {
+            /* Layer 2 again, for a throw on the way IN to the promise. */
+            if (confirmNative(confirmOptsFrom(el))) replayLater(replay);
+            return;
+        }
+        promise.then(function (yes) {
+            if (!yes) return;
+            disarmNative(el);                 // belt and braces before the replay
+            replayLater(replay);
+        }, function () {
+            /* A rejected promise must never mean "yes". Nothing happens. */
+        });
+    }
+
+    function onConfirmClick(e) {
+        const el = e.target && e.target.closest ? e.target.closest('[data-confirm]') : null;
+        if (!el) return;
+
+        /* The replay. Clear the flag and let the event run its normal course -
+           no preventDefault, no stopPropagation - so every other delegated
+           handler on the page still sees it. */
+        if (el.dataset[CONFIRM_FLAG] === '1') {
+            delete el.dataset[CONFIRM_FLAG];
+            return;
+        }
+
+        /* A form, or a control that submits one, is handled on `submit`
+           instead: that path carries the submitter, keeps its name/value and
+           re-runs the form's own validation. Doing it here would swallow the
+           submit event that [data-bulk-form] and friends are listening for. */
+        if (el.tagName === 'FORM') return;
+        if (el.form && isSubmitControl(el)) return;
+
+        /* A modifier click is guarded too. Ctrl+click on a delete link would
+           otherwise perform the deletion in a new tab with nothing asked;
+           losing the new tab is the cheaper half of that trade. */
+        e.preventDefault();
+        e.stopPropagation();
+
+        confirmThen(el, function () {
+            el.dataset[CONFIRM_FLAG] = '1';
+            el.click();
+        });
+    }
+
+    function onConfirmSubmit(e) {
+        const form = e.target;
+        if (!form || form.tagName !== 'FORM') return;
+
+        const submitter = e.submitter || null;
+        const el = (submitter && submitter.closest && submitter.closest('[data-confirm]'))
+            || (form.matches('[data-confirm]') ? form : null);
+        if (!el) return;
+
+        if (form.dataset[CONFIRM_FLAG] === '1') {
+            delete form.dataset[CONFIRM_FLAG];
+            return;
+        }
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        confirmThen(el, function () {
+            form.dataset[CONFIRM_FLAG] = '1';
+            /* requestSubmit() fires a real submit event, so the bulk form's id
+               collection and the dirty guard still run. form.submit() does
+               not, which is why it is only the fallback. */
+            if (typeof form.requestSubmit === 'function') form.requestSubmit(submitter || undefined);
+            else form.submit();
+        });
+    }
+
+    /**
+     * Ask before an action that is NOT driven by [data-confirm] - the three
+     * places inside this file that used to call window.confirm() straight.
+     * Same dialog, same fallback; the caller just gets the answer late.
+     */
+    function confirmGate(e, form, opts) {
+        if (form.dataset[CONFIRM_FLAG] === '1') {
+            delete form.dataset[CONFIRM_FLAG];
+            return true;                      // the replay: let it through
+        }
+        e.preventDefault();
+        Admin.confirm(opts).then(function (yes) {
+            if (!yes) return;
+            form.dataset[CONFIRM_FLAG] = '1';
+            /* A new task, for the same reason replayLater() exists: this
+               answer can arrive synchronously from the native fallback. */
+            replayLater(function () {
+                if (typeof form.requestSubmit === 'function') form.requestSubmit();
+                else form.submit();
+            });
+        });
+        return false;
+    }
+
+    /* ------------------------------ arming ------------------------------- */
+
+    /**
+     * Armed here, at parse time, and NOT from boot().
+     *
+     * admin.js is deferred, so the document is parsed and no click is
+     * possible yet - but boot() runs a dozen init()s, and a throw in any one
+     * of them would leave every delete button on the page unguarded if the
+     * guard were the last thing in the list. Capture phase, so the decision
+     * is taken before any delegated handler acts on the same click.
+     */
+    document.addEventListener('click', onConfirmClick, true);
+    document.addEventListener('submit', onConfirmSubmit, true);
+    disarmNative(document);                   // layer 3 off, now that 1 is on
+
+    /* ----------------------------------------------------------------------
+       Remote quick view
+
+       data-modal-url / data-drawer-url on a REAL link: the href stays the
+       working no-JS path, and the fragment is the same page fetched with
+       ?partial=1 (admin_partial_request() in admin/includes/functions.php).
+
+       Rules that matter more than the mechanism:
+         - the shell opens at once, so the click is acknowledged;
+         - bones come from the shared skeleton kit, never a fork;
+         - nothing ends on a shimmer. It becomes content, or a Retry block.
+       ---------------------------------------------------------------------- */
+    function remoteShell(as) {
+        const id = as === 'drawer' ? 'adRemoteDrawer' : 'adRemoteModal';
+        let el = document.getElementById(id);
+        if (el) return el;
+
+        el = document.createElement(as === 'drawer' ? 'aside' : 'div');
+        el.id = id;
+        if (as === 'drawer') {
+            el.className = 'ad-drawer ad-drawer--sheet';
+            el.setAttribute('role', 'dialog');
+            el.setAttribute('aria-labelledby', id + '-title');
+            el.setAttribute('aria-hidden', 'true');
+            el.innerHTML =
+                '<header class="ad-drawer__head"><div class="ad-minw0">'
+                + '<h2 class="ad-drawer__title" id="' + id + '-title"></h2></div>'
+                + '<button type="button" class="ad-iconbtn" data-close-drawer="' + id + '" aria-label="Close">'
+                + '&#215;</button></header>'
+                + '<div class="ad-drawer__body ad-remote"></div>';
+        } else {
+            el.className = 'ad-modal ad-modal--lg';
+            el.setAttribute('role', 'dialog');
+            el.setAttribute('aria-modal', 'true');
+            el.setAttribute('aria-labelledby', id + '-title');
+            el.hidden = true;
+            el.innerHTML =
+                '<div class="ad-modal__backdrop" data-modal-close></div>'
+                + '<div class="ad-modal__panel" tabindex="-1">'
+                + '<header class="ad-modal__head"><div class="ad-minw0">'
+                + '<h2 class="ad-modal__title" id="' + id + '-title"></h2></div>'
+                + '<button type="button" class="ad-iconbtn" data-modal-close aria-label="Close">'
+                + '&#215;</button></header>'
+                + '<div class="ad-modal__body ad-remote"></div></div>';
+        }
+        document.body.appendChild(el);
+        return el;
+    }
+
+    /** Bones built from the shared kit's classes (app.css 30b). */
+    function remoteBones(into) {
+        into.textContent = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'ad-remote__bones';
+        wrap.setAttribute('aria-hidden', 'true');
+        [88, 100, 74, 94, 60].forEach(function (pct) {
+            const line = document.createElement('div');
+            line.className = 'sik-skel sik-skel__line';
+            line.style.width = pct + '%';
+            wrap.appendChild(line);
+        });
+        into.appendChild(wrap);
+        into.setAttribute('aria-busy', 'true');
+    }
+
+    function remoteError(into, retry) {
+        into.textContent = '';
+        into.removeAttribute('aria-busy');
+        const block = document.createElement('div');
+        block.className = 'ad-remote__error';
+        block.setAttribute('role', 'alert');
+
+        const t = document.createElement('p');
+        t.className = 'ad-remote__error-title';
+        t.textContent = "Couldn't load this";
+        const p = document.createElement('p');
+        p.className = 'ad-remote__error-text';
+        p.textContent = 'The panel did not arrive. Check the connection and try again, or open the full page.';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ad-btn ad-btn--primary';
+        btn.textContent = 'Retry';
+        btn.addEventListener('click', retry);
+
+        block.appendChild(t);
+        block.appendChild(p);
+        block.appendChild(btn);
+        into.appendChild(block);
+        // Announce the failure and give the caret somewhere to be, or focus
+        // is left inside a region that no longer has anything in it.
+        setTimeout(function () { try { btn.focus(); } catch (err) {} }, 20);
+    }
+
+    Admin.remote = function (url, o) {
+        o = o || {};
+        const as = o.as === 'drawer' ? 'drawer' : 'modal';
+        const shell = remoteShell(as);
+        const body = shell.querySelector('.ad-remote');
+        const titleEl = shell.querySelector('.ad-modal__title, .ad-drawer__title');
+
+        if (o.size && as === 'modal') {
+            shell.className = 'ad-modal ad-modal--' + (['sm', 'md', 'lg', 'xl'].indexOf(o.size) >= 0 ? o.size : 'lg');
+        }
+        titleEl.textContent = o.title || 'Loading…';
+        remoteBones(body);
+
+        if (as === 'drawer') {
+            // app.js owns drawers: focus-in, the Tab trap, the scrim and the
+            // layer handle all come from there (spec 4.7, do not fork it).
+            SIK.openDrawer(shell.id);
+        } else {
+            Admin.modal.open(shell, { returnFocus: o.returnFocus });
+        }
+
+        const sep = url.indexOf('?') === -1 ? '?' : '&';
+        const load = function () {
+            remoteBones(body);
+            fetch(url + sep + 'partial=1', {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'fetch' }
+            }).then(function (res) {
+                const type = res.headers.get('content-type') || '';
+                // A redirect to the sign-in page answers 200 with a full
+                // document. Treat anything that is not our fragment as a
+                // failure rather than injecting a login form into a dialog.
+                if (!res.ok || type.indexOf('text/html') === -1) throw new Error('HTTP ' + res.status);
+                return res.text();
+            }).then(function (html) {
+                if (html.indexOf('<!doctype') === 0 || html.indexOf('<!DOCTYPE') === 0) {
+                    throw new Error('not a partial');
+                }
+                body.removeAttribute('aria-busy');
+                // Server-rendered admin markup from our own origin, fetched
+                // same-origin with credentials: this is the documented quick
+                // view mechanism, and the only innerHTML in this file.
+                body.innerHTML = html;
+                const partial = body.querySelector('.ad-partial');
+                if (partial && partial.dataset.title) titleEl.textContent = partial.dataset.title;
+                else if (!o.title) titleEl.textContent = '';
+                Admin.refresh(body);
+                emit(shell, 'sik:remote:load', { url: url });
+            }).catch(function () {
+                titleEl.textContent = o.title || 'Quick view';
+                remoteError(body, load);
+            });
+        };
+        load();
+        return shell;
+    };
+
+    function initRemote() {
+        SIK.on('click', '[data-modal-url], [data-drawer-url]', function (e) {
+            // A modified click is a deliberate "open this properly": let the
+            // href do its job. That is why the mechanism needs a real link.
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button === 1) return;
+            e.preventDefault();
+            const url = this.dataset.modalUrl || this.dataset.drawerUrl;
+            Admin.remote(url, {
+                as: this.dataset.drawerUrl ? 'drawer' : 'modal',
+                size: this.dataset.modalSize,
+                title: this.dataset.modalTitle || this.getAttribute('aria-label') || '',
+                returnFocus: this
+            });
+        });
+    }
+
+    /**
+     * Re-run the scope-aware initialisers over freshly injected HTML.
+     *
+     * Everything else in this file is delegated from the document, so it
+     * already covers new nodes; these four measure or bind per element and
+     * have to be told. initResponsiveTables() in particular is the whole
+     * reason a quick view can contain a table at all - the card view is
+     * derived at runtime and never hand-written.
+     */
+    Admin.refresh = function (root) {
+        const scope = root || document;
+        try { initResponsiveTables(scope); } catch (err) { /* keep going */ }
+        try { initCharts(scope); } catch (err) {}
+        try { initTruncationTitles(scope); } catch (err) {}
+        /* Injected markup arrives with its no-JS guard still attached. The
+           delegated listeners already cover it; this takes the inline
+           fallback off so the quick view does not prompt twice. */
+        try { disarmNative(scope); } catch (err) {}
+        document.dispatchEvent(new CustomEvent('sik:admin:refresh', { detail: { root: scope } }));
+    };
 
     /* ----------------------------------------------------------------------
        Table selection + bulk actions
@@ -271,9 +1776,17 @@
                 SIK.toast('Choose an action to apply.', 'warning');
                 return;
             }
+            /* The count is only known at click time, so this one cannot be a
+               static data-confirm. It goes through the same dialog and the
+               same fallback; confirmGate() replays the submit with
+               requestSubmit(), so the id collection below still runs. */
             if (action && action.value === 'delete'
-                && !window.confirm('Delete ' + checked.length + ' selected item(s)? This cannot be undone.')) {
-                e.preventDefault();
+                && !confirmGate(e, this, {
+                    title: 'Delete ' + checked.length + ' item' + (checked.length === 1 ? '' : 's') + '?',
+                    text: 'This cannot be undone.',
+                    confirmLabel: 'Delete',
+                    tone: 'danger'
+                })) {
                 return;
             }
 
@@ -368,12 +1881,24 @@
         // Remove an already-saved image.
         SIK.on('click', '[data-remove-image]', function (e) {
             e.preventDefault();
-            if (!window.confirm('Remove this image?')) return;
 
-            const item = this.closest('.ad-preview__item');
-            const field = document.querySelector(this.dataset.removeImage);
-            if (field) field.value = '1';   // hidden "remove_image" flag
-            if (item) item.remove();
+            /* Nothing is destroyed until the form is saved, so this is a
+               warning rather than a danger: the tone says "you can still back
+               out by not saving". */
+            const trigger = this;
+            Admin.confirm({
+                title: 'Remove this image?',
+                text: 'It is taken off the record when you save the form.',
+                confirmLabel: 'Remove',
+                tone: 'warning',
+                returnFocus: trigger
+            }).then(function (yes) {
+                if (!yes) return;
+                const item = trigger.closest('.ad-preview__item');
+                const field = document.querySelector(trigger.dataset.removeImage);
+                if (field) field.value = '1';   // hidden "remove_image" flag
+                if (item) item.remove();
+            });
         });
     }
 
@@ -557,12 +2082,25 @@
         SIK.on('change', '[data-order-status]', function () {
             const select = this;
             const label = select.options[select.selectedIndex].text;
-            if (!window.confirm('Change this order to "' + label + '"?')) {
-                select.value = select.dataset.current;
-                return;
-            }
-            const form = select.closest('form');
-            if (form) form.submit();
+
+            /* The select has ALREADY moved by the time `change` fires, so the
+               cancel path has to put it back. That is why this is not a
+               data-confirm: the guard has an undo to perform, not just a
+               submit to stop. */
+            Admin.confirm({
+                title: 'Change this order?',
+                text: 'The status becomes "' + label + '". The customer is notified.',
+                confirmLabel: 'Change status',
+                tone: 'warning',
+                returnFocus: select
+            }).then(function (yes) {
+                if (!yes) {
+                    select.value = select.dataset.current;
+                    return;
+                }
+                const form = select.closest('form');
+                if (form) form.submit();
+            });
         });
     }
 
@@ -596,14 +2134,24 @@
             const head = table.tHead;
             if (!head || !head.rows.length) return;   // layout table, not a data table
 
-            const headers = [...head.rows[head.rows.length - 1].cells].map(function (th) {
+            const headers = [];
+            [...head.rows[head.rows.length - 1].cells].forEach(function (th) {
                 // A header that holds a control rather than a name is not a
                 // label for anything: the select-all column's <th> contains the
                 // master checkbox and its screen-reader text, so every row card
                 // on Orders was captioning its own checkbox "SELECT ALL
                 // ORDERS". The CSS already gives that column its own treatment.
-                if (th.querySelector('input, button, select')) return '';
-                return th.textContent.replace(/\s+/g, ' ').trim();
+                const label = th.querySelector('input, button, select')
+                    ? ''
+                    : th.textContent.replace(/\s+/g, ' ').trim();
+                // MEASURED (A2): cells were matched to headers by index, which
+                // a colspan silently breaks. orders/view.php has
+                // `<th colspan="2">Product</th>` over a thumbnail cell and a
+                // name cell, so every label after it was off by one and the
+                // card view read "Unit price: SIK-FLT-1001", "Qty: Rs 1,999".
+                // One entry per COLUMN, not per <th>. colSpan is 1 by default,
+                // so every other table in the admin is unchanged.
+                for (let s = 0; s < Math.max(1, th.colSpan); s++) headers.push(label);
             });
 
             [...table.tBodies].forEach(function (body) {
@@ -1471,9 +3019,18 @@
     Admin.initTruncationTitles = initTruncationTitles;
 
     function boot() {
+        // The layout ships `no-js` on <html> so a stylesheet can tell the two
+        // states apart without an inline script (the admin is being kept
+        // CSP-ready). Swapped here, first thing, before any init() runs.
+        document.documentElement.classList.replace('no-js', 'js');
+
         initSidebar();
         initDropdowns();
+        initContextMenus();
+        initTooltips();
+        initPopovers();
         initModals();
+        initRemote();
         initBulk();
         initSlug();
         initUploads();
@@ -1499,10 +3056,9 @@
             }
         });
 
-        // Confirm any link marked destructive.
-        SIK.on('click', '[data-confirm]', function (e) {
-            if (!window.confirm(this.dataset.confirm)) e.preventDefault();
-        });
+        /* [data-confirm] is NOT wired here any more. Its listeners are armed
+           at parse time, above, so the guard survives a throw in any of the
+           init()s between this comment and the top of boot(). */
 
         SIK.on('click', '[data-print]', function (e) {
             e.preventDefault();

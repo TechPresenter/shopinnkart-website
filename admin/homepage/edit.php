@@ -10,6 +10,8 @@ require_once __DIR__ . '/../includes/auth.php';
 $admin = admin_require('homepage.edit');
 
 require_once __DIR__ . '/_meta.php';
+// The nested rows -> items model, shared with the storefront renderer.
+require_once INCLUDES_PATH . '/homepage-rows.php';
 
 $id = input_int('id');
 $section = $id > 0
@@ -26,20 +28,43 @@ $errors = [];
 if (is_post()) {
     csrf_require();
 
+    // PHP dropped the tail of this post (max_input_vars). Half of it is here
+    // and half is not, and the half that is missing reads as "clear that
+    // column" - so nothing is written at all. See the note on the function.
+    if (homepage_rows_post_truncated()) {
+        flash('error', 'That section has more rows and items than one form post can carry, '
+            . 'so nothing was saved. Delete a row or an item and save again.');
+        redirect(admin_url('homepage/edit.php?id=' . $id));
+    }
+
     $data   = homepage_form_input();
     $errors = homepage_validate($data);
+
+    // The rows fieldset, when this form carried one. null means "this post
+    // says nothing about rows", which leaves whatever is stored alone.
+    $rowNotes = [];
+    $rows = homepage_rows_input($rowNotes);
 
     $stored = $section;
     $section = array_merge($section, $data);
 
     if ($errors !== []) {
         flash('error', 'Please correct the highlighted fields.');
-        // Keep the picker showing what was submitted, not what is stored.
-        $section['settings'] = homepage_merge_settings($stored['settings'], $data['product_ids']);
+        // Keep the picker and the rows showing what was submitted, not what
+        // is stored, so a failed save does not throw the editing away.
+        $section['settings'] = homepage_rows_merge_settings(
+            homepage_merge_settings($stored['settings'], $data['product_ids']),
+            $rows
+        );
     } else {
         $columns = homepage_columns($data);
         $columns['section_key'] = homepage_unique_key($data['section_key'], $id);
-        $columns['settings']    = homepage_merge_settings($stored['settings'], $data['product_ids']);
+        // Two merges, one column: each one preserves every key it does not
+        // own, so product_ids and rows cannot overwrite one another.
+        $columns['settings']    = homepage_rows_merge_settings(
+            homepage_merge_settings($stored['settings'], $data['product_ids']),
+            $rows
+        );
 
         // "Remove" clears the stored path and deletes the file; a new upload
         // replaces it and admin_handle_image() removes the old one for us.
@@ -64,6 +89,11 @@ if (is_post()) {
         admin_after_write();
 
         flash('success', 'Section "' . $columns['section_key'] . '" saved.');
+        // Say so when the caps trimmed something, rather than leave an admin
+        // hunting for the row that silently did not save.
+        foreach ($rowNotes as $note) {
+            flash('warning', $note);
+        }
 
         // The designer posts here too, and must get its own page back.
         // admin_safe_return() refuses anything outside this admin, so a

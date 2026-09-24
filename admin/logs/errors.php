@@ -195,7 +195,7 @@ require ADMIN_PATH . '/includes/header.php';
                         Marking keeps the entry and stamps it with your name &mdash; do it once the cause is fixed.
                     </span>
                     <button type="submit" class="ad-btn ad-btn--sm" style="margin-left:auto"
-                            data-confirm="Mark the selected entries as resolved?">
+                            <?= admin_confirm_attrs('The entries are kept and stamped with your name.', ['title' => 'Mark these as resolved?', 'label' => 'Mark resolved', 'tone' => 'warning']) ?>>
                         <?= icon('check', 'w-4 h-4') ?> Mark resolved
                     </button>
                 </div>

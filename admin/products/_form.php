@@ -170,6 +170,11 @@ $blankVariant = [
                         <input type="text" class="sik-input<?= $bad('slug') ?>" name="slug" id="productSlug"
                                maxlength="280" data-slugify value="<?= e($product['slug']) ?>">
                         <span class="sik-help">Auto-filled from the name. The storefront URL is /product/&lt;slug&gt;.</span>
+                        <?php
+                        /* Offers to keep the current URL alive as a 301 when the slug
+                           changes. Renders nothing on a create, where there is no old URL. */
+                        seo_slug_keep_checkbox('product', $isEdit ? (string) $product['slug'] : '');
+                        ?>
                         <?php if ($err('slug') !== ''): ?><span class="sik-error"><?= e($err('slug')) ?></span><?php endif; ?>
                     </label>
                 </div>
@@ -691,6 +696,8 @@ $blankVariant = [
                         : url(),
                     'title_from'       => 'name',
                     'description_from' => 'short_description',
+                    'type'             => 'product',
+                    'id'               => $isEdit ? (int) $product['id'] : 0,
                 ]);
                 ?>
                 <?php if ($err('meta_title') !== ''): ?>

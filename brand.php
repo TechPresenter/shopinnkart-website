@@ -44,7 +44,7 @@ seo_from_entity($brand, [
     'description' => str_limit((string) $brand['description'], 160)
         ?: 'Shop the full ' . $brand['name'] . ' range online at the best prices.',
     'og_image'    => (string) $brand['logo'],
-]);
+], 'brand');
 seo_add_schema(seo_breadcrumb_schema($crumbs));
 seo_add_schema(seo_item_list_schema($listing['items'], (string) $brand['name']));
 

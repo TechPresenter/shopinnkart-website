@@ -4,6 +4,14 @@
  *
  * Everything support needs on one screen: who they are, what they bought,
  * where they ship, what they saved, what they said, and how they signed in.
+ *
+ * Four of those lists grow with the customer, and all four used to be SELECTed
+ * whole: a fixture account with 3,631 orders rendered 3,632 <tr> and 4.4 MB of
+ * HTML before anything reached the browser. Every list is paged now, each on
+ * its own ?op / ?ap / ?wp / ?rp key so moving one does not reset the others,
+ * and every figure the page prints - the stat cards, the "N orders" line, the
+ * card counts - is a COUNT(*) rather than count() over rows fetched to be
+ * thrown away. Sign-ins stay at their fixed 15 and link out to Logs.
  */
 
 declare(strict_types=1);
@@ -122,18 +130,69 @@ $lifetimeSpend = (float) $stats['lifetime_spend'];
 $paidOrders    = (int) $stats['paid_orders'];
 $averageOrder  = $paidOrders > 0 ? $lifetimeSpend / $paidOrders : 0.0;
 
+// ---------------------------------------------------------------------------
+// How many of each, asked of SQL.
+//
+// Every list below used to be SELECTed whole and then count()ed in PHP - so
+// printing "3,631 orders" cost 3,631 rows, and a customer with years of
+// history rendered megabytes of <tr> that nobody scrolls to. COUNT(*) is the
+// figure; the lists themselves are paged.
+//
+// The wishlist count repeats the render query's INNER JOIN on products on
+// purpose: an item whose product was deleted is not rendered, so counting
+// wishlist_items alone would print a number the table cannot show.
+// ---------------------------------------------------------------------------
+// One placeholder per subquery: emulated prepares are off, so PDO will not let
+// the same named parameter be bound three times.
+$counts = Database::fetch(
+    'SELECT (SELECT COUNT(*) FROM `user_addresses` WHERE `user_id` = :id_a) AS addresses,
+            (SELECT COUNT(*) FROM `reviews` WHERE `user_id` = :id_r)        AS reviews,
+            (SELECT COUNT(*)
+               FROM `wishlists` w
+               INNER JOIN `wishlist_items` wi ON wi.`wishlist_id` = w.`id`
+               INNER JOIN `products` p ON p.`id` = wi.`product_id`
+              WHERE w.`user_id` = :id_w)                                    AS wishlist',
+    ['id_a' => $customerId, 'id_r' => $customerId, 'id_w' => $customerId]
+) ?? ['addresses' => 0, 'reviews' => 0, 'wishlist' => 0];
+
+$addressCount  = (int) $counts['addresses'];
+$reviewCount   = (int) $counts['reviews'];
+$wishlistCount = (int) $counts['wishlist'];
+
+// ---------------------------------------------------------------------------
+// Four lists, four pagers.
+//
+// One shared ?page= would move all four at once, so each list carries its own
+// key. Addresses are cards rather than rows, so they get a smaller page.
+// PDO cannot bind LIMIT/OFFSET with emulated prepares off - the same cast the
+// rest of the admin uses.
+// ---------------------------------------------------------------------------
+$addressesPerPage = 6;
+
+$pagers = [];
+$slice  = static function (string $key, int $total, int $perPage) use (&$pagers): string {
+    $pagers[$key] = paginate($total, $perPage, max(1, (int) ($_GET[$key] ?? 1)));
+    return ' LIMIT ' . (int) $pagers[$key]['per_page'] . ' OFFSET ' . (int) $pagers[$key]['offset'];
+};
+
+$orderLimit    = $slice('op', $orderCount, ADMIN_PER_PAGE);
+$addressLimit  = $slice('ap', $addressCount, $addressesPerPage);
+$wishlistLimit = $slice('wp', $wishlistCount, ADMIN_PER_PAGE);
+$reviewLimit   = $slice('rp', $reviewCount, ADMIN_PER_PAGE);
+
 $orders = Database::fetchAll(
     'SELECT o.`id`, o.`order_number`, o.`status`, o.`payment_status`, o.`payment_method`,
             o.`total_amount`, o.`created_at`,
             (SELECT COUNT(*) FROM `order_items` oi WHERE oi.`order_id` = o.`id`) AS item_count
      FROM `orders` o
      WHERE o.`user_id` = :id
-     ORDER BY o.`id` DESC',
+     ORDER BY o.`id` DESC' . $orderLimit,
     ['id' => $customerId]
 );
 
 $addresses = Database::fetchAll(
-    'SELECT * FROM `user_addresses` WHERE `user_id` = :id ORDER BY `is_default` DESC, `id` DESC',
+    'SELECT * FROM `user_addresses` WHERE `user_id` = :id
+     ORDER BY `is_default` DESC, `id` DESC' . $addressLimit,
     ['id' => $customerId]
 );
 
@@ -144,7 +203,7 @@ $wishlist = Database::fetchAll(
      INNER JOIN `wishlist_items` wi ON wi.`wishlist_id` = w.`id`
      INNER JOIN `products` p ON p.`id` = wi.`product_id`
      WHERE w.`user_id` = :id
-     ORDER BY wi.`created_at` DESC',
+     ORDER BY wi.`created_at` DESC, wi.`id` DESC' . $wishlistLimit,
     ['id' => $customerId]
 );
 
@@ -154,12 +213,22 @@ $reviews = Database::fetchAll(
      FROM `reviews` r
      LEFT JOIN `products` p ON p.`id` = r.`product_id`
      WHERE r.`user_id` = :id
-     ORDER BY r.`id` DESC',
+     ORDER BY r.`id` DESC' . $reviewLimit,
     ['id' => $customerId]
 );
 
 // Attempts made before the account existed, or with the email typed by hand,
 // carry no user_id - match on the address too so failures are not hidden.
+//
+// This one was already bounded at 15, and stays bounded: the sidebar is not
+// where somebody reads a year of sign-ins. It now says how many there are and
+// links to Logs > Login history, which is the screen that pages them.
+$loginCount = (int) Database::fetchColumn(
+    "SELECT COUNT(*) FROM `login_history`
+      WHERE `user_type` = 'customer' AND (`user_id` = :id OR `identifier` = :email)",
+    ['id' => $customerId, 'email' => $customer['email']]
+);
+
 $logins = Database::fetchAll(
     "SELECT `status`, `reason`, `ip_address`, `user_agent`, `created_at`
      FROM `login_history`
@@ -183,6 +252,62 @@ if (admin_can('customers.edit')) {
         . e(admin_url('customers/edit.php?id=' . $customerId)) . '">'
         . icon('edit', 'w-4 h-4') . ' Edit</a>';
 }
+
+/**
+ * Pager for one of this page's four lists.
+ *
+ * admin_pagination() always writes ?page=, which is right for a screen with a
+ * single table and wrong here - four lists sharing one key would all jump
+ * together. This renders the same .sik-pager markup against its own key and
+ * drops the reader back at the list it belongs to instead of the top of a very
+ * tall page. Every other parameter survives, so the customer id is kept.
+ */
+$listPager = static function (string $key, string $anchor) use ($pagers): string {
+    $pagination = $pagers[$key];
+    if ($pagination['last'] <= 1) {
+        return '';
+    }
+
+    $link = static function (int $page) use ($key, $anchor): string {
+        $query = $_GET;
+        $query[$key] = $page;
+        return e(admin_url('customers/view.php') . '?' . http_build_query($query) . '#' . $anchor);
+    };
+
+    $html = '<nav class="sik-pager" aria-label="' . e_attr(ucfirst($anchor)) . ' pagination">';
+    $html .= $pagination['current'] > 1
+        ? '<a class="sik-pager__link" href="' . $link($pagination['current'] - 1) . '" rel="prev">Prev</a>'
+        : '<span class="sik-pager__link is-disabled">Prev</span>';
+
+    foreach ($pagination['pages'] as $page) {
+        if ($page === '…') {
+            $html .= '<span class="sik-pager__gap">…</span>';
+            continue;
+        }
+        $html .= $page === $pagination['current']
+            ? '<span class="sik-pager__link is-current" aria-current="page">' . (int) $page . '</span>'
+            : '<a class="sik-pager__link" href="' . $link((int) $page) . '">' . (int) $page . '</a>';
+    }
+
+    $html .= $pagination['current'] < $pagination['last']
+        ? '<a class="sik-pager__link" href="' . $link($pagination['current'] + 1) . '" rel="next">Next</a>'
+        : '<span class="sik-pager__link is-disabled">Next</span>';
+
+    return $html . '</nav>';
+};
+
+/** "Showing 21-40 of 3,631" - so a paged list still says how big it really is. */
+$listRange = static function (string $key, string $singular, string $plural) use ($pagers): string {
+    $p = $pagers[$key];
+    if ($p['total'] === 0) {
+        return 'None yet';
+    }
+    if ($p['last'] <= 1) {
+        return number_format($p['total']) . ' ' . ($p['total'] === 1 ? $singular : $plural);
+    }
+    return 'Showing ' . number_format($p['from']) . '&ndash;' . number_format($p['to'])
+        . ' of ' . number_format($p['total']) . ' ' . $plural;
+};
 
 require ADMIN_PATH . '/includes/header.php';
 ?>
@@ -208,11 +333,11 @@ require ADMIN_PATH . '/includes/header.php';
 <div class="ad-grid ad-grid--sidebar">
     <div>
         <!-- ============================ Orders ============================ -->
-        <div class="ad-card">
+        <div class="ad-card" id="orders">
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Order history</div>
-                    <div class="ad-card__sub"><?= number_format($orderCount) ?> order<?= $orderCount === 1 ? '' : 's' ?> on this account</div>
+                    <div class="ad-card__sub"><?= $listRange('op', 'order', 'orders') ?> on this account</div>
                 </div>
             </div>
             <div class="ad-card__body ad-card__body--flush">
@@ -259,13 +384,16 @@ require ADMIN_PATH . '/includes/header.php';
                     </div>
                 <?php endif; ?>
             </div>
+            <?php if (($pager = $listPager('op', 'orders')) !== ''): ?>
+                <div class="ad-card__foot"><?= $pager ?></div>
+            <?php endif; ?>
         </div>
 
         <!-- =========================== Addresses ========================== -->
-        <div class="ad-card">
+        <div class="ad-card" id="addresses">
             <div class="ad-card__head">
                 <div class="ad-card__title">Saved addresses</div>
-                <span class="ad-muted" style="font-size:12.5px"><?= count($addresses) ?> saved</span>
+                <span class="ad-muted" style="font-size:12.5px"><?= $listRange('ap', 'address', 'addresses') ?></span>
             </div>
             <div class="ad-card__body<?= $addresses === [] ? ' ad-card__body--flush' : '' ?>">
                 <?php if ($addresses === []): ?>
@@ -301,13 +429,16 @@ require ADMIN_PATH . '/includes/header.php';
                     </div>
                 <?php endif; ?>
             </div>
+            <?php if (($pager = $listPager('ap', 'addresses')) !== ''): ?>
+                <div class="ad-card__foot"><?= $pager ?></div>
+            <?php endif; ?>
         </div>
 
         <!-- =========================== Wishlist =========================== -->
-        <div class="ad-card">
+        <div class="ad-card" id="wishlist">
             <div class="ad-card__head">
                 <div class="ad-card__title">Wishlist</div>
-                <span class="ad-muted" style="font-size:12.5px"><?= count($wishlist) ?> product<?= count($wishlist) === 1 ? '' : 's' ?></span>
+                <span class="ad-muted" style="font-size:12.5px"><?= $listRange('wp', 'product', 'products') ?></span>
             </div>
             <div class="ad-card__body ad-card__body--flush">
                 <?php if ($wishlist === []): ?>
@@ -357,13 +488,16 @@ require ADMIN_PATH . '/includes/header.php';
                     </div>
                 <?php endif; ?>
             </div>
+            <?php if (($pager = $listPager('wp', 'wishlist')) !== ''): ?>
+                <div class="ad-card__foot"><?= $pager ?></div>
+            <?php endif; ?>
         </div>
 
         <!-- ============================ Reviews =========================== -->
-        <div class="ad-card">
+        <div class="ad-card" id="reviews">
             <div class="ad-card__head">
                 <div class="ad-card__title">Reviews written</div>
-                <span class="ad-muted" style="font-size:12.5px"><?= count($reviews) ?> review<?= count($reviews) === 1 ? '' : 's' ?></span>
+                <span class="ad-muted" style="font-size:12.5px"><?= $listRange('rp', 'review', 'reviews') ?></span>
             </div>
             <div class="ad-card__body ad-card__body--flush">
                 <?php if ($reviews === []): ?>
@@ -413,6 +547,9 @@ require ADMIN_PATH . '/includes/header.php';
                     </div>
                 <?php endif; ?>
             </div>
+            <?php if (($pager = $listPager('rp', 'reviews')) !== ''): ?>
+                <div class="ad-card__foot"><?= $pager ?></div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -508,7 +645,14 @@ require ADMIN_PATH . '/includes/header.php';
 
                     <form method="post" action="<?= e(admin_url('customers/view.php?id=' . $customerId)) ?>"
                           style="width:100%"
-                          onsubmit="return confirm('Email a password reset link to <?= e_attr($customer['email']) ?>?')">
+                          <?= admin_confirm_form_attrs(
+                              'A reset link goes to ' . (string) $customer['email'] . '. It expires after an hour.',
+                              [
+                                  'title' => 'Send a password reset?',
+                                  'label' => 'Send the link',
+                                  'tone'  => 'warning',
+                              ]
+                          ) ?>>
                         <?= csrf_field() ?>
                         <input type="hidden" name="action" value="reset_password">
                         <button type="submit" class="ad-btn ad-btn--block">
@@ -528,7 +672,14 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php else: ?>
                         <form method="post" action="<?= e(admin_url('customers/view.php?id=' . $customerId)) ?>"
                               style="width:100%"
-                              onsubmit="return confirm('Block <?= e_attr($customerName) ?>? They will be signed out and unable to log in.')">
+                              <?= admin_confirm_form_attrs(
+                                  $customerName . ' is signed out at once and cannot log in again until you unblock them.',
+                                  [
+                                      'title' => 'Block this customer?',
+                                      'label' => 'Block account',
+                                      'tone'  => 'warning',
+                                  ]
+                              ) ?>>
                             <?= csrf_field() ?>
                             <input type="hidden" name="action" value="block">
                             <button type="submit" class="ad-btn ad-btn--danger ad-btn--block">
@@ -539,12 +690,23 @@ require ADMIN_PATH . '/includes/header.php';
 
                     <?php if (admin_can('customers.delete')): ?>
                         <?php if ($orderCount === 0): ?>
+                            <?php
+                            /* A named requireText case: a customer record and
+                               everything hanging off it goes, and there is no
+                               undo anywhere in the admin. Typing the name is
+                               the difference between a slip and a decision. */
+                            ?>
                             <?= admin_delete_form(
                                 admin_url('customers/delete.php'),
                                 $customerId,
-                                'Delete ' . $customerName . '? Their addresses, wishlist and cart go with them. This cannot be undone.',
+                                'Their addresses, wishlist and cart go with them. This cannot be undone.',
                                 'Delete customer',
-                                'ad-btn--block'
+                                'ad-btn--block',
+                                [
+                                    'title'   => 'Delete ' . $customerName . '?',
+                                    'label'   => 'Delete customer',
+                                    'require' => $customerName,
+                                ]
                             ) ?>
                         <?php else: ?>
                             <p class="ad-muted" style="font-size:12px;text-align:center;margin-top:4px">
@@ -561,6 +723,11 @@ require ADMIN_PATH . '/includes/header.php';
         <div class="ad-card">
             <div class="ad-card__head">
                 <div class="ad-card__title">Recent sign-ins</div>
+                <span class="ad-muted" style="font-size:12.5px">
+                    <?= $loginCount > count($logins)
+                        ? 'Latest ' . count($logins) . ' of ' . number_format($loginCount)
+                        : number_format($loginCount) . ' recorded' ?>
+                </span>
             </div>
             <div class="ad-card__body<?= $logins === [] ? ' ad-card__body--flush' : '' ?>"
                  style="<?= $logins === [] ? '' : 'display:grid;gap:11px;font-size:12.5px' ?>">
@@ -589,6 +756,14 @@ require ADMIN_PATH . '/includes/header.php';
                     <?php endforeach; ?>
                 <?php endif; ?>
             </div>
+            <?php if ($loginCount > count($logins) && admin_can('logs.view')): ?>
+                <div class="ad-card__foot">
+                    <a class="ad-btn ad-btn--block" href="<?= e(admin_url('logs/login-history.php')
+                        . '?' . http_build_query(['q' => (string) $customer['email'], 'user_type' => 'customer'])) ?>">
+                        <?= icon('clock', 'w-4 h-4') ?> All <?= number_format($loginCount) ?> sign-in records
+                    </a>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

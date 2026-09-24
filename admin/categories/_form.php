@@ -96,6 +96,11 @@ $iconValue = (string) ($category['icon'] ?? '');
                             <?php else: ?>
                                 <span class="sik-help">Leave blank to build it from the name. Used in the category URL.</span>
                             <?php endif; ?>
+                            <?php
+                            /* Offers to keep the current URL alive as a 301 when the slug
+                               changes. Renders nothing on a create, where there is no old URL. */
+                            seo_slug_keep_checkbox('category', $isEdit ? (string) ($category['slug'] ?? '') : '');
+                            ?>
                         </div>
                     </div>
 
@@ -224,6 +229,8 @@ $iconValue = (string) ($category['icon'] ?? '');
                             : url(),
                         'title_from'       => 'name',
                         'description_from' => 'description',
+                        'type'             => 'category',
+                        'id'               => $isEdit ? (int) ($category['id'] ?? 0) : 0,
                     ]);
                     ?>
                     <?php if (isset($errors['meta_title'])): ?>

@@ -86,7 +86,7 @@ $breadcrumbs  = [
 
 $confirm = 'Delete the testimonial from "' . $testimonial['customer_name'] . '"? This cannot be undone.';
 $pageActions = '<form method="post" action="' . e(admin_url('testimonials/delete.php')) . '" class="ad-inline-form"'
-    . ' onsubmit="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+    . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
     . csrf_field()
     . '<input type="hidden" name="id" value="' . $id . '">'
     . '<button type="submit" class="ad-btn ad-btn--danger">' . icon('trash', 'w-4 h-4') . ' Delete</button>'

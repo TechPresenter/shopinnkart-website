@@ -5,12 +5,15 @@
  * Returned to admin/security/settings.php, which renders the card and routes
  * this card's POST actions to the handlers below. See that file for the shape.
  *
- * Two facts about the deployment itself rather than settings to change: is the
- * web installer still sitting in the document root, and can this copy store a
- * secret at all.
+ * Three facts about the deployment itself rather than settings to change: is
+ * the web installer still sitting in the document root, can this copy store a
+ * secret at all, and can anybody who has read the project's public repository
+ * simply sign in.
  */
 
 declare(strict_types=1);
+
+require_once INCLUDES_PATH . '/deployment-checks.php';
 
 return [
     'key'    => 'installer',
@@ -22,7 +25,9 @@ return [
     'render' => static function (array $errors, bool $canEdit): void {
         $installer = security_installer_status();
         $keyOk     = app_key_available();
-        $allClear  = !$installer['present'] && $keyOk;
+        $seeded    = deployment_seeded_logins();
+        $seededMsg = deployment_seeded_logins_message($seeded);
+        $allClear  = !$installer['present'] && $keyOk && $seededMsg === null;
         ?>
         <div class="ad-card" style="margin:0" id="installer">
             <div class="ad-card__head">
@@ -36,6 +41,29 @@ return [
             </div>
 
             <div class="ad-card__body" style="display:grid;gap:14px">
+                <div>
+                    <div style="display:flex;gap:8px;align-items:center;font-weight:600">
+                        <?= $seededMsg === null
+                            ? '<span class="sik-status sik-status--green">Changed</span>'
+                            : '<span class="sik-status sik-status--red">Still the shipped one</span>' ?>
+                        <span>Sign-in password</span>
+                    </div>
+                    <div class="ad-muted" style="font-size:13px;margin-top:6px;line-height:1.7">
+                        <?php if ($seededMsg === null): ?>
+                            No account on this store still uses a password from the project's
+                            README. Nothing to do.
+                        <?php else: ?>
+                            <?= e($seededMsg) ?>
+                            <?php if ($seeded['admins'] !== [] && admin_can('admins.edit')): ?>
+                                <div style="margin-top:8px">
+                                    <a class="ad-btn ad-btn--danger ad-btn--sm"
+                                       href="<?= e(admin_url('admins/')) ?>">Change it now</a>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
                 <div>
                     <div style="display:flex;gap:8px;align-items:center;font-weight:600">
                         <?= $installer['present']

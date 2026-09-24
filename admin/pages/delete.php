@@ -32,6 +32,9 @@ if ((int) $cmsPage['is_system'] === 1) {
 
 delete_upload($cmsPage['banner_image']);
 Database::delete('pages', '`id` = :id', ['id' => $id]);
+// The record is gone, so its extended SEO row has nothing to describe.
+seo_entity_meta_delete('page', $id);
+
 
 log_activity('page.deleted', 'page', $id, 'Deleted page "' . $cmsPage['title'] . '" (/page/' . $cmsPage['slug'] . ')');
 admin_after_write();

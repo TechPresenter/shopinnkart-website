@@ -62,6 +62,7 @@ $admin = admin_require('homepage.view');
 
 require_once __DIR__ . '/_meta.php';
 require_once INCLUDES_PATH . '/widgets.php';
+require_once INCLUDES_PATH . '/homepage-rows.php';
 
 $zones = homepage_zones();
 $zone  = (string) request_input('zone', 'home');
@@ -150,9 +151,22 @@ $sections = Database::fetchAll(
         $off     = $section['status'] !== 'active';
         $classes = 'pv-section' . ($off ? ' pv-off' : '') . ($focus === $id ? ' pv-sel' : '');
 
-        // force: render the real body even for a lazy widget, whose live
-        // output is an empty shell that JS fills on scroll.
-        $html = trim(render_widget($section, ['force' => true]));
+        // A section built from nested rows draws its rows, not its widget
+        // type. The same renderer the storefront uses, asked in `preview`
+        // mode: a hidden row is dimmed rather than dropped and an empty one
+        // is captioned, for the same reason a disabled SECTION is drawn
+        // above - the designer is where you decide what to switch on, and a
+        // row you cannot see is a row you cannot fill.
+        //
+        // It answers '' for every section that has no rows, which is every
+        // section that existed before this feature, and those fall straight
+        // through to render_widget() exactly as before.
+        $html = trim(homepage_rows_render($section, ['preview' => true]));
+        if ($html === '') {
+            // force: render the real body even for a lazy widget, whose live
+            // output is an empty shell that JS fills on scroll.
+            $html = trim(render_widget($section, ['force' => true]));
+        }
         ?>
         <div class="<?= e_attr($classes) ?>" data-section="<?= $id ?>" id="pv-<?= $id ?>">
             <?php if ($html === ''): ?>

@@ -60,6 +60,11 @@ if (!empty($post['published_at'])) {
                             <?php else: ?>
                                 <span class="sik-help">Leave blank to build it from the title. The post lives at /blog/&lt;slug&gt;.</span>
                             <?php endif; ?>
+                            <?php
+                            /* Offers to keep the current URL alive as a 301 when the slug
+                               changes. Renders nothing on a create, where there is no old URL. */
+                            seo_slug_keep_checkbox('post', $isEdit ? (string) ($post['slug'] ?? '') : '');
+                            ?>
                         </div>
                     </div>
 
@@ -126,6 +131,8 @@ if (!empty($post['published_at'])) {
                             : url(),
                         'title_from'       => 'title',
                         'description_from' => 'excerpt',
+                        'type'             => 'post',
+                        'id'               => $isEdit ? (int) ($post['id'] ?? 0) : 0,
                     ]);
                     ?>
                     <?php if (isset($errors['meta_title'])): ?>

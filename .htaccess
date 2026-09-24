@@ -75,6 +75,11 @@ ErrorDocument 500 /500.php
     RewriteRule ^about/?$         about.php         [L,QSA]
     RewriteRule ^faq/?$           faq.php           [L,QSA]
     RewriteRule ^sitemap\.xml$    sitemap.php       [L]
+    # The section files the index points at: /sitemap-products-1.xml and
+    # friends. Without this rule they would fall through to 404.php, because
+    # the catch-all below only rewrites extensionless paths. The page number
+    # is optional so /sitemap-blog.xml also resolves, to page 1.
+    RewriteRule ^sitemap-([a-z]+)(?:-([0-9]+))?\.xml$  sitemap.php?type=$1&page=$2  [L,QSA]
     # robots.txt is generated, not a file on disk: the Sitemap line has to name
     # whatever host is actually serving the site, and the operator can append
     # rules from the admin panel.

@@ -147,6 +147,13 @@ function login_user(array $user, bool $remember = false, string $mfaMethod = 'no
     } else {
         auth_remember_forget_cookie();
     }
+
+    // Counted last, once the sign-in is complete in every other respect: a
+    // counter must never be a reason somebody cannot get into their account.
+    // The label says how they proved who they were - password, TOTP, recovery
+    // code - which is a store metric, not a personal one; no email, no name
+    // and no id leaves this call.
+    analytics_track('login', ['label' => $mfaMethod]);
 }
 
 /**

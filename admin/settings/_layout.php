@@ -18,6 +18,8 @@
  *       'min_value' => 1,         // numeric bounds, for type number
  *       'max_value' => 100,
  *       'options'   => [...],     // for type select
+ *       'pattern'   => '/^G-[A-Z0-9]+$/', // exact shape, for the text-ish types
+ *       'pattern_error' => 'Looks like ...',  // what to say when it does not match
  *       'folder'    => 'branding',// upload folder, for type image
  *       'group'     => 'order',   // overrides the screen's settings_group
  *       'attr'      => 'data-x="y"',
@@ -51,6 +53,10 @@ const SETTINGS_SCREENS = [
     // SEO settings it reports on, so it shares their tab strip.
     'seo-health' => ['label' => 'SEO Health', 'file' => 'seo-health.php'],
     'redirects'  => ['label' => 'Redirects',  'file' => 'redirects.php'],
+    // Consent, DNT/GPC and the third-party tag ids. It sits after SEO because
+    // that is where the GA and Pixel ids already live, and an operator who
+    // pastes a tag id there needs to find the switch that lets it run.
+    'analytics' => ['label' => 'Analytics', 'file' => 'analytics.php'],
     'theme'    => ['label' => 'Theme',    'file' => 'theme.php'],
     'social'   => ['label' => 'Social',   'file' => 'social.php'],
     // The `widgets` group - popup kill switches, the ticker, the floating
@@ -221,6 +227,16 @@ function settings_handle_save(string $screen, string $group, array $spec, array 
 
         if (isset($field['max']) && mb_strlen($raw) > (int) $field['max']) {
             $errors[$key] = $label . ' must not exceed ' . (int) $field['max'] . ' characters.';
+            continue;
+        }
+
+        // A field may declare the exact shape its value has to take. The tag
+        // ids on Settings > Analytics use it: the storefront validates those
+        // ids again before printing them into a script URL and silently drops
+        // anything malformed, so without this an operator who mistypes a GTM
+        // container id gets a saved setting, no tag, and no explanation.
+        if (isset($field['pattern']) && preg_match((string) $field['pattern'], $raw) !== 1) {
+            $errors[$key] = (string) ($field['pattern_error'] ?? $label . ' is not in the expected format.');
             continue;
         }
 

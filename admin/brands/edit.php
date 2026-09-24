@@ -24,11 +24,23 @@ if ($brand === null) {
 }
 
 $errors = [];
+// Held before the submitted values are merged in below: it is what decides
+// whether the slug really changed, and so whether the old URL needs a 301.
+$originalSlug = (string) $brand['slug'];
 
 if (is_post()) {
     csrf_require();
 
     $seo       = seo_editor_input();
+    // The panel's extended fields (keywords, the Twitter trio, breadcrumbs and
+    // the custom code). Staged rather than written, so a refused code field
+    // fails the whole save instead of appearing to succeed while dropping it.
+    $seoErrors = [];
+    $seoMeta   = seo_editor_meta_input($seoErrors);
+    // A slug the admin TYPED that collides with another record or with a
+    // reserved address is refused here, so it joins the validator errors
+    // below. A blank one is still derived and quietly made unique.
+    seo_editor_slug_check('brand', (string) input('slug', ''), $id, $seoErrors);
     $submitted = [
         'name'        => (string) input('name', ''),
         'slug'        => (string) input('slug', ''),
@@ -49,15 +61,13 @@ if (is_post()) {
       ->integer('sort_order')->between('sort_order', 0, 9999)
       ->in('status', ['active', 'inactive']);
 
-    if ($v->fails()) {
-        $errors = $v->errors();
+    if ($v->fails() || $seoErrors !== []) {
+        $errors = $v->errors() + $seoErrors;
         flash('error', 'Please correct the highlighted fields.');
     } else {
-        $slug = unique_slug(
-            'brands',
-            slugify($submitted['slug'] !== '' ? $submitted['slug'] : $submitted['name']),
-            $id
-        );
+        // A typed slug is a decision, so a collision is refused and named;
+        // a blank one is still derived from the name and quietly made unique.
+        $slug = seo_editor_slug('brand', $submitted['slug'], $submitted['name'], $id, $errors);
 
         $logo = $brand['logo'];
         if ((string) input('remove_logo', '0') === '1' && empty($_FILES['logo']['name'])) {
@@ -77,6 +87,12 @@ if (is_post()) {
             'status'      => $submitted['status'],
             ...$seo,
         ], '`id` = :id', ['id' => $id]);
+
+        seo_entity_meta_save('brand', $id, $seoMeta);
+        // A renamed brand's old URL keeps working as a 301 unless the admin
+        // unticked the box next to the slug. Every link to it that already
+        // exists out in the world is otherwise a hard 404.
+        seo_editor_slug_change('brand', $originalSlug, $slug);
 
         log_activity('brand.updated', 'brand', $id, 'Updated brand "' . $submitted['name'] . '"');
         admin_after_write();
@@ -109,7 +125,7 @@ if (admin_can('brands.delete')) {
         : 'Delete "' . $brand['name'] . '"? This cannot be undone.';
 
     $pageActions .= '<form method="post" action="' . e(admin_url('brands/delete.php')) . '" class="ad-inline-form"'
-        . ' onsubmit="return confirm(' . e_attr((string) json_encode($confirm)) . ')">'
+        . admin_confirm_form_attrs($confirm, ['label' => 'Delete']) . '>'
         . csrf_field()
         . '<input type="hidden" name="id" value="' . $id . '">'
         . '<input type="hidden" name="confirm" value="1">'

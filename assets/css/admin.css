@@ -1,118 +1,381 @@
 /* ==========================================================================
-   ShopInnKart Admin - Dashboard design system
+   ShopInnKart Admin - Dashboard design system  ("Calm Wine Control Center")
 
-   Deliberately distinct from the storefront: dark navy rail, cool neutral
-   canvas, dense tables, compact controls. Loaded after tailwind.css and
-   app.css (which supply the utilities, .sik-status pills and form controls).
+   The same house as the festive storefront, read as its back office: warm
+   neutrals, the store's maroon in three places only (the rail, the primary
+   button, the active state) and gold as an accent that never sits behind
+   text. Denser than the storefront, and calmer.
+
+   Loaded after utilities.css and app.css, which supply the utility layer,
+   the .sik-status pills and the form controls. The `.ad-body` bridge near
+   the foot of section 1 makes those storefront atoms read ADMIN colours.
    ========================================================================== */
 
 /* ==========================================================================
-   1. DESIGN TOKENS
+   1. DESIGN TOKENS  (v2 - "Calm Wine Control Center")
 
-   Every value below is a token. Components must not hardcode a colour, a
-   spacing step, a radius or a font size — that is what made the admin drift
-   into per-module styling. Because everything resolves through custom
-   properties, a dark theme later only has to re-declare this block.
+   Three layers: INPUTS (printed from settings) -> ROLES (what components
+   read) -> SCALES. Components read roles and scales only; nothing below the
+   section boundary may hardcode a colour, a size, a radius or a duration.
 
-   Contrast note: the raw brand tones are decoration-grade, not text-grade.
-   Measured on #FFFFFF / #F5F7FA respectively:
-       the brand tone   ~3.5 / ~3.2   #16A34A  3.30 / 3.07
-       #F59E0B  2.15 / 2.00     #64748B  4.76 / 4.43
-   All four fail WCAG AA for the 12-14px text the admin actually renders, so
-   each has an "-ink" counterpart that is used for type and for any fill that
-   carries white text. The bright tone stays for chart fills, icon glyphs and
-   large numerals where 3:1 is the correct bar.
+   Contrast figures in the comments were computed, not eyeballed, with
+   --ad-primary #D4134E and --ad-sidebar #4A041C. They move if an operator
+   changes the admin theme colours, which is why every derived role is a
+   color-mix() of the input rather than a frozen hex.
    ========================================================================== */
 :root {
-    /* --- brand ------------------------------------------------------------ */
-    /* --ad-primary and --ad-sidebar are printed inline by
-       admin/includes/header.php from Admin > Settings > Admin theme. The two
-       shades below USED to be frozen hex - an operator who set a pink admin
-       colour got pink buttons with orange text beside them, because only the
-       base token followed the setting. Deriving them means one setting moves
-       the whole admin palette. */
-    --ad-primary:        #D4134E;   /* decoration / large text            */
-    /* 82% toward black: >=4.5:1 on both --ad-surface and --ad-bg for the
-       brand pinks this admin ships with. */
-    --ad-primary-ink:    color-mix(in srgb, var(--ad-primary) 82%, #000);
-    --ad-primary-soft:   color-mix(in srgb, var(--ad-primary) 8%, #fff);
-    --ad-navy:           #0B1F3A;
+    color-scheme: light;
 
-    /* --- surfaces --------------------------------------------------------- */
-    --ad-bg:             #F5F7FA;
-    --ad-surface:        #FFFFFF;
-    --ad-surface-alt:    #F8FAFC;   /* table zebra, inset panels          */
-    --ad-border:         #E2E8F0;   /* dividers                           */
-    --ad-border-strong:  #CBD5E1;   /* interactive boundaries (inputs)    */
+    /* --- Inputs: header.php prints --ad-primary / --ad-sidebar from settings
+           admin_primary / admin_sidebar_bg; these are only the fallbacks. --- */
+    --ad-primary:  #D4134E;
+    --ad-sidebar:  #4A041C;
+    --ad-gold:     #F59E0B;   /* storefront --sik-gold; never a fill behind text */
+    --ad-gold-2:   #FCD34D;   /* on dark surfaces only                           */
+    --ad-gold-ink: #92610A;   /* 5.33:1 on white - gold as text                  */
 
-    /* --- type ------------------------------------------------------------- */
-    --ad-text:           #111827;
-    --ad-muted:          #5F6B7E;   /* 5.40 / 5.03 — the spec's #64748B   */
-                                     /* measured 4.43 on the canvas and    */
-                                     /* failed AA, so it is one step down. */
-    --ad-faint:          #94A3B8;   /* decorative only, never body text   */
+    /* --- Surfaces --- */
+    --ad-canvas:    #F9F4F5;
+    --ad-surface:   #FFFFFF;
+    --ad-surface-2: #FCF8F8;  /* table head band, card foot, zebra */
+    --ad-sunken:    #F5EEEF;  /* wells, code, chips                */
+    --ad-elevated:  #FFFFFF;  /* menus, popovers, modals, toasts   */
+    --ad-hover:     color-mix(in srgb, var(--ad-ink) 4%, transparent);
+    --ad-press:     color-mix(in srgb, var(--ad-ink) 8%, transparent);
+    --ad-selected:  color-mix(in srgb, var(--ad-primary) 7%, var(--ad-surface));
+    --ad-scrim:     rgba(33, 22, 23, .44);
+    /* The scrim to use when backdrop-filter is NOT available: without the blur
+       the .44 veil leaves the page behind a dialog legible and looking
+       clickable, so the fallback leans on density instead. A token rather than
+       a literal in the @supports block, because a literal there would paint
+       the LIGHT scrim over a dark-mode dialog. */
+    --ad-scrim-dense: rgba(33, 22, 23, .72);
 
-    /* --- semantic --------------------------------------------------------- */
-    --ad-success:        #16A34A;   --ad-success-ink: #15803D;  --ad-success-soft: #ECFDF3;
-    --ad-warning:        #F59E0B;   --ad-warning-ink: #B45309;  --ad-warning-soft: #FFFBEB;
-    --ad-danger:         #DC2626;   --ad-danger-ink:  #B91C1C;  --ad-danger-soft:  #FEF2F2;
-    --ad-info:           #2563EB;   --ad-info-ink:    #1D4ED8;  --ad-info-soft:    #EFF6FF;
+    /* --- Ink --- */
+    --ad-ink:        #211617;  /* 17.62 surface / 16.18 canvas              */
+    --ad-ink-2:      #46393A;  /* 11.01 - long copy, table body             */
+    --ad-muted:      #6E5F60;  /*  6.05 surface / 5.56 canvas / 5.29 sunken */
+    --ad-faint:      #9C8E8F;  /*  3.14 - placeholder, disabled, axis only  */
+    --ad-on-primary: #FFFFFF;
 
-    /* --- sidebar ---------------------------------------------------------- */
-    --ad-sidebar:        var(--ad-navy);
-    --ad-sidebar-hover:  #16304F;
-    --ad-sidebar-active: var(--ad-primary);
-    --ad-sidebar-text:   #A8B6CE;   /* 8.06 on the navy rail              */
-    --ad-sidebar-w:      256px;
-    --ad-sidebar-w-min:  72px;
-    --ad-topbar-h:       62px;
+    /* --- Lines --- */
+    --ad-line:        #EAE2E2;  /* dividers, card hairline                 */
+    --ad-line-strong: #D9CECF;  /* table head rule                         */
+    /* MEASURED, not inherited: the spec proposed #9C8E8F at 3.14:1, but that
+       is 3.14 only against a white card. An input in a filter bar sits on the
+       CANVAS (2.89) and one in a well sits on --ad-sunken (2.75), so two of
+       the three backgrounds an input actually has failed 1.4.11. #948687
+       clears 3:1 on all three: 3.49 surface, 3.20 canvas, 3.05 sunken. */
+    --ad-line-input:  #948687;
 
-    /* --- spacing scale ---------------------------------------------------- */
-    --ad-1:   4px;   --ad-2:   8px;   --ad-3:  12px;   --ad-4:  16px;
-    --ad-5:  20px;   --ad-6:  24px;   --ad-8:  32px;   --ad-10: 40px;
-    --ad-12: 48px;   --ad-16: 64px;
+    /* --- Brand roles --- */
+    --ad-primary-ink:   color-mix(in srgb, var(--ad-primary) 82%, #000);   /* #AE1040, 7.14 */
+    /* The FILL behind white text, kept apart from the TEXT shade above. They
+       are the same colour in light and must not be in dark, where
+       --ad-primary-ink becomes a pale pink for reading on a dark surface:
+       white on that is 2.83:1. Every filled brand button reads this. */
+    --ad-primary-fill:  var(--ad-primary-ink);
+    --ad-primary-hover: color-mix(in srgb, var(--ad-primary) 70%, #000);
+    --ad-primary-soft:  color-mix(in srgb, var(--ad-primary) 8%, var(--ad-surface));
+    --ad-primary-line:  color-mix(in srgb, var(--ad-primary) 30%, var(--ad-surface));
+    --ad-focus:         var(--ad-primary-ink);                              /* 6.65 vs canvas */
+    --ad-focus-ring:    0 0 0 2px var(--ad-surface), 0 0 0 4px var(--ad-focus);
 
-    /* --- type scale ------------------------------------------------------- */
-    --ad-fs-caption:  11px;   /* metadata, table meta lines               */
-    --ad-fs-small:    12px;   /* helper text, badges                      */
-    --ad-fs-body:     13px;   /* table cells, form labels                 */
-    --ad-fs-base:     14px;   /* default body                             */
-    --ad-fs-lead:     15px;   /* card headings                            */
-    --ad-fs-h3:       17px;   /* section headings                         */
-    --ad-fs-h2:       20px;   /* page title                               */
-    --ad-fs-display:  28px;   /* KPI numerals                             */
+    /* --- Rail --- */
+    --ad-rail:            var(--ad-sidebar);
+    --ad-rail-ink:        color-mix(in srgb, #fff 74%, var(--ad-rail));   /* 8.94 */
+    --ad-rail-ink-strong: #FFFFFF;
+    --ad-rail-label:      color-mix(in srgb, #fff 56%, var(--ad-rail));   /* 5.54 (was 2.60) */
+    --ad-rail-hover:      color-mix(in srgb, #fff 8%, var(--ad-rail));    /* replaces navy #16304F */
+    --ad-rail-active:     color-mix(in srgb, var(--ad-primary) 26%, var(--ad-rail)); /* white 12.5 */
+    --ad-rail-indicator:  var(--ad-gold);                                 /* 3px bar, 7.61 */
+    --ad-rail-line:       color-mix(in srgb, #fff 9%, var(--ad-rail));
+    --ad-rail-focus:      var(--ad-gold-2);                               /* 11.3 */
 
-    /* --- radius ----------------------------------------------------------- */
-    --ad-radius-sm:  6px;
-    --ad-radius:     10px;
-    --ad-radius-lg:  14px;
+    /* --- Status: one hue each; -ink clears 6:1 on its tint AND on the canvas --- */
+    --ad-success: #16A34A; --ad-success-ink: #166534; --ad-success-soft: color-mix(in srgb, var(--ad-success) 7%, var(--ad-surface));
+    --ad-warning: #D97706; --ad-warning-ink: #92400E; --ad-warning-soft: color-mix(in srgb, var(--ad-warning) 7%, var(--ad-surface));
+    --ad-danger:  #DC2626; --ad-danger-ink:  #B91C1C; --ad-danger-soft:  color-mix(in srgb, var(--ad-danger) 9%, var(--ad-surface));
+    --ad-info:    #2563EB; --ad-info-ink:    #1D4ED8; --ad-info-soft:    color-mix(in srgb, var(--ad-info) 9%, var(--ad-surface));
+    --ad-live:    #16A34A;  /* realtime dot; always paired with the word "Live" */
+
+    /* --- Fills that CARRY text ------------------------------------------
+       Kept apart from the -ink TEXT roles on purpose. Every -ink role
+       inverts in dark (a pale tint, to read ON a dark surface), so a filled
+       button that used one went to white-on-pale: measured 2.83 primary,
+       2.50 danger-hover, 1.90 success and 1.15 on the neutral button. A fill
+       must hold its weight in both palettes, so it is its own role and the
+       dark block re-states it rather than inheriting the flip. */
+    --ad-success-fill: var(--ad-success-ink);  --ad-on-success: #FFFFFF;   /* 7.13 */
+    --ad-danger-fill:  var(--ad-danger);       --ad-on-danger:  #FFFFFF;   /* 4.83 */
+    --ad-neutral-fill: var(--ad-ink);          --ad-on-neutral: #FFFFFF;   /* 17.62 */
+
+    /* --- Data viz (validated: see spec section 7.4). Slot 1 is a FIXED hex on purpose. --- */
+    --ad-series-1: #D4134E; --ad-series-2: #EDA100; --ad-series-3: #2A78D6; --ad-series-4: #EB6834;
+    --ad-series-5: #1BAF7A; --ad-series-6: #4A3AA7; --ad-series-7: #008300; --ad-series-8: #E87BA4;
+    --ad-series-other: #9C8E8F;
+    --ad-seq-1: #FA7F8F; --ad-seq-2: #E83960; --ad-seq-3: #B90041; --ad-seq-4: #7B0F2C; --ad-seq-5: #490C19;
+    --ad-div-neg: #2A78D6; --ad-div-mid: #EDE6E6; --ad-div-pos: #D4134E;
+    --ad-chart-grid: #EDE6E6; --ad-chart-axis: #CCC1C2; --ad-chart-label: var(--ad-muted);
+    --ad-chart-compare: var(--ad-faint);
+
+    /* --- Type: 9 steps, weights 400-700 --- */
+    --ad-font: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --ad-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
+    --ad-text-2xs: 11px; --ad-lh-2xs: 16px;   /* uppercase micro-labels only, 600, +.06em */
+    --ad-text-xs:  12px; --ad-lh-xs:  16px;   /* meta, chips, axis ticks      */
+    --ad-text-sm:  13px; --ad-lh-sm:  20px;   /* table cells, labels, buttons */
+    --ad-text-md:  14px; --ad-lh-md:  22px;   /* body, desktop inputs         */
+    --ad-text-lg:  16px; --ad-lh-lg:  24px;   /* card titles, phone inputs    */
+    --ad-text-xl:  20px; --ad-lh-xl:  28px;   /* section heads, phone H1      */
+    --ad-text-2xl: 24px; --ad-lh-2xl: 32px;   /* page H1                      */
+    --ad-text-3xl: clamp(22px, 1.1rem + 1.6cqi, 30px); --ad-lh-3xl: 1.15;  /* KPI (container-relative) */
+    --ad-text-4xl: clamp(28px, 1.2rem + 2.4cqi, 40px); --ad-lh-4xl: 1.1;   /* hero KPI */
+    --ad-weight-regular: 400; --ad-weight-medium: 500; --ad-weight-semibold: 600; --ad-weight-bold: 700;
+    --ad-tracking-tight: -0.02em; --ad-tracking-caps: 0.06em;
+
+    /* --- Space (4px base) + named rhythm --- */
+    --ad-space-0-5: 2px; --ad-space-1: 4px; --ad-space-1-5: 6px; --ad-space-2: 8px; --ad-space-3: 12px;
+    --ad-space-4: 16px; --ad-space-5: 20px; --ad-space-6: 24px; --ad-space-8: 32px; --ad-space-10: 40px;
+    --ad-space-12: 48px; --ad-space-16: 64px;
+    --ad-gap-label: 6px; --ad-gap-help: 6px; --ad-gap-field: 20px; --ad-gap-section: 32px;
+    --ad-pad-card: 20px; --ad-gap-grid: 20px;
+    --ad-pad-page: clamp(16px, 2.2vw, 32px);
+    --ad-content-max: 1600px;
+
+    /* --- Shape: one radius per role --- */
+    --ad-radius-xs: 4px;   /* checkbox, tag            */
+    --ad-radius-sm: 6px;   /* chip, tooltip            */
+    --ad-radius-md: 8px;   /* button, input, menu item */
+    --ad-radius-lg: 12px;  /* card, menu panel, toast  */
+    --ad-radius-xl: 16px;  /* modal, drawer, sheet     */
+    --ad-radius-2xl: 20px; /* hero KPI, widget frame   */
     --ad-radius-pill: 999px;
 
-    /* --- elevation -------------------------------------------------------- */
-    --ad-shadow:     0 1px 2px rgba(16, 35, 61, .06), 0 1px 3px rgba(16, 35, 61, .04);
-    --ad-shadow-md:  0 4px 14px rgba(16, 35, 61, .08);
-    --ad-shadow-lg:  0 10px 34px rgba(16, 35, 61, .12);
+    /* --- Controls: inputs and buttons share heights --- */
+    --ad-control-sm: 32px; --ad-control-md: 36px; --ad-control-lg: 44px;
+    --ad-row-comfortable: 52px; --ad-row-compact: 40px;
+    --ad-icon-sm: 16px; --ad-icon-md: 18px; --ad-icon-lg: 20px;
 
-    /* --- focus ------------------------------------------------------------ */
-    --ad-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ad-primary) 26%, transparent);
+    /* --- Layout (kept: the measured, working rail) --- */
+    --ad-sidebar-w: 256px; --ad-sidebar-w-min: 72px; --ad-topbar-h: 60px;
 
-    /* --- layering --------------------------------------------------------- */
-    --ad-z-sidebar:  60;
-    --ad-z-topbar:   50;
-    --ad-z-overlay:  55;
-    --ad-z-dropdown: 70;
-    --ad-z-modal:    90;
-    --ad-z-toast:    100;
+    /* --- Elevation: warm, never navy --- */
+    --ad-shadow-1: 0 1px 2px rgba(33,22,23,.05), 0 1px 1px rgba(33,22,23,.03);
+    --ad-shadow-2: 0 6px 16px -6px rgba(33,22,23,.10), 0 2px 4px -2px rgba(33,22,23,.05);
+    --ad-shadow-3: 0 16px 32px -12px rgba(33,22,23,.16), 0 4px 8px -4px rgba(33,22,23,.06);
+    --ad-shadow-4: 0 28px 64px -16px rgba(33,22,23,.26), 0 0 0 1px rgba(33,22,23,.05);
+    --ad-shadow-brand: 0 6px 16px -6px color-mix(in srgb, var(--ad-primary) 55%, transparent),
+                       0 1px 2px color-mix(in srgb, var(--ad-primary) 30%, transparent);
+    --ad-lip: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(0,0,0,.12);
 
-    /* --- motion ----------------------------------------------------------- */
-    --ad-ease:       cubic-bezier(.4, 0, .2, 1);
-    --ad-dur:        .18s;
+    /* --- Gradients: rail, CTA, hero only (+ soft wash, skeleton, chart area) --- */
+    --ad-grad-rail: linear-gradient(180deg, color-mix(in srgb, var(--ad-rail) 86%, var(--ad-primary)) 0%,
+                    var(--ad-rail) 34%, color-mix(in srgb, var(--ad-rail) 72%, #000) 100%);
+    --ad-grad-cta:  linear-gradient(135deg, var(--ad-primary) 0%, var(--ad-primary-ink) 100%); /* white 5.25-7.12 */
+    --ad-grad-hero: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--ad-gold) 16%, transparent) 0%, transparent 55%),
+                    linear-gradient(125deg, color-mix(in srgb, var(--ad-rail) 70%, var(--ad-primary)) 0%, var(--ad-rail) 58%,
+                    color-mix(in srgb, var(--ad-rail) 70%, #000) 100%);
+    --ad-grad-soft: linear-gradient(135deg, color-mix(in srgb, var(--ad-primary) 5%, var(--ad-surface)) 0%,
+                    color-mix(in srgb, var(--ad-gold) 5%, var(--ad-surface)) 100%);
+    --ad-skeleton-base: var(--ad-sunken);
+    --ad-grad-skeleton: linear-gradient(90deg, var(--ad-skeleton-base) 0%,
+                        color-mix(in srgb, var(--ad-ink) 6%, var(--ad-skeleton-base)) 40%, var(--ad-skeleton-base) 80%);
+    --ad-grad-area: linear-gradient(180deg, color-mix(in srgb, var(--ad-series-1) 22%, transparent) 0%, transparent 100%);
+    --ad-backdrop-blur: saturate(1.4) blur(8px);
+
+    /* --- Motion --- */
+    --ad-dur-instant: 80ms; --ad-dur-fast: 120ms; --ad-dur-base: 180ms; --ad-dur-slow: 240ms;
+    --ad-dur-slower: 320ms; --ad-dur-chart: 600ms; --ad-dur-count: 900ms; --ad-dur-shimmer: 1400ms;
+    --ad-ease-standard: cubic-bezier(.2, 0, 0, 1);
+    --ad-ease-out:      cubic-bezier(.22, 1, .36, 1);   /* = storefront --ease-out */
+    --ad-ease-in:       cubic-bezier(.4, 0, 1, 1);      /* exits run at 70% of enter duration */
+    --ad-ease-spring:   cubic-bezier(.34, 1.4, .64, 1); /* knobs and ticks only */
+    --ad-lift: -2px;
+
+    /* --- Layers: one scale, used everywhere ---
+       MEASURED (A2): --ad-z-drawer was 80, which put an admin drawer UNDER
+       the shared scrim. An admin drawer is opened by app.js SIK.openDrawer
+       (spec 4.7: do not fork it), and that engine shows the storefront's
+       #sikOverlay, which app.css puts at --z-overlay: 90. At 80 the scrim
+       covered the drawer: the panel was greyed out and every click on it
+       landed on the scrim, which closed it. 96 clears the scrim and still
+       sits below --ad-z-modal. The two scales share one page, so the admin's
+       numbers have to be read against app.css's, not only against each
+       other. --ad-z-dropdown (70) is unaffected: a plain anchored menu never
+       has a scrim. */
+    --ad-z-sticky: 20; --ad-z-topbar: 50; --ad-z-overlay: 55; --ad-z-rail: 60; --ad-z-dropdown: 70;
+    --ad-z-drawer: 96; --ad-z-modal: 120; --ad-z-palette: 130; --ad-z-tooltip: 150; --ad-z-toast: 200;
+
+    /* --- Legacy aliases ---------------------------------------------------
+       Kept for ONE release. 108 admin pages and ~1,100 inline styles still
+       name these, and a page keeps rendering correctly until its roll-out
+       wave re-points it. A19 deletes the block once a grep shows 0 uses. --- */
+    --ad-bg: var(--ad-canvas);             --ad-text: var(--ad-ink);
+    --ad-surface-alt: var(--ad-surface-2); --ad-border: var(--ad-line);
+    --ad-border-strong: var(--ad-line-input);  /* was 1.48:1, now 3.14:1 - intended */
+    --ad-navy: var(--ad-ink);              --ad-sidebar-hover: var(--ad-rail-hover);
+    --ad-sidebar-active: var(--ad-rail-active); --ad-sidebar-text: var(--ad-rail-ink);
+    --ad-radius: var(--ad-radius-lg);      --ad-shadow: var(--ad-shadow-1);
+    --ad-shadow-md: var(--ad-shadow-2);    --ad-shadow-lg: var(--ad-shadow-3);
+    --ad-ease: var(--ad-ease-standard);    --ad-dur: var(--ad-dur-base);
+    --ad-fs-caption: var(--ad-text-2xs);   --ad-fs-small: var(--ad-text-xs);  --ad-fs-body: var(--ad-text-sm);
+    --ad-fs-base: var(--ad-text-md);       --ad-fs-lead: var(--ad-text-lg);   --ad-fs-h3: var(--ad-text-lg);
+    --ad-fs-h2: var(--ad-text-2xl);        --ad-fs-display: var(--ad-text-3xl);
+    --ad-1: 4px; --ad-2: 8px; --ad-3: 12px; --ad-4: 16px; --ad-5: 20px; --ad-6: 24px;
+    --ad-8: 32px; --ad-10: 40px; --ad-12: 48px; --ad-16: 64px;
+    --ad-z-sidebar: var(--ad-z-rail);
 }
 
-/* One switch turns every transition in the admin off. */
+/* --- Dark ----------------------------------------------------------------
+   PREPARED, NOT SWITCHED ON. Admin pages never carry data-theme: only the
+   storefront's pre-paint bootstrap in includes/header.php stamps it, and
+   admin/includes/header.php does not include that script. A18 adds the admin
+   switch (its own storage key, `sik-admin-theme`) and turns this block on.
+   Designed, not inverted: warm near-black with surfaces stepping UP.       */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --ad-canvas: #120D0D; --ad-surface: #1B1516; --ad-surface-2: #231C1D; --ad-sunken: #150F10;
+    --ad-elevated: #2A2223; --ad-skeleton-base: #2A2223;
+    --ad-hover: rgba(255,255,255,.05); --ad-press: rgba(255,255,255,.09);
+    --ad-selected: color-mix(in srgb, var(--ad-primary) 16%, var(--ad-surface));
+    --ad-scrim: rgba(0,0,0,.6); --ad-scrim-dense: rgba(0,0,0,.82);
+    --ad-ink: #F4EEEF; --ad-ink-2: #D7CECF; --ad-muted: #B3A7A8; --ad-faint: #827778;
+    --ad-line: #362E2E; --ad-line-strong: #4C4243; --ad-line-input: #756869;           /* 3.38 */
+    /* Gold as TEXT has to flip too: #92610A is a dark amber made for white
+       paper and measures 3.38 on the dark surface. The bright step reads. */
+    --ad-gold-ink: var(--ad-gold-2);
+    --ad-primary-ink:  color-mix(in srgb, var(--ad-primary) 58%, #fff);                /* #E67698 6.36, TEXT only */
+    --ad-primary-soft: color-mix(in srgb, var(--ad-primary) 16%, var(--ad-surface));
+    --ad-primary-line: color-mix(in srgb, var(--ad-primary) 45%, var(--ad-surface));
+    --ad-focus:        color-mix(in srgb, var(--ad-primary) 58%, #fff);
+    /* Filled buttons keep the LIGHT ink shade: the dark text shade cannot carry white. */
+    --ad-primary-fill: color-mix(in srgb, var(--ad-primary) 82%, #000);   /* white 7.14 */
+    --ad-success-fill: #166534;                                          /* white 7.13 */
+    --ad-danger-fill:  #DC2626;                                          /* white 4.83 */
+    /* The neutral button inverts instead: near-black on a near-black canvas
+       reads as a hole, not a control. */
+    --ad-neutral-fill: #E9E1E2; --ad-on-neutral: #211617;                /* 15.63 */
+    --ad-grad-cta: linear-gradient(135deg, var(--ad-primary) 0%, var(--ad-primary-fill) 100%);
+    --ad-rail: color-mix(in srgb, var(--ad-sidebar) 45%, #0D0708);                      /* ~#28050F */
+    --ad-success-ink: color-mix(in srgb, var(--ad-success) 55%, #fff); --ad-success-soft: color-mix(in srgb, var(--ad-success) 16%, var(--ad-surface));
+    --ad-warning-ink: color-mix(in srgb, var(--ad-warning) 55%, #fff); --ad-warning-soft: color-mix(in srgb, var(--ad-warning) 16%, var(--ad-surface));
+    --ad-danger-ink:  color-mix(in srgb, var(--ad-danger) 55%, #fff);  --ad-danger-soft:  color-mix(in srgb, var(--ad-danger) 16%, var(--ad-surface));
+    --ad-info-ink:    color-mix(in srgb, var(--ad-info) 55%, #fff);    --ad-info-soft:    color-mix(in srgb, var(--ad-info) 16%, var(--ad-surface));
+    --ad-series-1: #E23A6C; --ad-series-2: #C98500; --ad-series-3: #3987E5; --ad-series-4: #D95926;
+    --ad-series-5: #199E70; --ad-series-6: #9085E9; --ad-series-7: #008300; --ad-series-8: #D55181;
+    --ad-series-other: #827778;
+    --ad-seq-1: #961738; --ad-seq-2: #C41849; --ad-seq-3: #E44062; --ad-seq-4: #F47284; --ad-seq-5: #FCA0A9;
+    --ad-div-mid: #362E2E; --ad-chart-grid: #2E2727; --ad-chart-axis: #494040;
+    --ad-shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.03);
+    --ad-shadow-2: 0 8px 20px -8px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
+    --ad-shadow-3: 0 18px 36px -12px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.05);
+    --ad-shadow-4: 0 30px 64px -16px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.06);
+    --ad-shadow-brand: 0 8px 22px -8px color-mix(in srgb, var(--ad-primary) 65%, transparent);
+    --ad-grad-soft: linear-gradient(135deg, color-mix(in srgb, var(--ad-primary) 12%, var(--ad-surface)) 0%,
+                    color-mix(in srgb, var(--ad-gold) 8%, var(--ad-surface)) 100%);
+}
+
+/* --- Bridge: storefront atoms follow the admin inside the admin ----------
+   Without it every sik-* component in the admin reads the storefront's own
+   theme settings (pre-rebrand orange on this install): the product-form
+   tabs, the order timeline dot, the toast action link and every
+   .sik-input:focus ring.
+
+   TRAP: app.css DERIVES a long list of roles from --sik-primary, --sik-text
+   and --sik-surface at :root. A custom property is computed where it is
+   declared and inherited as a VALUE, so overriding --sik-primary here does
+   not recompute them. Every derived role has to be re-pointed by name. The
+   list below was taken from
+       grep -nE "^ *--sik-[a-z0-9-]*:.*var\(--sik-" assets/css/app.css
+   and must be re-checked whenever app.css gains a derived role.
+
+   .ad-login is listed too: the sign-in and two-step pages carry THAT class on
+   <body>, not .ad-body, so without it every .sik-input, .sik-alert and
+   .sik-btn on the way IN to the admin reads the storefront palette.      */
+.ad-body,
+.ad-login {
+    /* inputs */
+    --sik-primary:      var(--ad-primary);
+    --sik-accent:       var(--ad-primary-hover);
+    --sik-navy:         var(--ad-ink);
+    --sik-text:         var(--ad-ink);
+    --sik-muted:        var(--ad-muted);
+    --sik-border:       var(--ad-line);
+    --sik-surface:      var(--ad-surface);
+    --sik-soft:         var(--ad-sunken);
+    --sik-bg:           var(--ad-canvas);
+
+    /* derived from --sik-primary */
+    --sik-primary-dark: color-mix(in srgb, var(--ad-primary) 84%, #000);
+    --sik-primary-ink:  var(--ad-primary-ink);
+    --sik-primary-soft: var(--ad-primary-soft);
+    --sik-cta:          var(--ad-primary-ink);
+    --sik-cta-hover:    var(--ad-primary-hover);
+    --sik-focus-ring:   var(--ad-focus-ring);
+    --sik-grad-from:    var(--ad-primary);
+    --sik-grad-to:      var(--ad-primary-hover);
+    --sik-ring-brand:   0 0 0 1px var(--ad-primary-line);
+    --sik-shadow-brand:    var(--ad-shadow-brand);
+    --sik-shadow-brand-lg: var(--ad-shadow-3);
+    --sik-shadow-brand-sm: var(--ad-shadow-1);
+
+    /* derived from --sik-text / --sik-ink */
+    --sik-ink:          var(--ad-ink);
+    --sik-ink-2:        var(--ad-ink-2);
+    --sik-placeholder:  var(--ad-faint);
+    --sik-hover:        var(--ad-hover);
+    --sik-press:        var(--ad-press);
+    --sik-line:         var(--ad-line);
+    --sik-line-strong:  var(--ad-line-strong);
+    --sik-input-line:   var(--ad-line-input);
+    --sik-inverse:      var(--ad-ink);
+    --sik-glass-line:   var(--ad-line);
+
+    /* derived from --sik-surface / --sik-soft */
+    --sik-surface-2:    var(--ad-surface-2);
+    --sik-elevated:     var(--ad-elevated);
+    --sik-media:        var(--ad-sunken);
+    --sik-input-bg:     var(--ad-surface);
+
+    /* The SHARED skeleton kit. A2's quick view deliberately reuses .sik-skel
+       rather than forking a second set of bones, and app.css derives the bone
+       tone at :root from --sik-ink over --sik-surface. Those are overridden
+       here, on <body> - one element down - so the derivation never re-runs and
+       the bones kept painting the STOREFRONT's cool navy-grey inside a warm
+       admin card. MEASURED by the verifier: base resolved from --sik-text
+       (#0F2143 on this install) instead of the admin's warm --ad-sunken.
+       Named explicitly, like every other derived role above. */
+    --sik-skel-base:    var(--ad-skeleton-base);
+    --sik-skel-well:    color-mix(in srgb, var(--ad-ink) 4.5%, var(--ad-surface));
+    --sik-skel-radius:  var(--ad-radius-xs);
+
+    /* status: app.css derives every -ink from --sik-ink, so they drift too */
+    --sik-success:      var(--ad-success);   --sik-success-ink: var(--ad-success-ink);
+    --sik-danger:       var(--ad-danger);    --sik-danger-ink:  var(--ad-danger-ink);
+    --sik-warning:      var(--ad-warning);   --sik-warning-ink: var(--ad-warning-ink);
+    --sik-info:         var(--ad-info);      --sik-info-ink:    var(--ad-info-ink);
+    --sik-success-soft: var(--ad-success-soft); --sik-danger-soft:  var(--ad-danger-soft);
+    --sik-warning-soft: var(--ad-warning-soft); --sik-info-soft:    var(--ad-info-soft);
+
+    /* shape: the admin is denser than the storefront's theme radius */
+    --sik-radius-sm:    var(--ad-radius-md);
+
+    font-family: var(--ad-font);
+}
+
+/* --- One reduced-motion switch ------------------------------------------
+   The token half collapses every duration a component reads; the universal
+   rule below it catches animations declared before this system existed and
+   anything a third-party style brings in. Both are needed.               */
 @media (prefers-reduced-motion: reduce) {
-    :root { --ad-dur: 0s; }
-    .ad-body *, .ad-body *::before, .ad-body *::after {
+    :root {
+        --ad-dur-instant: .01ms; --ad-dur-fast: .01ms; --ad-dur-base: .01ms; --ad-dur-slow: .01ms;
+        --ad-dur-slower: .01ms; --ad-dur-chart: .01ms; --ad-dur-count: .01ms; --ad-dur-shimmer: 0s;
+        --ad-dur: .01ms; --ad-lift: 0px;
+    }
+    .ad-body *, .ad-body *::before, .ad-body *::after,
+    .ad-login *, .ad-login *::before, .ad-login *::after {
         animation-duration: .001ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: .001ms !important;
@@ -120,17 +383,22 @@
     }
 }
 
+/* --- Coarse pointer / phones: controls grow, density does not ------------ */
+@media (pointer: coarse), (max-width: 767px) {
+    :root { --ad-control-md: 44px; --ad-pad-card: 16px; --ad-gap-grid: 16px; }
+}
+
 /* A single focus treatment for the whole admin. */
 .ad-body :focus-visible {
-    outline: 2px solid var(--ad-primary-ink);
+    outline: 2px solid var(--ad-focus);
     outline-offset: 2px;
     border-radius: var(--ad-radius-sm);
 }
 
 body.ad-body {
-    background: var(--ad-bg);
-    color: var(--ad-text);
-    font-size: 14px;
+    background: var(--ad-canvas);
+    color: var(--ad-ink);
+    font-size: var(--ad-text-md);
     padding-bottom: 0;
 }
 
@@ -145,7 +413,7 @@ body.ad-body {
     display: flex;
     flex-direction: column;
     margin-left: var(--ad-sidebar-w);
-    transition: margin-left .22s ease;
+    transition: margin-left var(--ad-dur-base) var(--ad-ease-standard);
 }
 /* The collapsed rail is desktop-only; see the min-width: 1024px block below. */
 @media (max-width: 1023px) { .ad-main { margin-left: 0; } }
@@ -163,14 +431,14 @@ body.ad-body {
     inset: 0 auto 0 0;
     width: var(--ad-sidebar-w);
     background: var(--ad-sidebar);
-    color: var(--ad-sidebar-text);
+    color: var(--ad-rail-ink);
     display: flex;
     flex-direction: column;
-    z-index: 60;
-    transition: width .22s ease, transform .26s ease;
+    z-index: var(--ad-z-rail);
+    transition: width var(--ad-dur-base) var(--ad-ease-standard), transform var(--ad-dur-slow) var(--ad-ease-standard);
 }
 @media (max-width: 1023px) {
-    .ad-sidebar { transform: translateX(-102%); width: var(--ad-sidebar-w); box-shadow: var(--ad-shadow-lg); }
+    .ad-sidebar { transform: translateX(-102%); width: var(--ad-sidebar-w); box-shadow: var(--ad-shadow-3); }
     .ad-sidebar.is-open { transform: none; }
 }
 
@@ -180,7 +448,7 @@ body.ad-body {
     align-items: center;
     gap: 10px;
     padding: 0 18px;
-    border-bottom: 1px solid rgba(255, 255, 255, .08);
+    border-bottom: 1px solid var(--ad-rail-line);
     flex: none;
 }
 .ad-sidebar__head img { height: 32px; width: auto; }
@@ -188,14 +456,14 @@ body.ad-body {
 
 .ad-sidebar__nav { flex: 1; overflow-y: auto; padding: 12px 10px 24px; }
 .ad-sidebar__nav::-webkit-scrollbar { width: 5px; }
-.ad-sidebar__nav::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .16); border-radius: 999px; }
+.ad-sidebar__nav::-webkit-scrollbar-thumb { background: color-mix(in srgb, #fff 16%, var(--ad-rail)); border-radius: var(--ad-radius-pill); }
 
 .ad-sidebar__section {
-    font-size: 10px;
+    font-size: var(--ad-text-2xs);
     font-weight: 800;
     letter-spacing: .12em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, .32);
+    color: var(--ad-rail-label);
     padding: 16px 12px 7px;
 }
 
@@ -204,40 +472,40 @@ body.ad-body {
     align-items: center;
     gap: 11px;
     padding: 10px 12px;
-    border-radius: 8px;
-    font-size: 13.5px;
+    border-radius: var(--ad-radius-md);
+    font-size: var(--ad-text-sm);
     font-weight: 500;
-    color: var(--ad-sidebar-text);
+    color: var(--ad-rail-ink);
     width: 100%;
     background: none;
     border: 0;
     cursor: pointer;
     text-align: left;
-    transition: background .15s ease, color .15s ease;
+    transition: background var(--ad-dur-fast) var(--ad-ease-standard), color var(--ad-dur-fast) var(--ad-ease-standard);
     position: relative;
 }
-.ad-nav__link:hover { background: var(--ad-sidebar-hover); color: #fff; }
-.ad-nav__link.is-active { background: var(--ad-sidebar-active); color: #fff; font-weight: 600; }
+.ad-nav__link:hover { background: var(--ad-rail-hover); color: var(--ad-rail-ink-strong); }
+.ad-nav__link.is-active { background: var(--ad-rail-active); color: var(--ad-rail-ink-strong); font-weight: var(--ad-weight-semibold); }
 .ad-nav__link svg { flex: none; }
 .ad-nav__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ad-nav__caret { transition: transform .2s ease; opacity: .65; }
+.ad-nav__caret { transition: transform var(--ad-dur-base) var(--ad-ease-standard); opacity: .65; }
 .ad-nav__group.is-open > .ad-nav__link .ad-nav__caret { transform: rotate(180deg); }
 
 .ad-nav__badge {
     background: var(--ad-primary);
-    color: #fff;
-    font-size: 10px;
+    color: var(--ad-on-primary);
+    font-size: var(--ad-text-2xs);
     font-weight: 800;
     min-width: 19px;
     height: 19px;
     padding: 0 5px;
-    border-radius: 999px;
+    border-radius: var(--ad-radius-pill);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex: none;
 }
-.ad-nav__link.is-active .ad-nav__badge { background: rgba(255, 255, 255, .25); }
+.ad-nav__link.is-active .ad-nav__badge { background: color-mix(in srgb, #fff 25%, transparent); }
 
 .ad-nav__sub { display: none; padding: 3px 0 6px 34px; }
 .ad-nav__group.is-open > .ad-nav__sub { display: block; }
@@ -247,14 +515,14 @@ body.ad-body {
     justify-content: space-between;
     gap: 8px;
     padding: 7px 12px;
-    border-radius: 7px;
-    font-size: 13px;
-    color: rgba(255, 255, 255, .58);
-    transition: all .14s ease;
+    border-radius: var(--ad-radius-sm);
+    font-size: var(--ad-text-sm);
+    color: var(--ad-rail-ink);
+    transition: all var(--ad-dur-fast) var(--ad-ease-standard);
 }
-.ad-nav__sublink:hover { color: #fff; background: rgba(255, 255, 255, .07); }
+.ad-nav__sublink:hover { color: var(--ad-rail-ink-strong); background: var(--ad-rail-hover); }
 .ad-nav__sublink.is-active {
-    color: #fff;
+    color: var(--ad-rail-ink-strong);
     font-weight: 600;
     /* Was a frozen rgba(244, 81, 30) - the pre-rebrand orange - so the
        current page was highlighted in a colour the admin no longer uses,
@@ -265,9 +533,9 @@ body.ad-body {
 .ad-sidebar__foot {
     flex: none;
     padding: 12px;
-    border-top: 1px solid rgba(255, 255, 255, .08);
-    font-size: 11.5px;
-    color: rgba(255, 255, 255, .4);
+    border-top: 1px solid var(--ad-rail-line);
+    font-size: var(--ad-text-2xs);
+    color: var(--ad-rail-ink);
 }
 
 /* --------------------------------------------------------------------------
@@ -297,7 +565,7 @@ body.ad-body {
     body.ad-collapsed .ad-sidebar__logo-icon { display: block; }
 
     body.ad-collapsed .ad-sidebar__section { text-align: center; font-size: 0; padding: 12px 0 4px; }
-    body.ad-collapsed .ad-sidebar__section::after { content: "···"; font-size: 11px; letter-spacing: 0; }
+    body.ad-collapsed .ad-sidebar__section::after { content: "···"; font-size: var(--ad-text-2xs); letter-spacing: 0; }
 
     /* Labels become hover tooltips - visually. The text itself stays in the
        accessibility tree, clipped rather than removed: it is the only text
@@ -331,16 +599,16 @@ body.ad-body {
         left: calc(100% + 10px);
         top: 50%;
         transform: translateY(-50%);
-        background: var(--ad-sidebar);
-        color: #fff;
+        background: var(--ad-rail);
+        color: var(--ad-rail-ink-strong);
         padding: 6px 11px;
-        border-radius: 7px;
-        font-size: 12.5px;
+        border-radius: var(--ad-radius-sm);
+        font-size: var(--ad-text-xs);
         white-space: nowrap;
         opacity: 0;
         pointer-events: none;
-        transition: opacity .15s ease;
-        box-shadow: var(--ad-shadow-lg);
+        transition: opacity var(--ad-dur-fast) var(--ad-ease-standard);
+        box-shadow: var(--ad-shadow-3);
         z-index: 5;
     }
     body.ad-collapsed .ad-nav__link:hover::after,
@@ -355,20 +623,20 @@ body.ad-body {
 .ad-topbar {
     height: var(--ad-topbar-h);
     background: var(--ad-surface);
-    border-bottom: 1px solid var(--ad-border);
+    border-bottom: 1px solid var(--ad-line);
     display: flex;
     align-items: center;
     gap: 14px;
     padding: 0 20px;
     position: sticky;
     top: 0;
-    z-index: 50;
+    z-index: var(--ad-z-topbar);
 }
 @media (max-width: 640px) { .ad-topbar { padding: 0 12px; gap: 8px; } }
 
 .ad-iconbtn {
     width: 38px; height: 38px;
-    border-radius: 9px;
+    border-radius: var(--ad-radius-md);
     border: 1px solid transparent;
     background: none;
     color: var(--ad-muted);
@@ -378,20 +646,24 @@ body.ad-body {
     cursor: pointer;
     position: relative;
     flex: none;
-    transition: all .15s ease;
+    transition: all var(--ad-dur-fast) var(--ad-ease-standard);
 }
-.ad-iconbtn:hover { background: var(--ad-bg); color: var(--ad-text); }
+.ad-iconbtn:hover { background: var(--ad-canvas); color: var(--ad-ink); }
+/* A copy button beside a value in a key/value row, not a topbar control: it
+   sits ON a line of text, so it takes the line, not a 38px square. The touch
+   rule in section 40 still grows it on a coarse pointer. */
+.ad-iconbtn--sm { width: 28px; height: 28px; border-radius: var(--ad-radius-sm); }
 
 /* Context label, not a heading — the page's h1 sits directly below it. Below
    the width where global search appears it yields the row entirely. */
 .ad-topbar__title {
-    font-size: var(--ad-fs-lead);
+    font-size: var(--ad-text-lg);
     font-weight: 700;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--ad-text);
+    color: var(--ad-ink);
 }
 @media (max-width: 719px) { .ad-topbar__title { display: none; } }
 .ad-topbar__spacer { margin-left: auto; }
@@ -402,25 +674,25 @@ body.ad-body {
 @media (max-width: 719px) { .ad-topbar__search { max-width: none; } }
 .ad-topbar__search input {
     width: 100%;
-    border: 1px solid var(--ad-border);
-    background: var(--ad-bg);
-    border-radius: 9px;
+    border: 1px solid var(--ad-line);
+    background: var(--ad-canvas);
+    border-radius: var(--ad-radius-md);
     padding: 9px 12px 9px 36px;
-    font-size: 13.5px;
+    font-size: var(--ad-text-sm);
     outline: none;
 }
-.ad-topbar__search input:focus { border-color: var(--ad-primary); background: #fff; }
+.ad-topbar__search input:focus { border-color: var(--ad-primary); background: var(--ad-surface); }
 .ad-topbar__search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ad-muted); }
 
 .ad-avatar {
     width: 34px; height: 34px;
     border-radius: 50%;
     background: var(--ad-primary);
-    color: #fff;
+    color: var(--ad-on-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 12.5px;
+    font-size: var(--ad-text-xs);
     font-weight: 800;
     flex: none;
 }
@@ -431,13 +703,13 @@ body.ad-body {
     right: 0;
     top: calc(100% + 8px);
     min-width: 230px;
-    background: #fff;
-    border: 1px solid var(--ad-border);
-    border-radius: var(--ad-radius);
-    box-shadow: var(--ad-shadow-lg);
+    background: var(--ad-elevated);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
+    box-shadow: var(--ad-shadow-3);
     padding: 7px;
     display: none;
-    z-index: 70;
+    z-index: var(--ad-z-dropdown);
 }
 .ad-dropdown.is-open .ad-dropdown__panel { display: block; }
 .ad-dropdown__item {
@@ -445,19 +717,19 @@ body.ad-body {
     align-items: center;
     gap: 10px;
     padding: 9px 11px;
-    border-radius: 7px;
-    font-size: 13.5px;
-    color: var(--ad-text);
+    border-radius: var(--ad-radius-sm);
+    font-size: var(--ad-text-sm);
+    color: var(--ad-ink);
     width: 100%;
     background: none;
     border: 0;
     cursor: pointer;
     text-align: left;
 }
-.ad-dropdown__item:hover { background: var(--ad-bg); }
+.ad-dropdown__item:hover { background: var(--ad-canvas); }
 .ad-dropdown__item--danger { color: var(--ad-danger-ink); }
-.ad-dropdown__head { padding: 11px; border-bottom: 1px solid var(--ad-border); margin-bottom: 5px; }
-.ad-dropdown__divider { height: 1px; background: var(--ad-border); margin: 5px 0; }
+.ad-dropdown__head { padding: 11px; border-bottom: 1px solid var(--ad-line); margin-bottom: 5px; }
+.ad-dropdown__divider { height: 1px; background: var(--ad-line); margin: 5px 0; }
 
 .ad-dot {
     position: absolute;
@@ -465,7 +737,7 @@ body.ad-body {
     width: 8px; height: 8px;
     border-radius: 50%;
     background: var(--ad-primary);
-    border: 2px solid #fff;
+    border: 2px solid var(--ad-surface);
 }
 
 /* --------------------------------------------------------------------------
@@ -479,11 +751,11 @@ body.ad-body {
     flex-wrap: wrap;
     margin-bottom: 20px;
 }
-.ad-page__title { font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
-.ad-page__sub { font-size: 13.5px; color: var(--ad-muted); margin-top: 3px; }
+.ad-page__title { font-size: var(--ad-text-xl); font-weight: 700; letter-spacing: -.01em; }
+.ad-page__sub { font-size: var(--ad-text-sm); color: var(--ad-muted); margin-top: 3px; }
 .ad-page__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-.ad-crumb { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ad-muted); margin-bottom: 6px; }
+.ad-crumb { display: flex; align-items: center; gap: 6px; font-size: var(--ad-text-xs); color: var(--ad-muted); margin-bottom: 6px; }
 .ad-crumb a:hover { color: var(--ad-primary); }
 
 /* --------------------------------------------------------------------------
@@ -491,29 +763,29 @@ body.ad-body {
    -------------------------------------------------------------------------- */
 .ad-card {
     background: var(--ad-surface);
-    border: 1px solid var(--ad-border);
-    border-radius: var(--ad-radius);
-    box-shadow: var(--ad-shadow);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
+    box-shadow: var(--ad-shadow-1);
     overflow: hidden;
     margin-bottom: 18px;
 }
 .ad-card__head {
     padding: 14px 18px;
-    border-bottom: 1px solid var(--ad-border);
+    border-bottom: 1px solid var(--ad-line);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
 }
-.ad-card__title { font-size: 14.5px; font-weight: 700; }
-.ad-card__sub { font-size: 12.5px; color: var(--ad-muted); }
+.ad-card__title { font-size: var(--ad-text-md); font-weight: 700; }
+.ad-card__sub { font-size: var(--ad-text-xs); color: var(--ad-muted); }
 .ad-card__body { padding: 18px; }
 .ad-card__body--flush { padding: 0; }
 .ad-card__foot {
     padding: 13px 18px;
-    border-top: 1px solid var(--ad-border);
-    background: var(--ad-bg);
+    border-top: 1px solid var(--ad-line);
+    background: var(--ad-canvas);
     display: flex;
     gap: 8px;
     justify-content: flex-end;
@@ -602,9 +874,9 @@ body.ad-body {
    -------------------------------------------------------------------------- */
 .ad-stat {
     background: var(--ad-surface);
-    border: 1px solid var(--ad-border);
-    border-radius: var(--ad-radius);
-    box-shadow: var(--ad-shadow);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
+    box-shadow: var(--ad-shadow-1);
     padding: 16px;
     display: flex;
     align-items: center;
@@ -612,7 +884,7 @@ body.ad-body {
        the @container steps below, where that is how the tile changes shape. */
     flex-wrap: wrap;
     gap: 13px;
-    transition: transform .16s ease, box-shadow .16s ease;
+    transition: transform var(--ad-dur-fast) var(--ad-ease-standard), box-shadow var(--ad-dur-fast) var(--ad-ease-standard);
     /* The tile sizes its own contents.
        A KPI numeral has to answer to the width of the TILE, not the width of
        the window: the same 4-up row is 280px per tile on a 1440px laptop and
@@ -625,10 +897,10 @@ body.ad-body {
        tile setting the track's floor (and, through it, the page's). */
     min-width: 0;
 }
-a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); }
+a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-3); }
 .ad-stat__icon {
     width: 42px; height: 42px;
-    border-radius: 11px;
+    border-radius: var(--ad-radius-lg);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -641,8 +913,8 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-stat__icon--blue    { background: var(--ad-info-soft);     color: var(--ad-info-ink); }
 .ad-stat__icon--amber   { background: var(--ad-warning-soft);  color: var(--ad-warning-ink); }
 .ad-stat__icon--red     { background: var(--ad-danger-soft);   color: var(--ad-danger-ink); }
-.ad-stat__icon--violet  { background: #F5F3FF;                 color: #6D28D9; }
-.ad-stat__icon--navy    { background: #EEF2F9;                 color: var(--ad-navy); }
+.ad-stat__icon--violet  { background: color-mix(in srgb, var(--ad-series-6) 9%, var(--ad-surface)); color: var(--ad-series-6); }
+.ad-stat__icon--navy    { background: var(--ad-sunken);        color: var(--ad-ink); }
 /* flex-basis 0, not auto. The tile is a wrap-flex (the @container steps below
    move the body onto its own line that way), and with an `auto` basis the body
    asked for its own max-content width - so a tile whose sub-line happened to be
@@ -652,11 +924,17 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-stat__body { min-width: 0; flex: 1 1 0; }
 .ad-stat__value {
     display: block;
-    font-size: var(--ad-fs-display);
+    /* 28px is LITERAL on purpose. The legacy alias --ad-fs-display now points
+       at --ad-text-3xl, a clamp() in cqi units, and this element sits inside
+       the `adstat` container - so the token would quietly shrink every KPI to
+       22px and contradict the five @container steps below, which are the
+       measured fix for the tile overflowing at 768 and 1024. A7 rebuilds the
+       tile and owns the container-relative figure. */
+    font-size: 28px;
     font-weight: 800;
     line-height: 1.1;
     letter-spacing: -.02em;
-    color: var(--ad-text);
+    color: var(--ad-ink);
     /* Figures line up column-to-column when several KPIs sit in a row. */
     font-variant-numeric: tabular-nums;
     /* Last resort. Everything below keeps the figure on one line; if a tile is
@@ -664,8 +942,8 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
        the tile rather than hanging out of it and scrolling the page. */
     overflow-wrap: anywhere;
 }
-.ad-stat__label { display: block; font-size: var(--ad-fs-body); color: var(--ad-muted); margin-top: var(--ad-1); }
-.ad-stat__sub { display: block; font-size: var(--ad-fs-caption); color: var(--ad-muted); margin-top: 3px; }
+.ad-stat__label { display: block; font-size: var(--ad-text-sm); color: var(--ad-muted); margin-top: var(--ad-1); }
+.ad-stat__sub { display: block; font-size: var(--ad-text-2xs); color: var(--ad-muted); margin-top: 3px; }
 
 /* The steps.
    -------------------------------------------------------------------------
@@ -700,12 +978,12 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 }
 @container adstat (max-width: 218px) {
     .ad-stat__body { flex: 1 1 100%; }
-    .ad-stat__icon { width: 34px; height: 34px; border-radius: 9px; }
+    .ad-stat__icon { width: 34px; height: 34px; border-radius: var(--ad-radius-md); }
     .ad-stat__icon svg { width: 17px; height: 17px; }
 }
 @container adstat (max-width: 162px) {
     .ad-stat__value { font-size: 18px; letter-spacing: -.01em; }
-    .ad-stat__icon { width: 30px; height: 30px; border-radius: 8px; }
+    .ad-stat__icon { width: 30px; height: 30px; border-radius: var(--ad-radius-md); }
     .ad-stat__icon svg { width: 15px; height: 15px; }
 }
 @container adstat (max-width: 140px) {
@@ -716,7 +994,7 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: var(--ad-fs-small);
+    font-size: var(--ad-text-xs);
     font-weight: 700;
     padding: 2px 7px;
     border-radius: var(--ad-radius-pill);
@@ -724,7 +1002,7 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 }
 .ad-delta--up   { background: var(--ad-success-soft); color: var(--ad-success-ink); }
 .ad-delta--down { background: var(--ad-danger-soft);  color: var(--ad-danger-ink); }
-.ad-delta--flat { background: #F1F5F9;                color: var(--ad-muted); }
+.ad-delta--flat { background: var(--ad-sunken);       color: var(--ad-muted); }
 
 /* --------------------------------------------------------------------------
    Tables
@@ -746,11 +1024,11 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     background:
         linear-gradient(to right, var(--ad-surface) 30%, transparent) left / 24px 100% no-repeat local,
         linear-gradient(to left,  var(--ad-surface) 30%, transparent) right / 24px 100% no-repeat local,
-        radial-gradient(farthest-side at 0 50%, rgba(16,35,61,.14), transparent) left / 12px 100% no-repeat scroll,
-        radial-gradient(farthest-side at 100% 50%, rgba(16,35,61,.14), transparent) right / 12px 100% no-repeat scroll;
+        radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--ad-ink) 14%, transparent), transparent) left / 12px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--ad-ink) 14%, transparent), transparent) right / 12px 100% no-repeat scroll;
 }
 .ad-tablewrap::-webkit-scrollbar { height: 8px; }
-.ad-tablewrap::-webkit-scrollbar-thumb { background: var(--ad-border-strong); border-radius: var(--ad-radius-pill); }
+.ad-tablewrap::-webkit-scrollbar-thumb { background: var(--ad-line-input); border-radius: var(--ad-radius-pill); }
 .ad-tablewrap::-webkit-scrollbar-thumb:hover { background: var(--ad-faint); }
 
 /* No min-width floor.
@@ -762,17 +1040,17 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
    296px over at 1024px, 168px at 1280px and 88px at 1440px. A table that is
    genuinely too wide now stacks into cards instead (initResponsiveTables() in
    admin.js measures it); a table that fits simply fits. */
-.ad-table { width: 100%; border-collapse: collapse; font-size: var(--ad-fs-body); }
+.ad-table { width: 100%; border-collapse: collapse; font-size: var(--ad-text-sm); }
 .ad-table th {
     text-align: left;
-    font-size: 11px;
+    font-size: var(--ad-text-2xs);
     font-weight: 800;
     letter-spacing: .06em;
     text-transform: uppercase;
     color: var(--ad-muted);
     padding: 11px 14px;
-    background: var(--ad-bg);
-    border-bottom: 1px solid var(--ad-border);
+    background: var(--ad-canvas);
+    border-bottom: 1px solid var(--ad-line);
     /* Headers wrap. `nowrap` made every header its column's unbreakable
        minimum, which is why `th.ad-table__actions` was the element sticking
        out of 29 list tables and a bare `th` out of 17 more. A header only
@@ -783,7 +1061,7 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 }
 .ad-table td {
     padding: 12px 14px;
-    border-bottom: 1px solid var(--ad-border);
+    border-bottom: 1px solid var(--ad-line);
     vertical-align: middle;
     /* An address, an email or a URL breaks rather than widening its column.
        `break-word`, not `anywhere`: `anywhere` would also drop the cell's
@@ -792,7 +1070,7 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     overflow-wrap: break-word;
 }
 .ad-table tbody tr:last-child td { border-bottom: 0; }
-.ad-table tbody tr:hover { background: var(--ad-surface-alt); }
+.ad-table tbody tr:hover { background: var(--ad-surface-2); }
 
 /* --- the card view, entered by measurement not by breakpoint --------------
    initResponsiveTables() in admin.js derives the data-labels from the table's
@@ -832,8 +1110,8 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 .ad-table--stack.is-stacked tr,
 .ad-table--stack.is-stacked td { display: block; width: auto; }
 .ad-table--stack.is-stacked tr {
-    border: 1px solid var(--ad-border);
-    border-radius: var(--ad-radius);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
     padding: var(--ad-2) var(--ad-3);
     margin-bottom: var(--ad-3);
     background: var(--ad-surface);
@@ -865,12 +1143,12 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 /* Order numbers, coupon codes, slugs, AWBs and e-mail addresses are single
    unbreakable tokens; without this they set an unshrinkable minimum. */
 .ad-table--stack.is-stacked td > * { min-width: 0; overflow-wrap: anywhere; }
-.ad-table--stack.is-stacked td + td { border-top: 1px dashed var(--ad-border); }
+.ad-table--stack.is-stacked td + td { border-top: 1px dashed var(--ad-line); }
 .ad-table--stack.is-stacked td[data-label]::before {
     content: attr(data-label);
     flex: none;
     text-align: left;
-    font-size: var(--ad-fs-caption);
+    font-size: var(--ad-text-2xs);
     font-weight: 800;
     letter-spacing: .06em;
     text-transform: uppercase;
@@ -966,7 +1244,7 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
     justify-content: flex-start;
     margin-top: var(--ad-2);
     padding-top: var(--ad-3);
-    border-top: 1px dashed var(--ad-border);
+    border-top: 1px dashed var(--ad-line);
 }
 .ad-table--stack.is-stacked[data-stack="wide"] .ad-table__check {
     order: -1;
@@ -1017,16 +1295,16 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
 
 .ad-thumb {
     width: 42px; height: 42px;
-    border-radius: 8px;
+    border-radius: var(--ad-radius-md);
     object-fit: contain;
-    background: var(--ad-bg);
-    border: 1px solid var(--ad-border);
+    background: var(--ad-canvas);
+    border: 1px solid var(--ad-line);
     padding: 3px;
     flex: none;
 }
 .ad-cellflex { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .ad-cellflex__name { font-weight: 600; line-height: 1.35; }
-.ad-cellflex__meta { font-size: 11.5px; color: var(--ad-muted); }
+.ad-cellflex__meta { font-size: var(--ad-text-2xs); color: var(--ad-muted); }
 
 .ad-sort { display: inline-flex; align-items: center; gap: 4px; color: inherit; }
 .ad-sort:hover, .ad-sort.is-active { color: var(--ad-primary); }
@@ -1048,7 +1326,7 @@ a.ad-stat:hover { transform: translateY(-2px); box-shadow: var(--ad-shadow-lg); 
    sideways at 360px while logs/errors' stack traces scrolled 1387px inside
    their <details>. pre-wrap keeps the intentional newlines and indentation of
    a command or a stack trace and lets the rest reflow. */
-.ad-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+.ad-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: var(--ad-text-xs); overflow-wrap: anywhere; }
 pre.ad-mono,
 .ad-body pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Inline code keeps whatever white-space handling it had - pre-wrap on an
@@ -1075,7 +1353,7 @@ pre.ad-mono,
     align-items: center;
     justify-content: center;
     gap: 7px;
-    font-size: var(--ad-fs-body);
+    font-size: var(--ad-text-sm);
     font-weight: 600;
     line-height: 1;
     /* 38px tall: dense enough for a toolbar, still a comfortable pointer
@@ -1083,30 +1361,30 @@ pre.ad-mono,
     padding: 11px var(--ad-4);
     min-height: 38px;
     border-radius: var(--ad-radius-sm);
-    border: 1px solid var(--ad-border-strong);
+    border: 1px solid var(--ad-line-input);
     background: var(--ad-surface);
-    color: var(--ad-text);
+    color: var(--ad-ink);
     cursor: pointer;
-    transition: background var(--ad-dur) var(--ad-ease),
-                border-color var(--ad-dur) var(--ad-ease),
-                color var(--ad-dur) var(--ad-ease);
+    transition: background var(--ad-dur-fast) var(--ad-ease-standard),
+                border-color var(--ad-dur-fast) var(--ad-ease-standard),
+                color var(--ad-dur-fast) var(--ad-ease-standard);
     white-space: nowrap;
 }
-.ad-btn:hover { background: var(--ad-bg); border-color: var(--ad-faint); color: var(--ad-text); }
+.ad-btn:hover { background: var(--ad-canvas); border-color: var(--ad-faint); color: var(--ad-ink); }
 .ad-btn:disabled, .ad-btn.is-loading { opacity: .55; cursor: not-allowed; pointer-events: none; }
 /* Filled variants take the -ink shade: white on the raw brand tone is 3.48:1,
    which fails AA for 13px button text. */
-.ad-btn--primary { background: var(--ad-primary-ink); border-color: var(--ad-primary-ink); color: #fff; }
-.ad-btn--primary:hover { background: color-mix(in srgb, var(--ad-primary) 66%, #000); border-color: transparent; color: #fff; }
-.ad-btn--navy { background: var(--ad-navy); border-color: var(--ad-navy); color: #fff; }
-.ad-btn--navy:hover { background: var(--ad-sidebar-hover); color: #fff; }
-.ad-btn--danger { background: var(--ad-danger); border-color: var(--ad-danger); color: #fff; }
-.ad-btn--danger:hover { background: var(--ad-danger-ink); border-color: var(--ad-danger-ink); color: #fff; }
+.ad-btn--primary { background: var(--ad-primary-fill); border-color: var(--ad-primary-fill); color: var(--ad-on-primary); }
+.ad-btn--primary:hover { background: var(--ad-primary-hover); border-color: transparent; color: var(--ad-on-primary); }
+.ad-btn--navy { background: var(--ad-neutral-fill); border-color: var(--ad-neutral-fill); color: var(--ad-on-neutral); }
+.ad-btn--navy:hover { background: color-mix(in srgb, var(--ad-neutral-fill) 86%, var(--ad-on-neutral)); color: var(--ad-on-neutral); }
+.ad-btn--danger { background: var(--ad-danger-fill); border-color: var(--ad-danger-fill); color: var(--ad-on-danger); }
+.ad-btn--danger:hover { background: color-mix(in srgb, var(--ad-danger-fill) 82%, #000); border-color: transparent; color: var(--ad-on-danger); }
 .ad-btn--danger-ghost { color: var(--ad-danger-ink); border-color: transparent; background: none; }
 .ad-btn--danger-ghost:hover { background: var(--ad-danger-soft); border-color: var(--ad-danger-soft); color: var(--ad-danger-ink); }
-.ad-btn--success { background: var(--ad-success-ink); border-color: var(--ad-success-ink); color: #fff; }
-.ad-btn--success:hover { background: #126A33; color: #fff; }
-.ad-btn--sm { padding: 8px var(--ad-3); min-height: 32px; font-size: var(--ad-fs-small); }
+.ad-btn--success { background: var(--ad-success-fill); border-color: var(--ad-success-fill); color: var(--ad-on-success); }
+.ad-btn--success:hover { background: color-mix(in srgb, var(--ad-success-fill) 82%, #000); color: var(--ad-on-success); }
+.ad-btn--sm { padding: 8px var(--ad-3); min-height: 32px; font-size: var(--ad-text-xs); }
 .ad-btn--icon { padding: 0; width: 38px; height: 38px; min-height: 38px; }
 .ad-btn--block { width: 100%; }
 /* Every button can show a spinner without markup changes per module. */
@@ -1117,14 +1395,16 @@ pre.ad-mono,
     border: 2px solid currentColor;
     border-right-color: transparent;
     border-radius: 50%;
+    /* A loop, not a UI transition: it has no enter/exit pair to match, and
+       the reduced-motion rule below section 1 stops it outright. */
     animation: ad-spin .6s linear infinite;
     flex: none;
 }
 @keyframes ad-spin { to { transform: rotate(360deg); } }
 .ad-inline-form { display: inline-block; }
 
-.ad-btngroup { display: inline-flex; border: 1px solid var(--ad-border); border-radius: 9px; overflow: hidden; background: #fff; }
-.ad-btngroup > * { border: 0; border-radius: 0; border-right: 1px solid var(--ad-border); }
+.ad-btngroup { display: inline-flex; border: 1px solid var(--ad-line); border-radius: var(--ad-radius-md); overflow: hidden; background: var(--ad-surface); }
+.ad-btngroup > * { border: 0; border-radius: 0; border-right: 1px solid var(--ad-line); }
 .ad-btngroup > *:last-child { border-right: 0; }
 
 /* --------------------------------------------------------------------------
@@ -1136,11 +1416,11 @@ pre.ad-mono,
     flex-wrap: wrap;
     align-items: center;
     padding: 13px 18px;
-    border-bottom: 1px solid var(--ad-border);
+    border-bottom: 1px solid var(--ad-line);
     background: var(--ad-surface);
 }
 .ad-filters .sik-input,
-.ad-filters .sik-select { width: auto; min-width: 150px; padding: 8px 12px; font-size: 13px; }
+.ad-filters .sik-select { width: auto; min-width: 150px; padding: 8px 12px; font-size: var(--ad-text-sm); }
 .ad-filters .sik-select { padding-right: 34px; }
 .ad-search { position: relative; flex: 1; min-width: 190px; max-width: 340px; }
 .ad-search input { width: 100%; padding-left: 34px !important; }
@@ -1156,12 +1436,12 @@ pre.ad-mono,
     display: flex;
     flex-wrap: wrap;
     gap: 0 3px;
-    border-bottom: 1px solid var(--ad-border);
+    border-bottom: 1px solid var(--ad-line);
     background: var(--ad-surface);
 }
 .ad-tab {
     padding: 12px 16px;
-    font-size: 13.5px;
+    font-size: var(--ad-text-sm);
     font-weight: 600;
     color: var(--ad-muted);
     border-bottom: 2px solid transparent;
@@ -1170,7 +1450,7 @@ pre.ad-mono,
     align-items: center;
     gap: 7px;
 }
-.ad-tab:hover { color: var(--ad-text); }
+.ad-tab:hover { color: var(--ad-ink); }
 .ad-tab.is-active { color: var(--ad-primary); border-bottom-color: var(--ad-primary); }
 /* A tab sits flush with the top and the left of its card, and `.ad-card` is
    `overflow: hidden` to keep its rounded corners. The sitewide focus ring is
@@ -1184,13 +1464,13 @@ pre.ad-mono,
 /* Tighter on a phone so a long strip (Settings has 14) wraps into fewer rows;
    still a 40px+ tap target. */
 @media (max-width: 767px) {
-    .ad-tab { padding: 11px 11px; font-size: 13px; }
+    .ad-tab { padding: 11px 11px; font-size: var(--ad-text-sm); }
 }
 .ad-tab__count {
-    background: var(--ad-bg);
-    border-radius: 999px;
+    background: var(--ad-canvas);
+    border-radius: var(--ad-radius-pill);
     padding: 1px 7px;
-    font-size: 11px;
+    font-size: var(--ad-text-2xs);
     font-weight: 700;
 }
 .ad-tab.is-active .ad-tab__count { background: var(--ad-primary-soft); color: var(--ad-primary-ink); }
@@ -1202,8 +1482,8 @@ pre.ad-mono,
     gap: 10px;
     padding: 11px 18px;
     background: var(--ad-warning-soft);
-    border-bottom: 1px solid color-mix(in srgb, var(--ad-warning) 35%, #fff);
-    font-size: var(--ad-fs-body);
+    border-bottom: 1px solid color-mix(in srgb, var(--ad-warning) 35%, var(--ad-surface));
+    font-size: var(--ad-text-sm);
     flex-wrap: wrap;
 }
 .ad-bulk.is-open { display: flex; }
@@ -1229,12 +1509,12 @@ pre.ad-mono,
 .ad-field > .sik-label { margin-bottom: 6px; }
 
 .ad-fieldset {
-    border: 1px solid var(--ad-border);
-    border-radius: var(--ad-radius);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
     padding: 16px;
 }
 .ad-fieldset legend {
-    font-size: 12px;
+    font-size: var(--ad-text-xs);
     font-weight: 800;
     letter-spacing: .05em;
     text-transform: uppercase;
@@ -1251,14 +1531,14 @@ pre.ad-mono,
    the viewport. That is the whole of the genuine page-level sideways scroll on
    popups/index (232px at 768px, 247px at 1024px) and homepage/index (65/80px):
    a zero-sized invisible input, dragging the page sideways. */
-.ad-switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13.5px; }
+.ad-switch { position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: var(--ad-text-sm); }
 .ad-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .ad-switch__track {
     width: 40px; height: 22px;
-    border-radius: 999px;
-    background: #CBD5E1;
+    border-radius: var(--ad-radius-pill);
+    background: var(--ad-line-strong);
     position: relative;
-    transition: background .18s ease;
+    transition: background var(--ad-dur-base) var(--ad-ease-standard);
     flex: none;
 }
 .ad-switch__track::after {
@@ -1267,34 +1547,34 @@ pre.ad-mono,
     top: 3px; left: 3px;
     width: 16px; height: 16px;
     border-radius: 50%;
-    background: #fff;
-    transition: transform .18s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+    background: var(--ad-surface);
+    transition: transform var(--ad-dur-base) var(--ad-ease-standard);
+    box-shadow: var(--ad-shadow-1);
 }
 .ad-switch input:checked + .ad-switch__track { background: var(--ad-primary); }
 .ad-switch input:checked + .ad-switch__track::after { transform: translateX(18px); }
 .ad-switch input:focus-visible + .ad-switch__track { outline: 2px solid var(--ad-primary); outline-offset: 2px; }
 
 .ad-drop {
-    border: 2px dashed var(--ad-border);
-    border-radius: var(--ad-radius);
+    border: 2px dashed var(--ad-line);
+    border-radius: var(--ad-radius-lg);
     padding: 24px;
     text-align: center;
     cursor: pointer;
-    transition: all .16s ease;
-    background: var(--ad-bg);
+    transition: all var(--ad-dur-fast) var(--ad-ease-standard);
+    background: var(--ad-canvas);
 }
-.ad-drop:hover, .ad-drop.is-drag { border-color: var(--ad-primary); background: #FFF7F4; }
+.ad-drop:hover, .ad-drop.is-drag { border-color: var(--ad-primary); background: var(--ad-primary-soft); }
 .ad-drop input[type="file"] { display: none; }
 
 .ad-preview { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .ad-preview__item {
     position: relative;
     width: 92px; height: 92px;
-    border: 1px solid var(--ad-border);
-    border-radius: 9px;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-md);
     overflow: hidden;
-    background: #fff;
+    background: var(--ad-surface);
 }
 .ad-preview__item img { width: 100%; height: 100%; object-fit: contain; padding: 5px; }
 .ad-preview__remove {
@@ -1303,7 +1583,7 @@ pre.ad-mono,
     width: 22px; height: 22px;
     border-radius: 50%;
     background: var(--ad-danger);
-    color: #fff;
+    color: var(--ad-on-primary);
     border: 0;
     cursor: pointer;
     display: grid;
@@ -1316,10 +1596,10 @@ pre.ad-mono,
     gap: 8px;
     grid-template-columns: 1fr;
     padding: 12px;
-    border: 1px solid var(--ad-border);
-    border-radius: 9px;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-md);
     margin-bottom: 8px;
-    background: var(--ad-bg);
+    background: var(--ad-canvas);
     position: relative;
 }
 @media (min-width: 700px) { .ad-repeater__row { grid-template-columns: 1fr 1fr auto; align-items: end; } }
@@ -1327,10 +1607,10 @@ pre.ad-mono,
 .ad-colorfield { display: flex; align-items: center; gap: 8px; }
 .ad-colorfield input[type="color"] {
     width: 42px; height: 40px;
-    border: 1px solid var(--ad-border);
-    border-radius: 8px;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-md);
     padding: 3px;
-    background: #fff;
+    background: var(--ad-surface);
     cursor: pointer;
     flex: none;
 }
@@ -1368,15 +1648,19 @@ pre.ad-mono,
 .ad-chart__bar {
     width: 100%;
     max-width: 42px;
+    /* A bar cap, not a container: the pair is drawn shape, not a radius
+       role. The chart module in A11 replaces the whole element. */
     border-radius: 6px 6px 2px 2px;
     /* The dashboard chart follows the admin colour like everything else; a
        frozen orange gradient here was the last thing ignoring the setting. */
-    background: linear-gradient(180deg, var(--ad-primary), color-mix(in srgb, var(--ad-primary) 58%, #fff));
-    transition: opacity .16s ease;
+    background: linear-gradient(180deg, var(--ad-primary), color-mix(in srgb, var(--ad-primary) 58%, var(--ad-surface)));
+    transition: opacity var(--ad-dur-fast) var(--ad-ease-standard);
     min-height: 3px;
 }
 .ad-chart__col:hover .ad-chart__bar { opacity: .78; }
-.ad-chart__label { font-size: 10.5px; color: var(--ad-muted); white-space: nowrap; }
+.ad-chart__label { font-size: var(--ad-text-2xs); color: var(--ad-muted); white-space: nowrap; }
+/* Left at 10px on purpose: 11px widens every bar's value label, and the bar
+   track is exactly as wide as its widest label. A11 rebuilds this. */
 .ad-chart__value { font-size: 10px; font-weight: 700; color: var(--ad-muted); white-space: nowrap; }
 
 /* What a narrow chart drops, and when.
@@ -1405,7 +1689,7 @@ pre.ad-mono,
    scrolls sideways itself, so there is no gesture left to conflict with. */
 .ad-chart__readout { display: none; }
 .ad-chart__col:focus { outline: none; }
-.ad-chart__col:focus-visible { outline: 2px solid var(--ad-primary); outline-offset: 2px; border-radius: 4px; }
+.ad-chart__col:focus-visible { outline: 2px solid var(--ad-primary); outline-offset: 2px; border-radius: var(--ad-radius-xs); }
 /* Whenever a printed figure is hidden - the values first (--novalues), the
    labels only when it is tighter still - the readout is the only place that
    figure exists, for a mouse as much as for a finger. It used to appear with
@@ -1424,13 +1708,13 @@ pre.ad-mono,
     display: block;
     min-height: 22px;
     margin: 10px 0 0;
-    font-size: 13px;
+    font-size: var(--ad-text-sm);
     line-height: 22px;
     text-align: center;
     color: var(--ad-muted);
     font-variant-numeric: tabular-nums;
 }
-.ad-chart__readout strong { font-size: 15px; font-weight: 700; color: var(--ad-text); }
+.ad-chart__readout strong { font-size: var(--ad-text-lg); font-weight: 700; color: var(--ad-ink); }
 
 .ad-progressrow { margin-bottom: 13px; }
 .ad-progressrow:last-child { margin-bottom: 0; }
@@ -1438,7 +1722,7 @@ pre.ad-mono,
     display: flex;
     justify-content: space-between;
     gap: 10px;
-    font-size: 13px;
+    font-size: var(--ad-text-sm);
     margin-bottom: 5px;
 }
 .ad-progressrow__head a:hover { color: var(--ad-primary); }
@@ -1450,15 +1734,15 @@ pre.ad-mono,
 .ad-empty__icon {
     width: 66px; height: 66px;
     border-radius: 50%;
-    background: var(--ad-bg);
+    background: var(--ad-canvas);
     color: var(--ad-muted);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     margin-bottom: 15px;
 }
-.ad-empty__title { font-size: 16px; font-weight: 700; margin-bottom: 5px; }
-.ad-empty__text { font-size: 13.5px; color: var(--ad-muted); max-width: 400px; margin: 0 auto 18px; line-height: 1.6; }
+.ad-empty__title { font-size: var(--ad-text-lg); font-weight: 700; margin-bottom: 5px; }
+.ad-empty__text { font-size: var(--ad-text-sm); color: var(--ad-muted); max-width: 400px; margin: 0 auto 18px; line-height: 1.6; }
 
 /* --------------------------------------------------------------------------
    Modal
@@ -1466,43 +1750,43 @@ pre.ad-mono,
 .ad-modal {
     position: fixed;
     inset: 0;
-    z-index: 120;
+    z-index: var(--ad-z-modal);
     display: none;
     align-items: center;
     justify-content: center;
     padding: 16px;
 }
 .ad-modal.is-open { display: flex; }
-.ad-modal__backdrop { position: absolute; inset: 0; background: rgba(16, 35, 61, .55); }
+.ad-modal__backdrop { position: absolute; inset: 0; background: var(--ad-scrim); }
 .ad-modal__panel {
     position: relative;
-    background: #fff;
-    border-radius: 14px;
+    background: var(--ad-elevated);
+    border-radius: var(--ad-radius-xl);
     width: 100%;
     max-width: 620px;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: var(--ad-shadow-lg);
+    box-shadow: var(--ad-shadow-3);
 }
 .ad-modal__panel--lg { max-width: 900px; }
 .ad-modal__panel--sm { max-width: 420px; }
 .ad-modal__head {
     padding: 16px 20px;
-    border-bottom: 1px solid var(--ad-border);
+    border-bottom: 1px solid var(--ad-line);
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     position: sticky;
     top: 0;
-    background: #fff;
+    background: var(--ad-elevated);
     z-index: 2;
 }
 .ad-modal__body { padding: 20px; }
 .ad-modal__foot {
     padding: 14px 20px;
-    border-top: 1px solid var(--ad-border);
-    background: var(--ad-bg);
+    border-top: 1px solid var(--ad-line);
+    background: var(--ad-canvas);
     display: flex;
     gap: 8px;
     justify-content: flex-end;
@@ -1518,18 +1802,18 @@ pre.ad-mono,
     display: grid;
     place-items: center;
     padding: 24px;
+    /* The sign-in page is the first thing anyone sees, so it carries the rail
+       gradient itself rather than a flat slab of the rail colour. */
     background:
-        /* Same frozen orange as the sub-link above; the sign-in page is the
-           first thing anyone sees, so it should carry the store colour. */
         radial-gradient(1100px 460px at 15% -10%, color-mix(in srgb, var(--ad-primary) 18%, transparent), transparent 60%),
-        var(--ad-sidebar);
+        var(--ad-grad-rail);
 }
 .ad-login__card {
     width: 100%;
     max-width: 420px;
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, .3);
+    background: var(--ad-surface);
+    border-radius: var(--ad-radius-xl);
+    box-shadow: var(--ad-shadow-4);
     padding: 34px 30px;
 }
 .ad-login__logo { display: block; height: 42px; margin: 0 auto 22px; }
@@ -1540,11 +1824,11 @@ pre.ad-mono,
 .ad-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(16, 35, 61, .5);
-    z-index: 55;
+    background: var(--ad-scrim);
+    z-index: var(--ad-z-overlay);
     opacity: 0;
     visibility: hidden;
-    transition: opacity .22s ease, visibility .22s;
+    transition: opacity var(--ad-dur-base) var(--ad-ease-standard), visibility var(--ad-dur-base);
 }
 .ad-overlay.is-open { opacity: 1; visibility: visible; }
 @media (min-width: 1024px) { .ad-overlay { display: none; } }
@@ -1556,6 +1840,8 @@ pre.ad-mono,
     .ad-sidebar, .ad-topbar, .ad-page__actions, .ad-filters, .ad-btn, .no-print { display: none !important; }
     .ad-main { margin-left: 0 !important; }
     .ad-content { padding: 0; }
+    /* Print is paper. These two are literal so a dark-mode token can never
+       put a near-black slab on a sheet of A4. */
     .ad-card { box-shadow: none; border-color: #ddd; }
     body.ad-body { background: #fff; }
 }
@@ -1567,7 +1853,7 @@ pre.ad-mono,
    because an abstract "preview" that looks like the admin panel does not tell
    an editor whether their title is going to be truncated.
    =========================================================================== */
-.sik-seo { --seo-ok: #16A34A; --seo-warn: #B45309; --seo-bad: #B91C1C; }
+.sik-seo { --seo-ok: var(--ad-success-ink); --seo-warn: var(--ad-warning-ink); --seo-bad: var(--ad-danger-ink); }
 
 .sik-seo__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
 @media (min-width: 1100px) {
@@ -1598,14 +1884,16 @@ pre.ad-mono,
 }
 .sik-seo__legend:first-child { margin-top: 0; }
 
-/* Google result */
+/* Google result. The three colours and the 18px title below are GOOGLE's,
+   reproduced so the preview tells the truth about how the result will look.
+   Theming them would make the preview a lie, so they are not tokens. */
 .sik-seo__serp {
     display: grid; gap: 2px; padding: var(--sp-3);
     border: 1px solid var(--sik-border); border-radius: var(--sik-radius-sm); background: #fff;
 }
 .sik-seo__serp-url { font-size: var(--fs-xs); color: #202124; overflow-wrap: anywhere; }
 .sik-seo__serp-title {
-    font-size: 18px; line-height: 1.3; color: #1a0dab;
+    font-size: var(--ad-text-xl); line-height: 1.3; color: #1a0dab;
     overflow-wrap: anywhere;
 }
 .sik-seo__serp-desc { font-size: var(--fs-sm); line-height: var(--lh-normal); color: #4d5156; overflow-wrap: anywhere; }
@@ -1654,12 +1942,12 @@ pre.ad-mono,
     align-items: start;
     gap: 10px;
     padding: 10px 12px;
-    border: 1px solid var(--ad-border);
-    border-radius: 10px;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
     cursor: pointer;
-    transition: border-color .15s ease, background-color .15s ease;
+    transition: border-color var(--ad-dur-fast) var(--ad-ease-standard), background-color var(--ad-dur-fast) var(--ad-ease-standard);
 }
-.ad-check:hover { border-color: var(--ad-border-strong); background: var(--ad-surface-alt); }
+.ad-check:hover { border-color: var(--ad-line-input); background: var(--ad-surface-2); }
 .ad-check input[type="checkbox"] {
     accent-color: var(--ad-primary);
     width: 16px; height: 16px;
@@ -1668,19 +1956,19 @@ pre.ad-mono,
 }
 /* The whole row reads as selected, not just the box. */
 .ad-check:has(input:checked) { border-color: var(--ad-primary); background: var(--ad-primary-soft); }
-.ad-check strong { font-size: 13px; font-weight: 600; color: var(--ad-text); }
+.ad-check strong { font-size: var(--ad-text-sm); font-weight: 600; color: var(--ad-ink); }
 
 .ad-checklist { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
 .ad-checklist > li {
     position: relative; padding-left: 24px;
-    font-size: 13px; line-height: 1.5; color: #111827;
+    font-size: var(--ad-text-sm); line-height: var(--ad-lh-sm); color: var(--ad-ink);
 }
 .ad-checklist > li::before {
     position: absolute; left: 0; top: 0; width: 18px; text-align: center; font-weight: 700;
 }
-.ad-checklist > li.is-ok::before   { content: "\2713"; color: #16A34A; }
-.ad-checklist > li.is-bad::before  { content: "\2715"; color: #B91C1C; }
-.ad-checklist > li.is-todo::before { content: "\2022"; color: #B45309; }
+.ad-checklist > li.is-ok::before   { content: "\2713"; color: var(--ad-success-ink); }
+.ad-checklist > li.is-bad::before  { content: "\2715"; color: var(--ad-danger-ink); }
+.ad-checklist > li.is-todo::before { content: "\2022"; color: var(--ad-warning-ink); }
 /* A check that could not be RUN - the store's own address did not answer in
    time - is neither a tick nor a cross. Marking it failed would accuse the
    shop of a fault nobody has looked for yet. (settings/seo-health.php) */
@@ -1717,11 +2005,11 @@ pre.ad-mono,
 @media (max-width: 1023px) {
     .ad-sidebar {
         visibility: hidden;
-        transition: transform .26s ease, visibility 0s linear .26s;
+        transition: transform var(--ad-dur-slow) var(--ad-ease-standard), visibility 0s linear var(--ad-dur-slow);
     }
     .ad-sidebar.is-open {
         visibility: visible;
-        transition: transform .26s ease, visibility 0s;
+        transition: transform var(--ad-dur-slow) var(--ad-ease-standard), visibility 0s;
     }
 }
 
@@ -1784,7 +2072,7 @@ pre.ad-mono,
     .ad-filters .sik-input,
     .ad-filters .sik-select,
     .ad-search input,
-    .ad-codearea { font-size: 16px; }
+    .ad-codearea { font-size: var(--ad-text-lg); }
 }
 
 /* --- A button group that cannot be reached is not a button group ---------
@@ -1798,10 +2086,10 @@ pre.ad-mono,
         display: flex;
         flex-wrap: wrap;
         overflow: visible;
-        border-radius: 9px;
+        border-radius: var(--ad-radius-md);
     }
     .ad-btngroup > * { flex: 1 1 auto; justify-content: center; }
-    .ad-btngroup > *:not(:last-child) { border-bottom: 1px solid var(--ad-border); }
+    .ad-btngroup > *:not(:last-child) { border-bottom: 1px solid var(--ad-line); }
 }
 
 /* --- Big figures need room before they need company ----------------------
@@ -1819,8 +2107,8 @@ pre.ad-mono,
     .ad-bulk.is-open {
         position: sticky;
         top: var(--ad-topbar-h, 62px);
-        z-index: 20;
-        box-shadow: var(--ad-shadow-lg);
+        z-index: var(--ad-z-sticky);
+        box-shadow: var(--ad-shadow-3);
     }
 }
 
@@ -1867,13 +2155,13 @@ pre.ad-mono,
    re-triggering the iOS zoom. The 16px phone override lives in the block above. */
 .ad-codearea {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
+    font-size: var(--ad-text-sm);
     line-height: 1.55;
 }
 
 /* --- Nothing below 11px on a phone --------------------------------------- */
 @media (max-width: 767px) {
-    .ad-nav__badge { font-size: 11px; }
+    .ad-nav__badge { font-size: var(--ad-text-2xs); }
 }
 
 /* --- The bar that carries what the card view hides ------------------------
@@ -1890,16 +2178,16 @@ pre.ad-mono,
     gap: 10px;
     flex-wrap: wrap;
     padding: 10px 12px;
-    border: 1px solid var(--ad-border);
+    border: 1px solid var(--ad-line);
     border-bottom: 0;
-    border-radius: 10px 10px 0 0;
-    background: var(--ad-surface-alt, var(--ad-bg));
+    border-radius: var(--ad-radius-lg) var(--ad-radius-lg) 0 0;
+    background: var(--ad-surface-2);
 }
 .ad-stackbar__all {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 13.5px;
+    font-size: var(--ad-text-sm);
     font-weight: 600;
     cursor: pointer;
 }
@@ -1914,7 +2202,7 @@ pre.ad-mono,
 @media (pointer: coarse), (max-width: 767px) {
     .ad-stackbar__all { min-height: var(--tap, 44px); }
     .ad-stackbar__all input { width: 24px; height: 24px; }
-    .ad-stackbar__sort { font-size: 16px; min-width: 150px; width: 100%; }
+    .ad-stackbar__sort { font-size: var(--ad-text-lg); min-width: 150px; width: 100%; }
 }
 
 /* --- Filters stack on a phone instead of straggling ----------------------
@@ -1983,8 +2271,8 @@ pre.ad-mono,
     min-width: 0;
     min-height: 0;
     height: 100%;
-    border: 1px solid var(--ad-border);
-    border-radius: 12px;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
     background: var(--ad-surface);
     overflow: hidden;
 }
@@ -1994,16 +2282,16 @@ pre.ad-mono,
     gap: 8px;
     flex: none;
     padding: 11px 13px;
-    border-bottom: 1px solid var(--ad-border);
-    background: var(--ad-surface-alt, var(--ad-bg));
+    border-bottom: 1px solid var(--ad-line);
+    background: var(--ad-surface-2);
 }
-.ad-designer__title { font-size: 13.5px; font-weight: 700; color: var(--ad-text); }
+.ad-designer__title { font-size: var(--ad-text-sm); font-weight: 700; color: var(--ad-ink); }
 .ad-designer__count {
     padding: 1px 8px;
-    border-radius: 999px;
-    background: var(--ad-primary-soft, #FDE7F1);
+    border-radius: var(--ad-radius-pill);
+    background: var(--ad-primary-soft);
     color: var(--ad-primary);
-    font-size: 11.5px;
+    font-size: var(--ad-text-2xs);
     font-weight: 700;
 }
 .ad-designer__body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
@@ -2014,7 +2302,7 @@ pre.ad-mono,
     display: flex;
     justify-content: center;
     background:
-        repeating-conic-gradient(#EEF1F6 0% 25%, #F7F9FC 0% 50%) 0 0 / 18px 18px;
+        repeating-conic-gradient(var(--ad-sunken) 0% 25%, var(--ad-surface-2) 0% 50%) 0 0 / 18px 18px;
     padding: 14px;
 }
 .ad-canvas__frame {
@@ -2023,10 +2311,10 @@ pre.ad-mono,
     height: 100%;
     min-height: 420px;
     border: 0;
-    border-radius: 10px;
-    background: #fff;
-    box-shadow: var(--ad-shadow-lg);
-    transition: max-width .24s ease;
+    border-radius: var(--ad-radius-lg);
+    background: var(--ad-surface);
+    box-shadow: var(--ad-shadow-3);
+    transition: max-width var(--ad-dur-slow) var(--ad-ease-standard);
 }
 /* Device widths are real CSS pixels, so the storefront's own media queries do
    the simulating - there is no second set of breakpoints to keep in step. */
@@ -2041,14 +2329,14 @@ pre.ad-mono,
     align-items: center;
     gap: 9px;
     padding: 9px 10px;
-    border: 1px solid var(--ad-border);
-    border-radius: 10px;
-    background: #fff;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
+    background: var(--ad-surface);
     /* Only the transform is animated; animating the box would relayout the
        whole list on every pointer move during a drag. */
-    transition: box-shadow .16s ease, border-color .16s ease;
+    transition: box-shadow var(--ad-dur-fast) var(--ad-ease-standard), border-color var(--ad-dur-fast) var(--ad-ease-standard);
 }
-.ad-sec.is-selected { border-color: var(--ad-primary); box-shadow: 0 0 0 2px var(--ad-primary-soft, #FDE7F1); }
+.ad-sec.is-selected { border-color: var(--ad-primary); box-shadow: 0 0 0 2px var(--ad-primary-soft); }
 .ad-sec.is-off .ad-sec__name { color: var(--ad-muted); }
 .ad-sec.is-dragging {
     /* The row must not answer elementFromPoint while it is the thing being
@@ -2056,7 +2344,7 @@ pre.ad-mono,
        the grip keeps delivering the move events regardless. */
     pointer-events: none;
     opacity: .9;
-    box-shadow: var(--ad-shadow-lg);
+    box-shadow: var(--ad-shadow-3);
     border-color: var(--ad-primary);
     /* Lifted out of the flow while the pointer carries it. */
     position: relative;
@@ -2066,7 +2354,7 @@ pre.ad-mono,
    reorderable list, not only this one. */
 .ad-reorder-gap {
     height: 3px;
-    border-radius: 999px;
+    border-radius: var(--ad-radius-pill);
     background: var(--ad-primary);
     margin: -5px 0;
 }
@@ -2091,9 +2379,9 @@ pre.ad-mono,
 .ad-sec__body { min-width: 0; text-align: left; border: 0; background: none; padding: 0; cursor: pointer; }
 .ad-sec__name {
     display: block;
-    font-size: 13.5px;
+    font-size: var(--ad-text-sm);
     font-weight: 650;
-    color: var(--ad-text);
+    color: var(--ad-ink);
     /* Was `overflow:hidden; text-overflow:ellipsis; white-space:nowrap`, which
        cut section names by 11-20px in the designer's 260-330px list
        ("Frequently asked questions" became "Frequently asked question…").
@@ -2110,10 +2398,10 @@ pre.ad-mono,
     display: inline-block;
     margin-top: 3px;
     padding: 1px 7px;
-    border-radius: 6px;
-    background: var(--ad-bg);
-    border: 1px solid var(--ad-border);
-    font-size: 11px;
+    border-radius: var(--ad-radius-sm);
+    background: var(--ad-canvas);
+    border: 1px solid var(--ad-line);
+    font-size: var(--ad-text-2xs);
     font-weight: 600;
     color: var(--ad-muted);
 }
@@ -2129,9 +2417,9 @@ pre.ad-mono,
     height: 19px;
     display: grid;
     place-items: center;
-    border: 1px solid var(--ad-border);
-    border-radius: 5px;
-    background: #fff;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-xs);
+    background: var(--ad-surface);
     color: var(--ad-muted);
     cursor: pointer;
 }
@@ -2139,15 +2427,15 @@ pre.ad-mono,
 .ad-sec__move button[aria-disabled="true"] { opacity: .35; cursor: default; }
 
 /* --- The inspector ------------------------------------------------------- */
-.ad-insp__empty { padding: 34px 18px; text-align: center; color: var(--ad-muted); font-size: 13.5px; }
-.ad-insp__tabs { display: flex; gap: 3px; flex: none; border-bottom: 1px solid var(--ad-border); }
+.ad-insp__empty { padding: 34px 18px; text-align: center; color: var(--ad-muted); font-size: var(--ad-text-sm); }
+.ad-insp__tabs { display: flex; gap: 3px; flex: none; border-bottom: 1px solid var(--ad-line); }
 .ad-insp__tab {
     flex: 1;
     padding: 10px 6px;
     border: 0;
     border-bottom: 2px solid transparent;
     background: none;
-    font-size: 12.5px;
+    font-size: var(--ad-text-xs);
     font-weight: 650;
     color: var(--ad-muted);
     cursor: pointer;
@@ -2168,22 +2456,22 @@ pre.ad-mono,
         gap: 4px;
         padding: 4px;
         margin-bottom: 12px;
-        border: 1px solid var(--ad-border);
-        border-radius: 11px;
+        border: 1px solid var(--ad-line);
+        border-radius: var(--ad-radius-lg);
         background: var(--ad-surface);
     }
     .ad-designer__switch button {
         flex: 1;
         min-height: var(--tap, 44px);
         border: 0;
-        border-radius: 8px;
+        border-radius: var(--ad-radius-md);
         background: none;
-        font-size: 13.5px;
+        font-size: var(--ad-text-sm);
         font-weight: 650;
         color: var(--ad-muted);
         cursor: pointer;
     }
-    .ad-designer__switch button.is-active { background: var(--ad-primary); color: #fff; }
+    .ad-designer__switch button.is-active { background: var(--ad-primary-fill); color: var(--ad-on-primary); }
     /* Only the chosen pane is mounted, so the other two cannot steal taps or
        stretch the page behind it. */
     .ad-designer__pane[data-pane]:not(.is-shown) { display: none; }
@@ -2211,8 +2499,8 @@ pre.ad-mono,
     body.ad-collapsed .ad-sidebar:hover,
     body.ad-collapsed .ad-sidebar:focus-within {
         width: var(--ad-sidebar-w);
-        box-shadow: var(--ad-shadow-lg);
-        z-index: 70;
+        box-shadow: var(--ad-shadow-3);
+        z-index: var(--ad-z-dropdown);
     }
     /* Undo the sr-only clip the rail applies to the label. */
     body.ad-collapsed .ad-sidebar:hover .ad-nav__label,
@@ -2283,13 +2571,13 @@ pre.ad-mono,
     display: grid;
     place-items: center;
     padding: 0;
-    border: 1px solid var(--ad-border);
-    border-radius: 7px;
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-sm);
     background: var(--ad-surface);
     color: var(--ad-muted);
     cursor: pointer;
 }
-.ad-movebtns button:hover { color: var(--ad-text); border-color: color-mix(in srgb, var(--ad-primary) 45%, var(--ad-border)); }
+.ad-movebtns button:hover { color: var(--ad-ink); border-color: color-mix(in srgb, var(--ad-primary) 45%, var(--ad-line)); }
 .ad-movebtns button:focus-visible { outline: 2px solid var(--ad-primary); outline-offset: 1px; }
 /* aria-disabled, not disabled: a disabled button drops the focus it holds. */
 .ad-movebtns button[aria-disabled="true"],
@@ -2297,13 +2585,13 @@ pre.ad-mono,
     opacity: .35;
     cursor: default;
     color: var(--ad-muted);
-    border-color: var(--ad-border);
+    border-color: var(--ad-line);
 }
 /* Both conditions, as in section 40: a phone-width window deserves phone
    targets, and a headless browser reports pointer: fine. */
 @media (pointer: coarse), (max-width: 767px) {
     .ad-movebtns { gap: 6px; }
-    .ad-movebtns button { width: var(--tap, 44px); height: var(--tap, 44px); border-radius: 9px; }
+    .ad-movebtns button { width: var(--tap, 44px); height: var(--tap, 44px); border-radius: var(--ad-radius-md); }
 }
 
 
@@ -2352,9 +2640,9 @@ pre.ad-mono,
     display: flex;
     flex-wrap: wrap;
     overflow: visible;
-    border-radius: 9px;
+    border-radius: var(--ad-radius-md);
 }
-.ad-designer__head .ad-btngroup > *:not(:last-child) { border-bottom: 1px solid var(--ad-border); }
+.ad-designer__head .ad-btngroup > *:not(:last-child) { border-bottom: 1px solid var(--ad-line); }
 
 /* --- Truncation keeps a way to read the rest ------------------------------
    These two clip with an ellipsis, which is the right look in a topbar and in
@@ -2405,3 +2693,781 @@ pre.ad-mono,
    not a scrollbar to live with. Everything section 43 refers to has been
    measured at 360, 390, 768, 1024, 1280 and 1440.
    ------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   44. PRIMITIVES  (A1)
+
+   The layout atoms every later component is assembled from. They exist so a
+   page stops reaching for `style="display:flex;gap:8px"` - there are ~1,100
+   inline styles across the 108 admin pages and most are one of the five
+   shapes below.
+
+   Numbered 44, not 43: section 43 ("Nothing scrolls sideways") was already
+   taken by the overflow round, so every section number in the spec's map
+   shifts by one from here on.
+   ========================================================================== */
+
+/* --- Stack: a column with one rhythm ------------------------------------- */
+.ad-stack     { display: flex; flex-direction: column; gap: var(--ad-space-4); min-width: 0; }
+.ad-stack--2  { gap: var(--ad-space-2); }
+.ad-stack--3  { gap: var(--ad-space-3); }
+.ad-stack--5  { gap: var(--ad-space-5); }
+.ad-stack--6  { gap: var(--ad-space-6); }
+
+/* --- Cluster: things on one line that wrap when they must ---------------- */
+.ad-cluster       { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ad-space-2); min-width: 0; }
+.ad-cluster--end  { justify-content: flex-end; }
+.ad-cluster--3    { gap: var(--ad-space-3); }
+
+/* --- Split: one thing left, one right, wrapping instead of overflowing --- */
+.ad-split { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ad-space-3); min-width: 0; }
+
+/* --- Text roles ---------------------------------------------------------- */
+.ad-text-xs  { font-size: var(--ad-text-xs);  line-height: var(--ad-lh-xs); }
+.ad-text-sm  { font-size: var(--ad-text-sm);  line-height: var(--ad-lh-sm); }
+.ad-strong   { font-weight: var(--ad-weight-semibold); color: var(--ad-ink); }
+.ad-nowrap   { white-space: nowrap; }
+
+/* One line, then an ellipsis. min-width:0 is part of the contract: without it
+   a flex or grid child refuses to shrink and the ellipsis never appears - it
+   becomes a page-level scrollbar instead, which is what section 43 is about. */
+.ad-truncate {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.ad-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    min-width: 0;
+}
+
+/* --- Numbers: a column of figures has to line up ------------------------- */
+.ad-num    { text-align: right; font-variant-numeric: tabular-nums; }
+.ad-minw0  { min-width: 0; }
+
+/* --- Card v2 -------------------------------------------------------------
+   The look is section "Cards & panels" above; these are the additions the
+   helper needs. A card inside a layout that already spaces its children must
+   not add a second gap - that double margin is why so many pages carry
+   `style="margin:0"` on a card. */
+.ad-grid > .ad-card,
+.ad-stack > .ad-card,
+.ad-dash > .ad-card { margin-bottom: 0; }
+
+.ad-card__actions { display: flex; align-items: center; gap: var(--ad-space-2); flex-wrap: wrap; }
+.ad-card--muted   { background: var(--ad-surface-2); }
+.ad-card--danger  { border-color: var(--ad-danger); }
+.ad-card--danger > .ad-card__head { border-bottom-color: var(--ad-danger); }
+
+/* --- Key/value list -------------------------------------------------------
+   Two columns once there is room for a label and a value side by side, one
+   column below that. The label column is `max-content` capped so a long
+   label wraps rather than squeezing the value to nothing. */
+.ad-kv { display: grid; gap: var(--ad-space-3) var(--ad-space-4); margin: 0; }
+.ad-kv__row { display: grid; gap: var(--ad-space-1); min-width: 0; }
+.ad-kv__key {
+    font-size: var(--ad-text-xs);
+    line-height: var(--ad-lh-xs);
+    color: var(--ad-muted);
+    font-weight: var(--ad-weight-medium);
+    margin: 0;
+}
+.ad-kv__val {
+    font-size: var(--ad-text-sm);
+    line-height: var(--ad-lh-sm);
+    color: var(--ad-ink);
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.ad-kv__val .ad-cluster { gap: var(--ad-space-1-5); }
+.ad-kv__hint { display: block; font-size: var(--ad-text-xs); color: var(--ad-muted); }
+
+@media (min-width: 640px) {
+    .ad-kv__row {
+        grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+        align-items: baseline;
+        gap: var(--ad-space-4);
+    }
+    .ad-kv__key { text-align: right; }
+}
+
+/* ==========================================================================
+   45. MENU, DROPDOWN, CONTEXT MENU, TOOLTIP, POPOVER  (A2)
+
+   One panel shape for all four. What differs is who owns focus:
+
+     menu      roving focus on the items (tabindex -1); the trigger keeps the
+               tab stop. Escape returns focus to the trigger.
+     context   the same panel, placed at the pointer. It is NEVER the only
+               path to an action - every item is also in the row kebab.
+     tooltip   a single node in body, never focusable, never the accessible
+               name of anything, and never shown on a coarse pointer.
+     popover   role=dialog for long help. Click to toggle, not hover, because
+               hover help cannot be read on a phone.
+
+   A CLOSED panel is visibility:hidden, not merely transparent. Without that
+   its items keep their place in the tab order and in the accessibility tree,
+   which is the exact backlog lesson the storefront drawers already carry.
+   ========================================================================== */
+
+/* Exits run at 70% of the entrance (section 2). A local token so the two
+   numbers cannot drift apart; reduced motion collapses --ad-dur-base to
+   .01ms and this follows it down. */
+.ad-menu, .ad-popover { --ad-menu-out: calc(var(--ad-dur-base) * .7); }
+
+.ad-menu { position: relative; display: inline-flex; vertical-align: middle; }
+
+/* MEASURED (A2): the panel is FIXED, not absolute, and placeMenu() writes its
+   coordinates from the trigger's box.
+
+   An absolutely-positioned panel is clipped by the nearest ancestor that hides
+   overflow, and in this admin that ancestor is everywhere: `.ad-card` is
+   `overflow:hidden` and `.ad-tablewrap` is `overflow-x:auto`, which clips both
+   axes. Measured on the A2 fixture at 1440: the "More" menu in a card rendered
+   its panel at x 186-406 inside a card starting at x 278, so 92px of every
+   item was cut off and elementFromPoint at the panel's own corner returned the
+   sidebar behind it. The row kebab's panel was cut off 112px below the card.
+   A fixed panel is outside that clipping entirely, which is also what the row
+   menus in A9 will need.
+
+   TRAP for later phases: a fixed descendant IS trapped by an ancestor with
+   `transform`, `filter`, `perspective`, `contain: paint/layout` or
+   `will-change`. admin.css has none on any container today (checked). If A6's
+   button lift or A12's widget drag ever puts one on a card or a widget frame,
+   a menu inside it goes back to being clipped. */
+.ad-menu__panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    min-width: 220px;
+    max-width: min(320px, calc(100vw - var(--ad-space-8)));
+    padding: var(--ad-space-1-5);
+    background: var(--ad-elevated);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
+    box-shadow: var(--ad-shadow-3);
+    z-index: var(--ad-z-dropdown);
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Closed: out of the a11y tree and out of the tab order. */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px) scale(.98);
+    transform-origin: top right;
+    transition:
+        opacity    var(--ad-menu-out) var(--ad-ease-in),
+        transform  var(--ad-menu-out) var(--ad-ease-in),
+        visibility 0s linear var(--ad-menu-out);
+}
+.ad-menu.is-open > .ad-menu__panel {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+        opacity    var(--ad-dur-base) var(--ad-ease-out),
+        transform  var(--ad-dur-base) var(--ad-ease-out),
+        visibility 0s;
+}
+
+/* Placement flips, set by initDropdowns() after it measures the open panel.
+   The coordinates are inline (placeMenu writes left/top); these classes only
+   carry the direction the entrance grows FROM, so the panel appears to come
+   out of its trigger rather than out of thin air. */
+.ad-menu__panel.is-start { transform-origin: top left; }
+.ad-menu__panel.is-up {
+    transform: translateY(-4px) scale(.98);
+    transform-origin: bottom right;
+}
+.ad-menu__panel.is-up.is-start { transform-origin: bottom left; }
+.ad-menu.is-open > .ad-menu__panel.is-up { transform: none; }
+
+/* --- Items --------------------------------------------------------------- */
+.ad-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: var(--ad-space-2) var(--ad-space-3);
+    border: 0;
+    border-radius: var(--ad-radius-md);
+    background: none;
+    font: inherit;
+    font-size: var(--ad-text-sm);
+    line-height: var(--ad-lh-sm);
+    color: var(--ad-ink);
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    min-width: 0;
+}
+.ad-menu__item > svg { flex: none; color: var(--ad-muted); }
+.ad-menu__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-menu__item:hover { background: var(--ad-hover); }
+.ad-menu__item:focus-visible { background: var(--ad-hover); outline: 2px solid var(--ad-focus); outline-offset: -2px; }
+/* Roving focus: the item JS moved to reads as hovered even before the browser
+   paints a ring, so arrow-keying through a menu never looks inert. */
+.ad-menu__item.is-active { background: var(--ad-hover); }
+.ad-menu__item--danger { color: var(--ad-danger-ink); }
+.ad-menu__item--danger > svg { color: currentColor; }
+.ad-menu__item--danger:hover,
+.ad-menu__item--danger.is-active { background: var(--ad-danger-soft); }
+.ad-menu__item[aria-disabled="true"] { color: var(--ad-faint); cursor: not-allowed; }
+.ad-menu__item[aria-disabled="true"] > svg { color: var(--ad-faint); }
+.ad-menu__item[aria-disabled="true"]:hover { background: none; }
+
+.ad-menu__kbd {
+    margin-left: auto;
+    flex: none;
+    font-family: var(--ad-font-mono);
+    font-size: var(--ad-text-2xs);
+    color: var(--ad-muted);
+    background: var(--ad-sunken);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-xs);
+    padding: 0 var(--ad-space-1);
+}
+.ad-menu__sep { height: 1px; background: var(--ad-line); margin: var(--ad-space-1-5) var(--ad-space-1); }
+.ad-menu__label {
+    padding: var(--ad-space-2) var(--ad-space-3) var(--ad-space-1);
+    font-size: var(--ad-text-2xs);
+    line-height: var(--ad-lh-2xs);
+    font-weight: var(--ad-weight-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ad-muted);
+}
+.ad-menu__head {
+    padding: var(--ad-space-3);
+    margin: calc(var(--ad-space-1-5) * -1) calc(var(--ad-space-1-5) * -1) var(--ad-space-1-5);
+    border-bottom: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg) var(--ad-radius-lg) 0 0;
+    background: var(--ad-surface-2);
+}
+.ad-menu__head-name { font-weight: var(--ad-weight-bold); font-size: var(--ad-text-sm); color: var(--ad-ink); }
+.ad-menu__head-meta { font-size: var(--ad-text-xs); color: var(--ad-muted); overflow-wrap: anywhere; }
+.ad-menu__head-role { margin-top: var(--ad-space-1-5); }
+
+/* The topbar account trigger. These four declarations were four inline styles
+   on the button before A2; they are here so the class can be reused and so
+   the sheet media query can reach them. */
+.ad-topbar__account {
+    width: auto;
+    gap: var(--ad-space-2);
+    padding: 0 var(--ad-space-1-5) 0 var(--ad-space-1);
+    /* .ad-iconbtn is flex:none. The account button carries a name, so it may
+       give ground when the bar is tight - otherwise a long name pushes the
+       topbar and the whole page starts panning sideways. */
+    flex: 0 1 auto;
+    min-width: 0;
+}
+.ad-topbar__account > svg { flex: none; }
+.ad-topbar__account-name {
+    font-size: var(--ad-text-sm);
+    font-weight: var(--ad-weight-semibold);
+    color: var(--ad-ink);
+    /* NO fixed cap. A 14ch one cut "ShopInnKart Admin" to "ShopInnKart Ad…"
+       on all 104 pages at every width from 768 up (measured, 15px past the
+       box) - a truncation with nothing to gain, since the bar had the room.
+       min-width:0 lets the flex line shorten it only when it genuinely has
+       to, and the full name is in the panel head and the button's aria-label
+       either way. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* A POST item wraps its button in a form. display:contents keeps the button
+   the panel flex child, so the item looks identical to a link item. */
+.ad-menu__form { display: contents; }
+
+/* --- Bottom sheet on phones ----------------------------------------------
+   The same panel, the same items, the same JS. Only the frame changes, so a
+   menu never needs a second markup path for small screens. */
+@media (max-width: 639px) {
+    .ad-menu.is-sheet > .ad-menu__panel {
+        position: fixed;
+        inset: auto 0 0 0;
+        min-width: 0;
+        max-width: none;
+        max-height: 80dvh;
+        border-radius: var(--ad-radius-xl) var(--ad-radius-xl) 0 0;
+        border-bottom: 0;
+        padding: var(--ad-space-2) var(--ad-space-3) max(var(--ad-space-3), env(safe-area-inset-bottom));
+        box-shadow: var(--ad-shadow-4);
+        transform: translateY(12px);
+        transform-origin: bottom center;
+        z-index: var(--ad-z-drawer);
+    }
+    .ad-menu.is-sheet.is-open > .ad-menu__panel { transform: none; }
+    .ad-menu.is-sheet > .ad-menu__panel::before {
+        content: "";
+        display: block;
+        width: 36px;
+        height: 4px;
+        margin: var(--ad-space-1) auto var(--ad-space-2);
+        border-radius: var(--ad-radius-pill);
+        background: var(--ad-line-strong);
+    }
+    .ad-menu.is-sheet .ad-menu__item { min-height: 44px; }
+}
+
+/* The sheet scrim. Deliberately not the storefront #sikOverlay: that one is
+   owned by SIK.openDrawer and hiding it would close a drawer this menu may
+   be sitting inside. */
+.ad-menu__scrim {
+    position: fixed;
+    inset: 0;
+    background: var(--ad-scrim);
+    z-index: calc(var(--ad-z-drawer) - 1);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--ad-menu-out) var(--ad-ease-in), visibility 0s linear var(--ad-menu-out);
+}
+.ad-menu.is-sheet.is-open > .ad-menu__scrim {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity var(--ad-dur-base) var(--ad-ease-out), visibility 0s;
+}
+
+/* --- Context menu ---------------------------------------------------------
+   One detached panel moved to the pointer. JS writes --ad-cm-x / --ad-cm-y as
+   an inline STYLE - an attribute, not a script, so the script-src CSP path
+   this admin is being kept ready for stays open. */
+.ad-menu--context {
+    position: fixed;
+    top: var(--ad-cm-y, 0px);
+    left: var(--ad-cm-x, 0px);
+    display: block;
+    z-index: var(--ad-z-drawer);
+}
+.ad-menu--context > .ad-menu__panel { position: static; margin: 0; }
+
+/* Touch: a standalone row is a 44px target. Links inside dense table rows get
+   padding instead of an ::after extender (section 40), so this stays scoped
+   to the panel. */
+@media (pointer: coarse) {
+    .ad-menu__item { min-height: 44px; }
+}
+
+/* --- Tooltip --------------------------------------------------------------
+   ONE node in body, reused. It is never the accessible name of a control -
+   icon buttons keep their aria-label - and it is never shown on touch, so
+   nothing essential may live only here. */
+.ad-tooltip {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--ad-z-tooltip);
+    max-width: 280px;
+    padding: var(--ad-space-1-5) 10px;
+    border-radius: var(--ad-radius-sm);
+    background: var(--ad-neutral-fill);
+    color: var(--ad-on-neutral);
+    font-size: var(--ad-text-xs);
+    line-height: var(--ad-lh-xs);
+    font-weight: var(--ad-weight-medium);
+    box-shadow: var(--ad-shadow-3);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(2px);
+    transition:
+        opacity    var(--ad-dur-fast) var(--ad-ease-in),
+        transform  var(--ad-dur-fast) var(--ad-ease-in),
+        visibility 0s linear var(--ad-dur-fast);
+}
+.ad-tooltip.is-open {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+        opacity    var(--ad-dur-fast) var(--ad-ease-out),
+        transform  var(--ad-dur-fast) var(--ad-ease-out),
+        visibility 0s;
+}
+
+/* --- Help popover ---------------------------------------------------------
+   For the walls of 11-12px help text on settings forms. */
+.ad-help-wrap { position: relative; display: inline-flex; }
+.ad-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--ad-sunken);
+    color: var(--ad-muted);
+    cursor: pointer;
+    vertical-align: middle;
+    flex: none;
+}
+.ad-help:hover { background: var(--ad-hover); color: var(--ad-ink); }
+.ad-help[aria-expanded="true"] { background: var(--ad-primary-soft); color: var(--ad-primary-ink); }
+/* A 20px glyph with a 44px hit area on touch, and no ::after extender -
+   getBoundingClientRect() cannot see one, so the audit cannot measure it. */
+@media (pointer: coarse) {
+    .ad-help { width: 44px; height: 44px; background: none; }
+    .ad-help:hover { background: none; }
+}
+
+/* Fixed, and placed by anchorTo() - the same measured reason as the menu
+   panel above: an absolute popover is cut off by .ad-card's overflow. */
+.ad-popover {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--ad-z-dropdown);
+    width: min(320px, calc(100vw - var(--ad-space-8)));
+    padding: var(--ad-space-3) var(--ad-space-4);
+    background: var(--ad-elevated);
+    border: 1px solid var(--ad-line);
+    border-radius: var(--ad-radius-lg);
+    box-shadow: var(--ad-shadow-3);
+    font-size: var(--ad-text-sm);
+    line-height: var(--ad-lh-md);
+    color: var(--ad-ink-2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition:
+        opacity    var(--ad-menu-out) var(--ad-ease-in),
+        transform  var(--ad-menu-out) var(--ad-ease-in),
+        visibility 0s linear var(--ad-menu-out);
+}
+.ad-popover.is-open {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+        opacity    var(--ad-dur-base) var(--ad-ease-out),
+        transform  var(--ad-dur-base) var(--ad-ease-out),
+        visibility 0s;
+}
+.ad-popover p { margin: 0 0 var(--ad-space-2); }
+.ad-popover p:last-child { margin-bottom: 0; }
+
+/* ==========================================================================
+   46. MODAL, SHEET, DRAWER  (A2)
+
+   ADDITIVE on purpose. The .ad-modal block in the legacy "Modal" section
+   above still owns the frame (display:none -> .is-open display:flex) and the
+   five modals already on four pages keep rendering exactly as they did. This
+   section adds the entrance, the sizes, the phone sheet and the drawer skin,
+   and moves the z-index onto the layer scale.
+
+   WHY A CLASS FLIP AND NOT @starting-style. You cannot transition out of
+   display:none, so an entrance needs either @starting-style or a class the
+   next frame. SIK.admin.modal adds .is-open (the panel is laid out, still
+   at opacity 0) and then .is-shown on the next animation frame. That works
+   in every engine, including the headless one the screenshots are taken in,
+   and the exit is the same flip in reverse - .is-shown off, .is-open removed
+   when the transition ends. Exits run at 70% of the entrance (section 2).
+   ========================================================================== */
+
+.ad-modal {
+    /* Was a hard-coded 120. Same number, now on the scale. */
+    z-index: var(--ad-z-modal);
+}
+/* The `hidden` attribute is the no-JS resting state for helper-built modals:
+   with JS off a modal is markup at the end of the document and must not paint
+   over the page. .ad-modal{display:none} already hides it, but `hidden` says
+   so to assistive tech too. JS removes the attribute as it opens. */
+.ad-modal[hidden] { display: none; }
+
+/* The resting state of the entrance is opacity 0, and it is scoped to .js on
+   purpose. blog/categories.php and settings/shipping.php render their modal
+   with `is-open` already set when a POST comes back with validation errors;
+   with scripts off nothing would ever add .is-shown and the operator would
+   get a scrim over an invisible form. With scripts on, initModals() adopts
+   those server-opened modals in the same boot() tick that swaps no-js -> js,
+   so there is no paint in between and no flash. */
+.ad-modal__backdrop {
+    -webkit-backdrop-filter: var(--ad-backdrop-blur);
+    backdrop-filter: var(--ad-backdrop-blur);
+}
+.js .ad-modal__backdrop {
+    opacity: 0;
+    transition: opacity calc(var(--ad-dur-slow) * .7) var(--ad-ease-in);
+}
+/* Without backdrop-filter the translucent scrim alone leaves the page behind
+   it legible enough to read and to look clickable, so the fallback trades the
+   blur for a much denser veil. --ad-scrim-dense, not a literal: this block
+   applies in BOTH palettes, and the literal that used to sit here was the
+   light-mode maroon-black, so a dark-mode dialog got the wrong scrim.
+   Dead on every current engine (backdrop-filter has been in Edge since 79),
+   which is exactly why the wrong value could sit here unseen. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .ad-modal__backdrop { background: var(--ad-scrim-dense); }
+}
+.ad-modal.is-shown > .ad-modal__backdrop {
+    opacity: 1;
+    transition: opacity var(--ad-dur-slow) var(--ad-ease-out);
+}
+
+.js .ad-modal__panel {
+    opacity: 0;
+    transform: scale(.96) translateY(8px);
+    transition:
+        opacity   calc(var(--ad-dur-slower) * .7) var(--ad-ease-in),
+        transform calc(var(--ad-dur-slower) * .7) var(--ad-ease-in);
+}
+.ad-modal.is-shown > .ad-modal__panel {
+    opacity: 1;
+    transform: none;
+    transition:
+        opacity   var(--ad-dur-slower) var(--ad-ease-out),
+        transform var(--ad-dur-slower) var(--ad-ease-out);
+}
+/* The panel is the dialog and takes focus on open; it must show a ring like
+   anything else that can be focused. */
+.ad-modal__panel:focus-visible { outline: 2px solid var(--ad-focus); outline-offset: 2px; }
+
+/* --- Sizes (spec 4.6). The legacy .ad-modal__panel--sm/--lg still work. --- */
+.ad-modal--sm .ad-modal__panel { max-width: 400px; }
+.ad-modal--md .ad-modal__panel { max-width: 560px; }
+.ad-modal--lg .ad-modal__panel { max-width: 720px; }
+.ad-modal--xl .ad-modal__panel { max-width: 960px; }
+
+.ad-modal__title { font-size: var(--ad-text-lg); line-height: var(--ad-lh-lg); font-weight: var(--ad-weight-bold); margin: 0; }
+.ad-modal__sub { font-size: var(--ad-text-xs); line-height: var(--ad-lh-xs); color: var(--ad-muted); margin: 2px 0 0; }
+.ad-modal--danger .ad-modal__title { color: var(--ad-danger-ink); }
+
+/* The grab handle exists in the markup at every width so the sheet form needs
+   no second template; it only shows where there is a sheet to grab. */
+.ad-sheet__handle { display: none; }
+
+/* --- Bottom sheet on phones ----------------------------------------------
+   Opt-in per modal. A form that is chiefly a list of fields reads better
+   docked to the thumb than floating in the middle of a 360px screen. */
+@media (max-width: 639px) {
+    .ad-modal--sheet { align-items: flex-end; padding: 0; }
+    .ad-modal--sheet .ad-modal__panel {
+        max-width: none;
+        width: 100%;
+        max-height: 90dvh;
+        border-radius: var(--ad-radius-xl) var(--ad-radius-xl) 0 0;
+        transform: translateY(16px);
+    }
+    .ad-modal--sheet.is-shown > .ad-modal__panel { transform: none; }
+    .ad-modal--sheet .ad-modal__foot {
+        padding-bottom: max(var(--ad-space-3), env(safe-area-inset-bottom));
+    }
+    /* Decorative only. Closing is the X, Escape, the backdrop and Cancel;
+       a swipe is never the only way out. The selector carries the sheet
+       class so it beats the "hidden everywhere else" rule above, which sits
+       outside the query and would otherwise win on source order. */
+    .ad-modal--sheet .ad-sheet__handle {
+        display: block;
+        width: 36px;
+        height: 4px;
+        margin: var(--ad-space-2) auto 0;
+        border-radius: var(--ad-radius-pill);
+        background: var(--ad-line-strong);
+    }
+}
+
+/* --- Drawer ---------------------------------------------------------------
+   Styling ONLY. The engine is app.js SIK.openDrawer / SIK.closeDrawer, which
+   already owns focus-in, the Tab trap, focus return, the scrim and the layer
+   stack (spec 4.7: do not fork it). It toggles .is-open and aria-hidden, so
+   those are exactly what is styled here.
+
+   visibility:hidden when closed is load-bearing, not decoration: without it
+   every link in a closed drawer stays in the tab order. */
+.ad-drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: min(480px, 100vw);
+    max-width: 100vw;
+    display: flex;
+    flex-direction: column;
+    background: var(--ad-elevated);
+    box-shadow: var(--ad-shadow-4);
+    border-radius: var(--ad-radius-xl) 0 0 var(--ad-radius-xl);
+    z-index: var(--ad-z-drawer);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(102%);
+    transition:
+        transform  calc(var(--ad-dur-slower) * .7) var(--ad-ease-in),
+        opacity    calc(var(--ad-dur-slower) * .7) var(--ad-ease-in),
+        visibility 0s linear calc(var(--ad-dur-slower) * .7);
+}
+.ad-drawer.is-open {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition:
+        transform  var(--ad-dur-slower) var(--ad-ease-out),
+        opacity    var(--ad-dur-slower) var(--ad-ease-out),
+        visibility 0s;
+}
+.ad-drawer--lg { width: min(720px, 100vw); }
+.ad-drawer--left {
+    right: auto;
+    left: 0;
+    transform: translateX(-102%);
+    border-radius: 0 var(--ad-radius-xl) var(--ad-radius-xl) 0;
+}
+.ad-drawer--left.is-open { transform: none; }
+
+.ad-drawer__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--ad-space-3);
+    padding: var(--ad-space-4) var(--ad-space-5);
+    border-bottom: 1px solid var(--ad-line);
+    flex: none;
+}
+.ad-drawer__title { font-size: var(--ad-text-lg); line-height: var(--ad-lh-lg); font-weight: var(--ad-weight-bold); margin: 0; }
+.ad-drawer__sub { font-size: var(--ad-text-xs); line-height: var(--ad-lh-xs); color: var(--ad-muted); margin: 2px 0 0; }
+.ad-drawer__body { padding: var(--ad-space-5); overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; min-height: 0; }
+.ad-drawer__foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--ad-space-2);
+    padding: var(--ad-space-3) var(--ad-space-5) max(var(--ad-space-3), env(safe-area-inset-bottom));
+    border-top: 1px solid var(--ad-line);
+    background: var(--ad-canvas);
+    flex: none;
+}
+
+/* Below 640 a side drawer is a bottom sheet: 480px of side panel on a 360px
+   screen is the whole screen with a 0px peek, which reads as a broken modal. */
+@media (max-width: 639px) {
+    .ad-drawer--sheet {
+        top: auto;
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-height: 90dvh;
+        border-radius: var(--ad-radius-xl) var(--ad-radius-xl) 0 0;
+        transform: translateY(102%);
+    }
+    .ad-drawer--sheet.is-open { transform: none; }
+}
+
+/* --- Remote quick view (SIK.admin.remote) ---------------------------------
+   The shell opens at once and the panel arrives after it. Bones are the
+   shared skeleton kit (app.css 30b, .sik-skel), never a fork, and they are
+   built from the REAL classes so the frame does not jump when content lands.
+   There is no path that ends on a shimmer: it becomes content or the error
+   block with a Retry button. */
+.ad-remote { min-height: 120px; }
+.ad-remote__bones { display: flex; flex-direction: column; gap: var(--ad-space-3); }
+.ad-remote__bones .sik-skel__line { height: 12px; border-radius: var(--ad-radius-xs); }
+.ad-remote__error { text-align: center; padding: var(--ad-space-6) var(--ad-space-4); }
+.ad-remote__error-title { font-weight: var(--ad-weight-semibold); color: var(--ad-ink); margin: 0 0 var(--ad-space-1); }
+.ad-remote__error-text { font-size: var(--ad-text-sm); color: var(--ad-muted); margin: 0 0 var(--ad-space-4); }
+
+/* A partial rendered on its own (no shell) still needs a readable page when
+   a no-JS visitor follows the href: the link goes to the FULL url, so this
+   only ever applies inside a quick view. */
+.ad-partial { min-width: 0; }
+
+/* ==========================================================================
+   47. CONFIRM DIALOG, TOASTS AND FLASHES  (A3)
+
+   The dialog is an .ad-modal--sm with role="alertdialog", built by
+   SIK.admin.confirm() in admin.js. Everything structural - the backdrop, the
+   panel, the entrance, the sheet behaviour under 640px - is section 46's and
+   is deliberately not repeated here. This section is only the few things a
+   question needs that a form does not.
+
+   Toasts are app.css's .sik-toast, shared with the storefront. Only the two
+   things that are admin-only live here: the action-as-button variant, and
+   room for the rail on a wide screen.
+   ========================================================================== */
+
+/* --- The question ---------------------------------------------------------
+   Wider measure than a form field, because this is prose to be read once and
+   understood, not a label to be scanned. */
+.ad-confirm__text {
+    margin: 0;
+    font-size: var(--ad-text-sm);
+    line-height: var(--ad-lh-md);
+    color: var(--ad-ink-2);
+    max-width: 52ch;
+    overflow-wrap: anywhere;
+}
+
+/* --- Type-the-name guard --------------------------------------------------
+   Only on an action that cannot be undone: deleting a customer, emptying a
+   log, restoring a database over the top of the live one. The confirm button
+   stays disabled until what is typed matches. */
+.ad-confirm__require {
+    margin-top: var(--ad-space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--ad-space-2);
+}
+.ad-confirm__label {
+    font-size: var(--ad-text-xs);
+    line-height: var(--ad-lh-xs);
+    color: var(--ad-muted);
+}
+/* The name is the thing being read off the screen and re-typed, so it gets
+   the ink and the weight - not the sentence around it. */
+.ad-confirm__label strong {
+    color: var(--ad-ink);
+    font-weight: var(--ad-weight-semibold);
+    overflow-wrap: anywhere;
+}
+.ad-confirm__input { width: 100%; }
+
+/* A danger dialog's footer puts Cancel first in the DOM (it is where focus
+   lands) and the destructive button last, which is also where the eye and the
+   thumb expect it. Section 46 already lays .ad-modal__foot out end-aligned,
+   so there is nothing to override on a wide screen. Under 420px they stack
+   and the safe one must be the one nearest the thumb - so the order flips. */
+@media (max-width: 420px) {
+    .ad-confirm .ad-modal__foot {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+    .ad-confirm .ad-modal__foot .ad-btn { width: 100%; justify-content: center; }
+}
+
+/* --- Toasts ---------------------------------------------------------------
+   The container, the tones, the entrance and the leave animation are all
+   app.css's, and app.css is not this track's file. What is missing there is
+   the button form of the action: every caller today passes a href, so the
+   <a> rule covers them, and the <button> variant is so far admin-only.
+   If the storefront ever passes an action with only an onClick, this rule
+   needs to move to app.css with it. */
+.sik-toast__action--btn {
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* The toast stack is fixed to the viewport, so on a wide admin screen it
+   would otherwise float over the middle of the content. Nudging it clear of
+   the rail keeps it in the column the operator is already looking at. */
+@media (min-width: 1024px) {
+    .ad-body .sik-toasts { right: var(--ad-space-6); }
+}
+
+/* --- The no-JS flash ------------------------------------------------------
+   admin/includes/header.php emits the flash payload as JSON for the toast
+   component AND the old banner inside <noscript>. <noscript> is the one
+   fallback with no flash of content: with scripts on, the parser never even
+   builds those nodes, so there is nothing to hide and nothing to unhide.
+   The banner inherits .sik-alert from app.css; it only needs its spacing
+   back, because it is no longer inside the flow the page header set up. */
+.ad-flash-noscript .sik-alert { margin-bottom: var(--ad-space-4); }

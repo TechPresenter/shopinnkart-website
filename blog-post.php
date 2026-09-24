@@ -32,7 +32,7 @@ seo_from_entity($post, [
     'title'       => (string) $post['title'],
     'description' => str_limit((string) $post['excerpt'], 200, ''),
     'og_image'    => $cover !== null ? (string) $post['featured_image'] : '',
-]);
+], 'post');
 seo_add_schema(seo_article_schema($post));
 seo_add_schema(seo_breadcrumb_schema(array_values(array_filter([
     ['label' => 'Home', 'url' => url()],
