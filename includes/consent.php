@@ -17,7 +17,7 @@
  *
  * TWO DIFFERENT THINGS, AND WHY ONLY ONE OF THEM ASKS
  * ---------------------------------------------------
- *   1. Third-party tags (GA, GTM, Meta Pixel, Clarity). These hand the
+ *   1. Third-party tags (GA4, GTM, Meta Pixel, Google Ads, Clarity). These hand the
  *      visitor's IP, page URL and a durable advertising identifier to another
  *      company. They need consent, and they get it: nothing third-party is
  *      emitted or injected until `marketing` is granted.
@@ -273,6 +273,63 @@ function consent_allows(string $category): bool
  * A blank entry means "not configured", which is how a store that uses none of
  * them ships no third-party script and no banner at all.
  */
+/**
+ * Which setting holds each gated tag id, and the exact shape it has to take.
+ *
+ * These two lists are the single source of truth for "what is a valid tag id".
+ * Admin > Settings > Integrations validates a pasted id against the SAME
+ * pattern through consent_tag_patterns(), so the admin can no longer accept a
+ * value this file would then silently drop - which is how a mistyped GTM
+ * container produced a saved setting, no tag, and no explanation.
+ *
+ * `gads` is a Google Ads conversion id. It is not a second loader: Google Ads
+ * and GA4 are both gtag products, so they share one gtag.js and take one
+ * `config` call each. See consent_gtag_ids().
+ */
+const CONSENT_TAG_KEYS = [
+    'ga'      => 'google_analytics_id',
+    'gtm'     => 'google_tag_manager_id',
+    'pixel'   => 'meta_pixel_id',
+    'clarity' => 'clarity_project_id',
+    'gads'    => 'google_ads_conversion_id',
+];
+
+const CONSENT_TAG_PATTERNS = [
+    // A GA4 measurement id, a legacy Universal Analytics property, or an AW-
+    // conversion id pasted into the GA field - which was the only way to run
+    // Google Ads before it had a field of its own, and must keep working.
+    'ga'      => '/^(G-[A-Z0-9]{4,15}|UA-\d{4,10}-\d{1,4}|AW-\d{6,15})$/i',
+    'gtm'     => '/^GTM-[A-Z0-9]{4,10}$/i',
+    // Meta issues 15-16 digits. This range stays wider on purpose: tightening
+    // it here would stop a currently-firing pixel on a live store instead of
+    // telling anyone. Settings > Integrations flags the odd length instead,
+    // which is the half an operator can actually act on.
+    'pixel'   => '/^\d{10,20}$/',
+    'clarity' => '/^[a-z0-9]{6,15}$/i',
+    'gads'    => '/^AW-\d{6,15}$/i',
+];
+
+/** The pattern each gated id is held to, for anything that validates input. */
+function consent_tag_patterns(): array
+{
+    return CONSENT_TAG_PATTERNS;
+}
+
+/**
+ * Configured third-party ids, validated against their real formats.
+ *
+ * The validation is not cosmetic: these values end up inside a script URL and
+ * a JS call, so anything that is not a short token from the known alphabet is
+ * a paste error or an injection attempt, and is dropped rather than printed.
+ *
+ * A blank entry means "not configured", which is how a store that uses none of
+ * them ships no third-party script and no banner at all.
+ *
+ * Read key by key rather than in one settings_group() sweep, because these
+ * five keys do not share a group: setting_save() fixes a row's group when it
+ * is inserted and never moves it, so google_tag_manager_id still sits in the
+ * `seo` group it was created in.
+ */
 function consent_tag_ids(): array
 {
     static $ids = null;
@@ -281,19 +338,31 @@ function consent_tag_ids(): array
         return $ids;
     }
 
-    $match = static function (string $key, string $pattern): string {
-        $value = trim((string) setting($key, ''));
-        return preg_match($pattern, $value) === 1 ? $value : '';
-    };
-
-    $ids = [
-        'ga'      => $match('google_analytics_id',   '/^(G-[A-Z0-9]{4,15}|UA-\d{4,10}-\d{1,4}|AW-\d{6,15})$/i'),
-        'gtm'     => $match('google_tag_manager_id', '/^GTM-[A-Z0-9]{4,10}$/i'),
-        'pixel'   => $match('meta_pixel_id',         '/^\d{10,20}$/'),
-        'clarity' => $match('clarity_project_id',    '/^[a-z0-9]{6,15}$/i'),
-    ];
+    $ids = [];
+    foreach (CONSENT_TAG_KEYS as $slot => $key) {
+        $value      = trim((string) setting($key, ''));
+        $ids[$slot] = preg_match(CONSENT_TAG_PATTERNS[$slot], $value) === 1 ? $value : '';
+    }
 
     return $ids;
+}
+
+/**
+ * The gtag products to configure, loader id first.
+ *
+ * gtag.js is fetched once, with whichever id comes first, and then every id
+ * takes a `config` call - Google's own documented multi-product setup. GA4 is
+ * ordered first so the loader URL is byte-identical for the overwhelmingly
+ * common GA4-only store, which is what makes adding Google Ads invisible to it.
+ */
+function consent_gtag_ids(): array
+{
+    $ids = consent_tag_ids();
+
+    return array_values(array_filter(
+        [$ids['ga'], $ids['gads']],
+        static fn (string $id): bool => $id !== ''
+    ));
 }
 
 /** Are any marketing tags configured at all? */
@@ -392,7 +461,9 @@ function consent_tag_html(): string
 
     $html = '';
 
-    if ($ids['ga'] !== '' || $ids['gtm'] !== '') {
+    $gtagIds = consent_gtag_ids();
+
+    if ($gtagIds !== [] || $ids['gtm'] !== '') {
         // Consent Mode v2. Declared denied then granted in the same breath, so
         // the container never sees an undeclared state whatever order its own
         // tags fire in.
@@ -419,12 +490,18 @@ function consent_tag_html(): string
             . "</script>\n";
     }
 
-    if ($ids['ga'] !== '') {
-        $html .= '<script async src="https://www.googletagmanager.com/gtag/js?id=' . e($ids['ga']) . '"></script>' . "\n"
+    if ($gtagIds !== []) {
+        // One fetch, then one config per product. A store running GA4 and
+        // Google Ads together gets both from this single script, so we add no
+        // loader of our own. Google's library does fetch its own Ads destination
+        // script afterwards - that is its behaviour, not a second tag from us.
+        $html .= '<script async src="https://www.googletagmanager.com/gtag/js?id=' . e($gtagIds[0]) . '"></script>' . "\n"
             . "<script>\n"
-            . "gtag('js', new Date());\n"
-            . "gtag('config', " . e_json($ids['ga']) . ");\n"
-            . "</script>\n";
+            . "gtag('js', new Date());\n";
+        foreach ($gtagIds as $gtagId) {
+            $html .= "gtag('config', " . e_json($gtagId) . ");\n";
+        }
+        $html .= "</script>\n";
     }
 
     if ($ids['pixel'] !== '') {
@@ -475,8 +552,75 @@ function consent_js_config(): array
         // consent.js injects these itself when the visitor accepts, so the tags
         // start in the same page view rather than after a reload. They are
         // public identifiers, visible in any page that runs them.
-        'tags'       => consent_allows('marketing') ? [] : consent_tag_ids(),
+        'tags'       => consent_allows('marketing') ? [] : consent_js_tags(),
     ];
+}
+
+/**
+ * The tag payload in the shape assets/js/consent.js documents: ga, gtm, pixel,
+ * clarity and nothing else.
+ *
+ * consent.js knows four slots and ignores anything it does not recognise, so
+ * handing it a fifth key would have produced a Google Ads tag that the server
+ * fires on every later page view and the accept click does not - the same id
+ * behaving differently depending on which half of the gate ran. Instead the
+ * `ga` slot carries the gtag LOADER id, and consent_gtag_bridge_html() adds a
+ * config call for any further gtag product in the same page view.
+ */
+function consent_js_tags(): array
+{
+    $ids     = consent_tag_ids();
+    $gtagIds = consent_gtag_ids();
+
+    return [
+        'ga'      => $gtagIds[0] ?? '',
+        'gtm'     => $ids['gtm'],
+        'pixel'   => $ids['pixel'],
+        'clarity' => $ids['clarity'],
+    ];
+}
+
+/**
+ * A config call for every gtag product beyond the one consent.js configures.
+ *
+ * Emitted only while marketing is NOT yet granted, which is exactly when
+ * consent_js_config() hands consent.js something to inject; once the answer is
+ * stored, consent_tag_html() prints every config server-side and this is ''.
+ *
+ * Nothing here contacts anybody. It registers a listener on consent.js's
+ * documented SIK.consent.onChange API and pushes into the gtag queue only
+ * after the visitor has granted marketing - consent.js calls its listeners
+ * from store(), after loadTags() has created the queue. Wrapped in
+ * DOMContentLoaded because consent.js is deferred, so window.SIK does not
+ * exist while an inline script is parsed.
+ */
+function consent_gtag_bridge_html(): string
+{
+    if (consent_allows('marketing')) {
+        return '';
+    }
+
+    $extra = array_slice(consent_gtag_ids(), 1);
+    if ($extra === []) {
+        return '';
+    }
+
+    $configs = '';
+    foreach ($extra as $gtagId) {
+        $configs .= "            window.gtag('config', " . e_json($gtagId) . ");\n";
+    }
+
+    return "<script>\n"
+        . "document.addEventListener('DOMContentLoaded', function () {\n"
+        . "    if (!window.SIK || !window.SIK.consent) { return; }\n"
+        . "    var done = false;\n"
+        . "    window.SIK.consent.onChange(function (s) {\n"
+        . "        if (done || !s.marketing || !window.gtag) { return; }\n"
+        . "        done = true;\n"
+        . $configs
+        . "    });\n"
+        . "});\n"
+        . "</script>\n";
 }
 
 /**
@@ -627,6 +771,7 @@ function consent_banner_html(): string
 </div>
 <script>window.SIK_CONSENT = <?= e_json(consent_js_config()) ?>;</script>
 <script src="<?= e(asset('js/consent.js')) ?>" defer></script>
+<?= consent_gtag_bridge_html() ?>
     <?php
     return (string) ob_get_clean();
 }

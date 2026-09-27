@@ -26,6 +26,10 @@ if (!defined('SIK_BOOTSTRAPPED')) {
 const SEO_SCREENS = [
     'index'   => ['label' => 'Overview',      'file' => 'index.php'],
     '404s'    => ['label' => 'Broken links',  'file' => '404s.php'],
+    // Next to the 404 monitor on purpose: the two are halves of one question.
+    // 404s.php is what visitors HIT, links.php is what is WRITTEN DOWN and
+    // nobody has clicked yet - plus the orphans and the pages linking nowhere.
+    'links'   => ['label' => 'Internal links', 'file' => 'links.php'],
     'images'  => ['label' => 'Image alt text', 'file' => 'images.php'],
     'scripts' => ['label' => 'Injected code', 'file' => 'scripts.php'],
 ];

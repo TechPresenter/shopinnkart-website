@@ -1715,24 +1715,26 @@ function seo_image_alts(string $html): array
     return array_values(array_filter(seo_image_tags($html), static fn (string $a): bool => trim($a) !== ''));
 }
 
-/** How many links in a body point back into this site. */
+/**
+ * How many links in a body point back into this site.
+ *
+ * The per-record checklist and the internal-linking report have to agree on
+ * what "an internal link" is, or the checklist ticks a page the report calls
+ * thin. So both go through the one extractor in the INTERNAL LINKING section
+ * below rather than each carrying its own regex.
+ *
+ * That also fixed three things this function used to get wrong: an unquoted
+ * href (alt text has the same bug history), a javascript: or data: href counted
+ * as a page link, and an absolute link to the store's canonical domain read as
+ * external whenever SITE_URL was still localhost.
+ */
 function seo_internal_link_count(string $html): int
 {
-    if (!preg_match_all('~<a\b[^>]*href\s*=\s*("([^"]*)"|\'([^\']*)\')~i', $html, $matches)) {
-        return 0;
-    }
-
-    $own   = (string) parse_url(SITE_URL, PHP_URL_HOST);
     $count = 0;
 
-    foreach ($matches[2] as $i => $quoted) {
-        $href = trim($quoted !== '' ? $quoted : ($matches[3][$i] ?? ''));
-        if ($href === '' || str_starts_with($href, '#')
-            || str_starts_with($href, 'mailto:') || str_starts_with($href, 'tel:')) {
-            continue;
-        }
-        $host = (string) parse_url($href, PHP_URL_HOST);
-        if ($host === '' || strcasecmp($host, $own) === 0) {
+    foreach (seo_link_tags($html) as $link) {
+        $classified = seo_link_classify($link['href']);
+        if ($classified !== null && $classified['internal']) {
             $count++;
         }
     }
@@ -2251,4 +2253,1255 @@ function seo_images_missing_alt_count(): int
     } catch (Throwable $e) {
         return 0;
     }
+}
+
+// ---------------------------------------------------------------------------
+//  INTERNAL LINKING
+//
+//  Who links to whom, across the whole store. Three questions an operator
+//  cannot answer from any single record's editor:
+//
+//    ORPHANS       a published record nothing points at. Search engines reach
+//                  it last, if at all.
+//    THIN OUTBOUND a page or post whose copy links nowhere. On a shop that is
+//                  usually a missed sale rather than a missed crawl.
+//    BROKEN        a link WRITTEN DOWN that points at a slug which no longer
+//                  exists. seo_404_log catches what visitors hit; this catches
+//                  what is sitting in the copy and nobody has clicked yet.
+//
+//  Two sources of truth are read, and the screen keeps them apart:
+//
+//    EDITORIAL     <a href> in the body columns - the six entity bodies plus
+//                  homepage_sections.custom_html. Parsed here.
+//    PLACEMENTS    links a template emits from a stored reference, and which
+//                  are therefore derivable without rendering anything: a
+//                  product's category and brand, a child category's parent, a
+//                  combo's items, a post's blog category, menu items, footer
+//                  links and homepage rows. Every one of them was checked
+//                  against the template that actually emits it before being
+//                  counted; the file and line are named at each block below so
+//                  the next person can re-check rather than trust a comment.
+//
+//  Anything a template invents at request time - pagination, search results,
+//  the "you may also like" widget, breadcrumbs past the parent chain, the
+//  sitemap, /shop listing every product - is NOT a link this can see, and the
+//  screen says so rather than pretending the graph is complete.
+//
+//  COST. The bodies are HTML in the database and parsing all of them is not a
+//  per-request cost anyone should pay, so the whole report is built once and
+//  cached until something is saved (every admin write ends in
+//  admin_after_write() -> cache_bust()) or the operator presses Rebuild.
+//  Measured on this install: 54 records, 96 KB of body copy, 8 ms. That is
+//  cheap here and linear in body bytes, which is exactly why it is cached -
+//  a real catalogue is a hundred times this one.
+// ---------------------------------------------------------------------------
+
+/** The cache entry the whole report lives in. Bump on a shape change. */
+const SEO_LINK_GRAPH_KEY = 'seo.link_graph.v1';
+
+/** Inbound links kept per record in full before they are only counted. */
+const SEO_LINK_INBOUND_DETAIL = 25;
+
+/** Problem rows kept before they are only counted. */
+const SEO_LINK_PROBLEM_LIMIT = 500;
+
+/** What each inbound link was read from, for the label on the screen. */
+const SEO_LINK_KINDS = [
+    'body'     => 'Body copy',
+    'menu'     => 'Menu',
+    'footer'   => 'Footer',
+    'homepage' => 'Homepage row',
+    'category' => 'Category listing',
+    'brand'    => 'Brand page',
+    'product'  => 'Product page',
+    'combo'    => 'Combo page',
+    'blog'     => 'Blog category',
+];
+
+/**
+ * A host reduced to what a comparison should care about.
+ *
+ * No case, no port and no leading www. The port goes because this checkout is
+ * served on :80 and on :8099 and a link written against one is the same page on
+ * the other; www goes because a store answers on both and the canonical host is
+ * a redirect away, not another site.
+ */
+function seo_link_host_key(string $host): string
+{
+    $host = strtolower(trim($host));
+    $host = (string) preg_replace('/:\d+$/', '', $host);
+
+    return (string) preg_replace('/^www\./', '', $host);
+}
+
+/**
+ * The hosts that mean "this site" when a link spells one out.
+ *
+ * Deliberately NOT site_url_dev_host(): that answers "could this be some
+ * developer's machine", which is the right question for a Host header and the
+ * wrong one here. A link to http://localhost/ in live body copy is a mistake
+ * worth reporting, not an internal link - and when the store really is served
+ * from localhost, localhost is in this list anyway because SITE_URL says so.
+ *
+ * @return string[]
+ */
+function seo_link_own_hosts(): array
+{
+    static $hosts = null;
+    if ($hosts !== null) {
+        return $hosts;
+    }
+
+    $raw = [(string) parse_url(SITE_URL, PHP_URL_HOST)];
+    if (defined('SITE_DOMAIN')) {
+        $raw[] = (string) SITE_DOMAIN;
+    }
+
+    // The deployment's own answer to "which hosts are ours", which is what
+    // makes a link written as https://the-live-domain/... internal on a machine
+    // whose SITE_URL is still localhost.
+    if (function_exists('site_url_policy')) {
+        $policy = site_url_policy();
+        if ((string) ($policy['canonical'] ?? '') !== '') {
+            $raw[] = (string) parse_url((string) $policy['canonical'], PHP_URL_HOST);
+        }
+        foreach ((array) ($policy['hosts'] ?? []) as $host) {
+            $raw[] = (string) $host;
+        }
+    }
+
+    $seen = [];
+    foreach ($raw as $host) {
+        $key = seo_link_host_key($host);
+        if ($key !== '') {
+            $seen[$key] = true;
+        }
+    }
+
+    return $hosts = array_keys($seen);
+}
+
+/** Is this host one of ours? */
+function seo_link_host_is_own(string $host): bool
+{
+    $key = seo_link_host_key($host);
+
+    return $key !== '' && in_array($key, seo_link_own_hosts(), true);
+}
+
+/**
+ * Every <a> in a body, as href plus the words that were linked.
+ *
+ * Driven off the OPENING tags rather than a paired <a>...</a> pattern, because
+ * a paired pattern silently drops a link whose closing tag an editor ate - and
+ * a dropped link is a broken link this screen would then swear does not exist.
+ * The anchor text is whatever sits between this tag and the next </a>, when
+ * that close comes before the next <a>.
+ *
+ * Unquoted hrefs are read too, for the reason seo_image_tags() reads unquoted
+ * alts: HTML allows them and editors emit them.
+ *
+ * @return array<int,array{href:string,anchor:string}>
+ */
+function seo_link_tags(string $html): array
+{
+    if ($html === '' || !preg_match_all('~<a\b[^>]*>~i', $html, $opens, PREG_OFFSET_CAPTURE)) {
+        return [];
+    }
+
+    $length = strlen($html);
+    $links  = [];
+
+    foreach ($opens[0] as $i => $open) {
+        $tag = (string) $open[0];
+        $at  = (int) $open[1];
+
+        if (!preg_match('~\bhref\s*=\s*("[^"]*"|\'[^\']*\'|[^\s"\'>]+)~i', $tag, $m)) {
+            continue;                       // <a name="x"> and friends: not a link
+        }
+
+        $value = $m[1];
+        $first = $value[0] ?? '';
+        if (($first === '"' || $first === "'") && str_ends_with($value, $first)) {
+            $value = substr($value, 1, -1);
+        }
+
+        $from     = $at + strlen($tag);
+        $nextOpen = isset($opens[0][$i + 1]) ? (int) $opens[0][$i + 1][1] : $length;
+        $close    = stripos($html, '</a>', $from);
+        $to       = ($close === false || $close > $nextOpen) ? min($nextOpen, $from + 300) : $close;
+
+        $anchor = (string) preg_replace(
+            '/\s+/',
+            ' ',
+            html_entity_decode(strip_tags(substr($html, $from, max(0, $to - $from))), ENT_QUOTES | ENT_HTML5, 'UTF-8')
+        );
+
+        $links[] = [
+            'href'   => trim(html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8')),
+            'anchor' => trim($anchor),
+        ];
+    }
+
+    return $links;
+}
+
+/**
+ * What one href is: an internal page link, an external one, or not a link.
+ *
+ * null for the hrefs that are not navigation at all - an in-page anchor,
+ * mailto:, tel:, javascript:, a data URI - because counting those as "this page
+ * links somewhere" is how a thin page passes the check.
+ *
+ * @return array{internal:bool,path:string,query:string}|null
+ */
+function seo_link_classify(string $href): ?array
+{
+    $href = seo_link_expand_tokens(trim($href));
+    if ($href === '' || str_starts_with($href, '#')) {
+        return null;
+    }
+
+    if (preg_match('~^([a-z][a-z0-9+.\-]*):~i', $href, $m) === 1) {
+        $scheme = strtolower($m[1]);
+        if ($scheme !== 'http' && $scheme !== 'https') {
+            return null;
+        }
+    }
+
+    $parts = parse_url($href);
+    if (!is_array($parts)) {
+        return null;                        // unparseable: not something to report
+    }
+
+    $host  = (string) ($parts['host'] ?? '');
+    $path  = (string) ($parts['path'] ?? '');
+    $query = (string) ($parts['query'] ?? '');
+
+    if ($host !== '' && !seo_link_host_is_own($host)) {
+        return ['internal' => false, 'path' => $path, 'query' => $query];
+    }
+
+    if ($path === '') {
+        $path = '/';                        // "?page=2" and "https://ourhost" are the site root
+    }
+
+    // An absolute or root-relative path carries the install's sub-folder, which
+    // seo_app_path() strips so one report reads the same at /ecomweb and at a
+    // domain root. A relative href (menus store "page.php?slug=x") has no
+    // folder to strip and is read from the site root, which is where the
+    // storefront resolves it - nav_link_url() does the same thing.
+    $path = str_starts_with($path, '/') ? seo_app_path($path) : '/' . ltrim($path, '/');
+
+    return ['internal' => true, 'path' => $path, 'query' => $query];
+}
+
+/**
+ * The storefront scripts a one-segment URL can rewrite to.
+ *
+ * .htaccess ends with ^([A-Za-z0-9\-_]+)/?$ -> $1.php, so /contact is
+ * contact.php. Read from disk once, and compared case-SENSITIVELY on purpose:
+ * /Contact opens on this Windows machine and 404s on the live Linux host, and a
+ * report that only tells the truth on the developer's machine is worth nothing.
+ *
+ * @return array<string,true>
+ */
+function seo_link_route_files(): array
+{
+    static $files = null;
+    if ($files !== null) {
+        return $files;
+    }
+
+    $files = [];
+    foreach (glob(ROOT_PATH . '/*.php') ?: [] as $file) {
+        $files[basename($file)] = true;
+    }
+
+    return $files;
+}
+
+/**
+ * The nine CMS slugs that also have a hard route of their own.
+ *
+ * cms_fixed_routes() is the one definition, so a tenth route added there is
+ * understood here without anybody remembering this file. content-functions.php
+ * is pure function definitions and is not in init.php's list, so it is loaded
+ * on demand rather than copied.
+ *
+ * @return array<string,string> page slug => route name, e.g. contact-us => contact
+ */
+function seo_link_fixed_routes(): array
+{
+    static $routes = null;
+    if ($routes !== null) {
+        return $routes;
+    }
+
+    if (!function_exists('cms_fixed_routes') && is_file(INCLUDES_PATH . '/content-functions.php')) {
+        require_once INCLUDES_PATH . '/content-functions.php';
+    }
+
+    return $routes = function_exists('cms_fixed_routes') ? cms_fixed_routes() : [];
+}
+
+/**
+ * Expand the two link tokens admin-authored copy is written with.
+ *
+ * content_apply_tokens() turns {{page:slug}} into that page's canonical URL and
+ * {{url:path}} into a URL inside the app, at render time. Reading a raw body
+ * without expanding them would leave every policy page's cross-links
+ * unresolvable - and the policy pages are exactly where they are used, so the
+ * report would call nine linked pages orphans.
+ *
+ * The page form follows cms_page_canonical(): a slug with a fixed route becomes
+ * that route, not /page/<slug>. Any other token is left alone, so it lands in
+ * the "a route this cannot resolve" bucket rather than being called broken.
+ */
+function seo_link_expand_tokens(string $href): string
+{
+    if (!str_contains($href, '{{')) {
+        return $href;
+    }
+
+    return (string) preg_replace_callback(
+        '/\{\{(page|url):([a-z0-9\-_\/\.]+)\}\}/i',
+        static function (array $m): string {
+            $value = strtolower($m[2]);
+            if (strtolower($m[1]) !== 'page') {
+                return '/' . ltrim($value, '/');
+            }
+            $routes = seo_link_fixed_routes();
+
+            return isset($routes[$value]) ? '/' . $routes[$value] : '/page/' . $value;
+        },
+        $href
+    );
+}
+
+/**
+ * Whether a one-segment route's script is there, and how it is spelled.
+ *
+ * Shared by the report builder and by the per-record panel. It exists as one
+ * function because it did not, once, and the panel then called a route with the
+ * wrong capitals "gone" while the report called it "spelled differently" -
+ * two screens disagreeing about the same link.
+ *
+ * @return array{status:string,label:string} status: ok | case | miss
+ */
+function seo_link_route_verdict(string $file): array
+{
+    $files = seo_link_route_files();
+
+    // An empty listing means glob() could not read the app root - open_basedir
+    // on a shared host, a permission change - not that the storefront has no
+    // pages. Reporting every /shop and /contact in the store as dead because a
+    // directory read failed would be the single loudest false alarm this screen
+    // could raise, so when it cannot tell, it says nothing.
+    if ($files === []) {
+        return ['status' => 'ok', 'label' => ''];
+    }
+
+    if (isset($files[$file])) {
+        return ['status' => 'ok', 'label' => ''];
+    }
+
+    foreach (array_keys($files) as $candidate) {
+        if (strcasecmp($candidate, $file) === 0) {
+            return ['status' => 'case', 'label' => $candidate];
+        }
+    }
+
+    return ['status' => 'miss', 'label' => ''];
+}
+
+/**
+ * Which storefront route a path is, and which record it names.
+ *
+ * Both spellings of every route are understood: the pretty one .htaccess
+ * rewrites (/product/warm-white) and the query form it rewrites TO
+ * (product.php?slug=warm-white), because menu rows store the second and an
+ * editor copying a URL from a machine with no mod_rewrite writes it into copy.
+ *
+ * @return array{kind:string,type:string,slug:string}
+ *         kind: entity | blogcat | route | home | dynamic | unmapped
+ */
+function seo_link_target(string $path, string $query): array
+{
+    $path = rtrim($path, '/');
+    if ($path === '') {
+        return ['kind' => 'home', 'type' => '', 'slug' => ''];
+    }
+
+    $params = [];
+    parse_str($query, $params);
+    $slugParam = trim((string) ($params['slug'] ?? ''));
+    $catParam  = trim((string) ($params['category'] ?? ''));
+
+    if (preg_match('~^/(product|combo|category|brand|page)/([^/]+)$~', $path, $m) === 1) {
+        return ['kind' => 'entity', 'type' => $m[1], 'slug' => rawurldecode($m[2])];
+    }
+    if (preg_match('~^/blog/category/([^/]+)$~', $path, $m) === 1) {
+        return ['kind' => 'blogcat', 'type' => '', 'slug' => rawurldecode($m[1])];
+    }
+    if ($path === '/blog' || $path === '/blog.php') {
+        return $catParam !== ''
+            ? ['kind' => 'blogcat', 'type' => '', 'slug' => $catParam]
+            : ['kind' => 'route', 'type' => '', 'slug' => 'blog.php'];
+    }
+    if (preg_match('~^/blog/([^/]+)$~', $path, $m) === 1) {
+        return ['kind' => 'entity', 'type' => 'post', 'slug' => rawurldecode($m[1])];
+    }
+    if (str_starts_with($path, '/order/')) {
+        return ['kind' => 'dynamic', 'type' => '', 'slug' => ''];
+    }
+
+    $byScript = [
+        '/product.php'   => 'product',  '/combo.php'     => 'combo',
+        '/category.php'  => 'category', '/brand.php'     => 'brand',
+        '/page.php'      => 'page',     '/blog-post.php' => 'post',
+    ];
+    if (isset($byScript[$path]) && $slugParam !== '') {
+        return ['kind' => 'entity', 'type' => $byScript[$path], 'slug' => $slugParam];
+    }
+
+    if (preg_match('~^/([A-Za-z0-9\-_]+)(\.php)?$~', $path, $m) === 1) {
+        // A CMS page with a fixed route is reached at THAT route - /contact, not
+        // /page/contact-us - and cms_page_canonical() says so. A link to it is a
+        // link to the page record, or the report would leave nine policy pages
+        // orphaned while the copy links to them from everywhere. The route is
+        // carried along because it renders whether the record is there or not.
+        $page = array_flip(seo_link_fixed_routes())[$m[1]] ?? null;
+        if ($page !== null) {
+            return ['kind' => 'entity', 'type' => 'page', 'slug' => $page, 'route' => $m[1] . '.php'];
+        }
+
+        return ['kind' => 'route', 'type' => '', 'slug' => $m[1] . '.php'];
+    }
+
+    return ['kind' => 'unmapped', 'type' => '', 'slug' => ''];
+}
+
+/**
+ * The redirect target covering a path, or null when nothing covers it.
+ *
+ * Matched the way seo_apply_redirect() matches - literal rules first, regex
+ * rules delimited here rather than trusted to carry their own delimiters, a
+ * pattern that will not compile skipped - so a link this report calls
+ * "redirected" really does land somewhere.
+ *
+ * @param array<int,array<string,mixed>> $rules active rules, literal ones first
+ */
+function seo_link_redirect_target(string $path, array $rules): ?string
+{
+    foreach ($rules as $rule) {
+        if ((int) $rule['is_regex'] === 0) {
+            if ((string) $rule['source_path'] === $path) {
+                return (string) $rule['target_path'];
+            }
+            continue;
+        }
+
+        $pattern = '~' . str_replace('~', '\~', (string) $rule['source_path']) . '~';
+        if (@preg_match($pattern, $path) === 1) {
+            return (string) @preg_replace($pattern, (string) $rule['target_path'], $path);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * The whole link report, from cache unless it is missing or a rebuild is asked
+ * for. See the section header for why it is cached rather than computed.
+ */
+function seo_link_graph(bool $rebuild = false): array
+{
+    if (!$rebuild) {
+        $cached = Cache::get(SEO_LINK_GRAPH_KEY);
+        if (is_array($cached) && (int) ($cached['version'] ?? 0) === 1) {
+            return $cached;
+        }
+    }
+
+    $graph = seo_link_graph_build();
+
+    // No TTL: the answer is correct until something is saved, and every admin
+    // write ends in cache_bust(). A rebuild on a timer would spend the work
+    // again for an identical answer.
+    Cache::put(SEO_LINK_GRAPH_KEY, $graph, 0);
+
+    return $graph;
+}
+
+/** Build the report. Everything expensive happens here, once. */
+function seo_link_graph_build(): array
+{
+    $started = microtime(true);
+
+    $nodes     = [];   // "product:12" => node
+    $slugIndex = [];   // type => slug => key
+    $bodies    = [];   // key => body HTML
+    $problems  = [];
+    $overflow  = 0;
+    $counts    = [
+        'records' => 0, 'live' => 0, 'links' => 0, 'external' => 0,
+        'placements' => 0, 'unmapped' => 0, 'sources' => 0,
+    ];
+
+    // --- the records ------------------------------------------------------
+    foreach (SEO_ENTITY_TYPES as $type => $spec) {
+        try {
+            $rows = Database::fetchAll(
+                'SELECT `id`, `slug`, `' . $spec['title_col'] . '` AS title,
+                        `' . $spec['body_col'] . '` AS body, (' . $spec['live'] . ') AS is_live
+                   FROM `' . $spec['table'] . '`'
+            );
+        } catch (Throwable $e) {
+            continue;                       // a table this install does not have
+        }
+
+        foreach ($rows as $row) {
+            $id    = (int) $row['id'];
+            $slug  = trim((string) $row['slug']);
+            $key   = $type . ':' . $id;
+            $title = trim((string) $row['title']);
+
+            $nodes[$key] = [
+                'type'       => $type,
+                'id'         => $id,
+                'slug'       => $slug,
+                'label'      => $title !== '' ? $title : ('Untitled #' . $id),
+                'live'       => (int) $row['is_live'] === 1,
+                'in'         => [],
+                'in_total'   => 0,
+                'in_more'    => 0,
+                'out'        => 0,
+                'out_entity' => 0,
+            ];
+
+            if ($slug !== '') {
+                $slugIndex[$type][$slug] = $key;
+            }
+            $bodies[$key] = (string) $row['body'];
+
+            $counts['records']++;
+            $counts['live'] += $nodes[$key]['live'] ? 1 : 0;
+        }
+    }
+
+    // Blog categories are a real storefront route (/blog?category=slug, which
+    // blog-post.php:75 links) but not one of the six SEO entity types, so they
+    // resolve without becoming nodes.
+    try {
+        $blogcats = Database::fetchPairs(
+            "SELECT `slug`, `name` FROM `blog_categories` WHERE `status` = 'active'"
+        );
+    } catch (Throwable $e) {
+        $blogcats = [];
+    }
+
+    try {
+        $rules = Database::fetchAll(
+            "SELECT `source_path`, `target_path`, `is_regex` FROM `redirects`
+              WHERE `status` = 'active' ORDER BY `is_regex` ASC, `id` ASC"
+        );
+    } catch (Throwable $e) {
+        $rules = [];
+    }
+
+    // --- shared bookkeeping ------------------------------------------------
+    $addInbound = static function (
+        string $to,
+        string $kind,
+        string $label,
+        ?string $from,
+        string $fix,
+        string $anchor
+    ) use (&$nodes): void {
+        if (!isset($nodes[$to]) || $to === $from) {
+            return;                         // a record linking to itself is not inbound
+        }
+
+        $nodes[$to]['in_total']++;
+
+        $id = $kind . '|' . ($from ?? $label);
+        if (isset($nodes[$to]['in'][$id])) {
+            $nodes[$to]['in'][$id]['count']++;
+            return;
+        }
+        if (count($nodes[$to]['in']) >= SEO_LINK_INBOUND_DETAIL) {
+            $nodes[$to]['in_more']++;
+            return;
+        }
+
+        $nodes[$to]['in'][$id] = [
+            'kind'   => $kind,
+            'label'  => $label,
+            'from'   => $from,
+            'fix'    => $fix,
+            'anchor' => $anchor,
+            'count'  => 1,
+        ];
+    };
+
+    $addProblem = static function (array $row) use (&$problems, &$overflow): void {
+        $id = $row['kind'] . '|' . ((string) ($row['from'] ?? $row['label'])) . '|' . $row['path'];
+        if (isset($problems[$id])) {
+            $problems[$id]['count']++;
+            return;
+        }
+        if (count($problems) >= SEO_LINK_PROBLEM_LIMIT) {
+            $overflow++;
+            return;
+        }
+        $problems[$id] = $row + ['count' => 1];
+    };
+
+    /** Resolve one internal path to a verdict. */
+    $resolve = static function (string $path, string $query) use (
+        &$nodes,
+        &$slugIndex,
+        $blogcats,
+        $rules,
+        &$counts
+    ): array {
+        $target = seo_link_target($path, $query);
+
+        if ($target['kind'] === 'home' || $target['kind'] === 'dynamic') {
+            return ['status' => 'ok', 'key' => null, 'label' => ''];
+        }
+        if ($target['kind'] === 'unmapped') {
+            $counts['unmapped']++;
+            return ['status' => 'unmapped', 'key' => null, 'label' => ''];
+        }
+
+        $missing = static function () use ($path, $rules): array {
+            $to = seo_link_redirect_target($path, $rules);
+            return $to === null
+                ? ['status' => 'gone', 'key' => null, 'label' => '']
+                : ['status' => 'redirected', 'key' => null, 'label' => $to];
+        };
+
+        if ($target['kind'] === 'entity') {
+            $key   = $slugIndex[$target['type']][$target['slug']] ?? null;
+            $route = (string) ($target['route'] ?? '');
+
+            // A fixed route renders whether its page record is there and
+            // published or not, so a link to it is never broken - at worst the
+            // page behind it is empty. Calling that a dead link would be a
+            // report inventing work, which is the one thing it must not do.
+            if (($key === null || !$nodes[$key]['live']) && $route !== ''
+                && seo_link_route_verdict($route)['status'] === 'ok') {
+                return ['status' => 'ok', 'key' => null, 'label' => ''];
+            }
+            if ($key === null) {
+                return $missing();
+            }
+
+            $label = (SEO_ENTITY_TYPES[$target['type']]['label'] ?? 'Record') . ' ' . $nodes[$key]['label'];
+
+            return $nodes[$key]['live']
+                ? ['status' => 'ok',    'key' => $key, 'label' => $label]
+                : ['status' => 'draft', 'key' => $key, 'label' => $label];
+        }
+
+        if ($target['kind'] === 'blogcat') {
+            return isset($blogcats[$target['slug']])
+                ? ['status' => 'ok', 'key' => null, 'label' => 'Blog category ' . $blogcats[$target['slug']]]
+                : $missing();
+        }
+
+        // kind === 'route'
+        $route = seo_link_route_verdict($target['slug']);
+
+        return $route['status'] === 'miss'
+            ? $missing()
+            : ['status' => $route['status'], 'key' => null, 'label' => $route['label']];
+    };
+
+    /** One source's copy: parse, resolve, credit the target, report a break. */
+    $scan = static function (
+        string $html,
+        string $kind,
+        string $label,
+        ?string $from,
+        string $fix
+    ) use ($addInbound, $addProblem, $resolve, &$nodes, &$counts): int {
+        $internal = 0;
+
+        foreach (seo_link_tags($html) as $link) {
+            $classified = seo_link_classify($link['href']);
+            if ($classified === null) {
+                continue;
+            }
+            if (!$classified['internal']) {
+                $counts['external']++;
+                continue;
+            }
+
+            $internal++;
+            $counts['links']++;
+
+            $verdict = $resolve($classified['path'], $classified['query']);
+
+            if ($verdict['status'] === 'ok') {
+                if ($verdict['key'] !== null) {
+                    // A link written in an unpublished record is not a link
+                    // anybody can follow, so it earns the target nothing.
+                    if ($from === null || ($nodes[$from]['live'] ?? false)) {
+                        $addInbound($verdict['key'], $kind, $label, $from, $fix, $link['anchor']);
+                    }
+                    if ($from !== null) {
+                        $nodes[$from]['out_entity']++;
+                    }
+                }
+                continue;
+            }
+
+            if (in_array($verdict['status'], ['gone', 'draft', 'redirected', 'case'], true)) {
+                $addProblem([
+                    'kind'   => $kind,
+                    'label'  => $label,
+                    'from'   => $from,
+                    'fix'    => $fix,
+                    'href'   => $link['href'],
+                    'path'   => $classified['path'],
+                    'anchor' => $link['anchor'],
+                    'reason' => $verdict['status'],
+                    'target' => $verdict['label'],
+                ]);
+            }
+        }
+
+        return $internal;
+    };
+
+    // --- editorial: the six bodies ----------------------------------------
+    foreach ($bodies as $key => $html) {
+        if ($html === '') {
+            continue;
+        }
+        $type = $nodes[$key]['type'];
+        $nodes[$key]['out'] = $scan(
+            $html,
+            'body',
+            (SEO_ENTITY_TYPES[$type]['label'] ?? 'Record') . ' ' . $nodes[$key]['label'],
+            $key,
+            (string) (SEO_ENTITY_TYPES[$type]['admin'] ?? '')
+        );
+        $counts['sources']++;
+    }
+
+    // --- placements --------------------------------------------------------
+    $place = static function (
+        string $to,
+        string $kind,
+        ?string $fromKey,
+        string $label,
+        string $fix
+    ) use ($addInbound, &$nodes, &$counts): void {
+        if (!isset($nodes[$to])) {
+            return;
+        }
+        if ($fromKey !== null && !($nodes[$fromKey]['live'] ?? false)) {
+            return;                         // an unpublished page links nothing
+        }
+        $counts['placements']++;
+        $addInbound($to, $kind, $label, $fromKey, $fix, '');
+    };
+
+    // products.category_id - category.php renders the product grid through
+    // product-listing.php, and product.php:111 puts the category ancestors in
+    // the breadcrumb, so the credit runs both ways.
+    // products.brand_id - brand.php renders the same grid; product.php:222
+    // links the brand by name.
+    try {
+        foreach (Database::fetchAll('SELECT `id`, `category_id`, `brand_id` FROM `products`') as $row) {
+            $product = 'product:' . (int) $row['id'];
+            if (!isset($nodes[$product])) {
+                continue;
+            }
+            foreach (['category' => 'category_id', 'brand' => 'brand_id'] as $type => $column) {
+                if ((int) $row[$column] <= 0) {
+                    continue;
+                }
+                $other = $type . ':' . (int) $row[$column];
+                if (!isset($nodes[$other])) {
+                    continue;
+                }
+                $place(
+                    $product,
+                    $type,
+                    $other,
+                    (SEO_ENTITY_TYPES[$type]['label'] ?? '') . ' ' . $nodes[$other]['label'],
+                    (string) SEO_ENTITY_TYPES[$type]['admin']
+                );
+                $place(
+                    $other,
+                    'product',
+                    $product,
+                    'Product ' . $nodes[$product]['label'],
+                    (string) SEO_ENTITY_TYPES['product']['admin']
+                );
+            }
+        }
+    } catch (Throwable $e) {
+        // no products table: nothing to credit
+    }
+
+    // categories.parent_id - category.php:38 lists the child categories.
+    try {
+        foreach (Database::fetchAll('SELECT `id`, `parent_id` FROM `categories` WHERE `parent_id` > 0') as $row) {
+            $parent = 'category:' . (int) $row['parent_id'];
+            if (isset($nodes[$parent])) {
+                $place(
+                    'category:' . (int) $row['id'],
+                    'category',
+                    $parent,
+                    'Category ' . $nodes[$parent]['label'],
+                    (string) SEO_ENTITY_TYPES['category']['admin']
+                );
+            }
+        }
+    } catch (Throwable $e) {
+        // ignored
+    }
+
+    // combo_items - combo.php:250 links every item, url from combo_items().
+    try {
+        foreach (Database::fetchAll('SELECT `combo_id`, `product_id` FROM `combo_items`') as $row) {
+            $combo = 'combo:' . (int) $row['combo_id'];
+            if (isset($nodes[$combo])) {
+                $place(
+                    'product:' . (int) $row['product_id'],
+                    'combo',
+                    $combo,
+                    'Combo ' . $nodes[$combo]['label'],
+                    (string) SEO_ENTITY_TYPES['combo']['admin']
+                );
+            }
+        }
+    } catch (Throwable $e) {
+        // ignored
+    }
+
+    // blog_posts.category_id - blog.php lists a category's posts.
+    try {
+        foreach (Database::fetchAll(
+            "SELECT p.`id`, c.`name` FROM `blog_posts` p
+               INNER JOIN `blog_categories` c ON c.`id` = p.`category_id`
+              WHERE c.`status` = 'active'"
+        ) as $row) {
+            $place('post:' . (int) $row['id'], 'blog', null,
+                'Blog category ' . (string) $row['name'], 'blog/categories.php');
+        }
+    } catch (Throwable $e) {
+        // ignored
+    }
+
+    /** A stored reference or URL from a navigation row. */
+    $navLink = static function (
+        string $kind,
+        string $label,
+        string $fix,
+        string $linkType,
+        int $referenceId,
+        string $url
+    ) use ($place, $addProblem, $resolve, &$nodes, &$counts): void {
+        $counts['sources']++;
+
+        // 'category' is deliberately absent: menu_item_reference_visible()
+        // HIDES a category item whose category is missing, inactive or flagged
+        // show_in_menu = 0, so such an item is not a broken link, it is an
+        // item that never renders. The caller decides whether it renders and
+        // only then asks for the credit. Brands and pages have no such filter.
+        $direct = ['brand' => 'brand', 'page' => 'page'];
+        if (isset($direct[$linkType]) && $referenceId > 0) {
+            $key = $direct[$linkType] . ':' . $referenceId;
+            if (isset($nodes[$key]) && $nodes[$key]['live']) {
+                $place($key, $kind, null, $label, $fix);
+                return;
+            }
+            // menu_item_url() falls back to /brands for a missing brand and to
+            // the home page for a missing page, so the item never 404s - it
+            // quietly sends people somewhere else, which is worse than a 404
+            // because nobody notices. An unpublished target does 404.
+            $addProblem([
+                'kind'   => $kind,
+                'label'  => $label,
+                'from'   => null,
+                'fix'    => $fix,
+                'href'   => $linkType . ' #' . $referenceId,
+                'path'   => '/' . $linkType . '#' . $referenceId,
+                'anchor' => '',
+                'reason' => isset($nodes[$key]) ? 'draft' : 'gone',
+                'target' => isset($nodes[$key])
+                    ? ((SEO_ENTITY_TYPES[$direct[$linkType]]['label'] ?? '') . ' ' . $nodes[$key]['label'])
+                    : '',
+            ]);
+            return;
+        }
+
+        $classified = seo_link_classify($url);
+        if ($classified === null || !$classified['internal']) {
+            return;                         // an external nav link is a choice, not a fault
+        }
+
+        $verdict = $resolve($classified['path'], $classified['query']);
+        if ($verdict['status'] === 'ok') {
+            if ($verdict['key'] !== null) {
+                $place($verdict['key'], $kind, null, $label, $fix);
+            }
+            return;
+        }
+        if ($verdict['status'] === 'unmapped') {
+            return;
+        }
+
+        $addProblem([
+            'kind'   => $kind,
+            'label'  => $label,
+            'from'   => null,
+            'fix'    => $fix,
+            'href'   => $url,
+            'path'   => $classified['path'],
+            'anchor' => '',
+            'reason' => $verdict['status'],
+            'target' => $verdict['label'],
+        ]);
+    };
+
+    // menu_items on an active menu - includes/menu-functions.php:582.
+    //
+    // The categories join is what keeps a category item honest: a category
+    // whose row is gone, whose status is not active, or whose show_in_menu is 0
+    // is dropped from the nav by menu_item_reference_visible(), so the item
+    // links nothing and is not a broken link either. Crediting it would hide a
+    // real orphan; reporting it would invent a broken link. It does neither.
+    try {
+        foreach (Database::fetchAll(
+            "SELECT i.`label`, i.`link_type`, i.`reference_id`, i.`url`, m.`name` AS menu,
+                    c.`status` AS cat_status, c.`show_in_menu` AS cat_in_menu
+               FROM `menu_items` i
+               INNER JOIN `menus` m ON m.`id` = i.`menu_id`
+               LEFT JOIN `categories` c
+                      ON c.`id` = i.`reference_id` AND i.`link_type` = 'category'
+              WHERE i.`status` = 'active' AND m.`status` = 'active'"
+        ) as $row) {
+            $label = (string) $row['menu'] . ': ' . (string) $row['label'];
+
+            if ((string) $row['link_type'] === 'category') {
+                if ((string) $row['cat_status'] === 'active' && (int) $row['cat_in_menu'] === 1) {
+                    $place('category:' . (int) $row['reference_id'], 'menu', null, $label, 'menus/index.php');
+                }
+                continue;
+            }
+
+            $navLink(
+                'menu',
+                $label,
+                'menus/index.php',
+                (string) $row['link_type'],
+                (int) $row['reference_id'],
+                (string) $row['url']
+            );
+        }
+    } catch (Throwable $e) {
+        // ignored
+    }
+
+    // footer_links on an active column - includes/footer.php:297.
+    try {
+        foreach (Database::fetchAll(
+            "SELECT l.`label`, l.`url`, c.`title` FROM `footer_links` l
+               INNER JOIN `footer_columns` c ON c.`id` = l.`column_id`
+              WHERE l.`status` = 'active' AND c.`status` = 'active'"
+        ) as $row) {
+            $navLink(
+                'footer',
+                'Footer ' . (string) $row['title'] . ': ' . (string) $row['label'],
+                'footer/index.php',
+                'custom',
+                0,
+                (string) $row['url']
+            );
+        }
+    } catch (Throwable $e) {
+        // ignored
+    }
+
+    // Homepage rows: the row's own call to action, its hand-written HTML, and
+    // the records pinned into it.
+    try {
+        foreach (Database::fetchAll(
+            "SELECT `id`, `title`, `link_url`, `custom_html`
+               FROM `homepage_sections` WHERE `status` = 'active'"
+        ) as $row) {
+            $title = trim((string) $row['title']);
+            $label = 'Homepage row ' . ($title !== '' ? $title : '#' . (int) $row['id']);
+
+            if (trim((string) $row['link_url']) !== '') {
+                $navLink('homepage', $label, 'homepage/designer.php', 'custom', 0, (string) $row['link_url']);
+            }
+            if (trim((string) $row['custom_html']) !== '') {
+                $scan((string) $row['custom_html'], 'homepage', $label, null, 'homepage/designer.php');
+                $counts['sources']++;
+            }
+        }
+
+        foreach (Database::fetchAll(
+            "SELECT i.`item_type`, i.`item_id`, i.`link`, s.`title`, s.`id` AS section_id
+               FROM `homepage_section_items` i
+               INNER JOIN `homepage_sections` s ON s.`id` = i.`section_id`
+              WHERE i.`status` = 'active' AND s.`status` = 'active'"
+        ) as $row) {
+            $title = trim((string) $row['title']);
+            $label = 'Homepage row ' . ($title !== '' ? $title : '#' . (int) $row['section_id']);
+            $type  = (string) $row['item_type'];
+
+            if (in_array($type, ['product', 'category', 'brand'], true) && (int) $row['item_id'] > 0) {
+                $place($type . ':' . (int) $row['item_id'], 'homepage', null, $label, 'homepage/designer.php');
+            }
+            if (trim((string) $row['link']) !== '') {
+                $navLink('homepage', $label, 'homepage/designer.php', 'custom', 0, (string) $row['link']);
+            }
+        }
+    } catch (Throwable $e) {
+        // ignored
+    }
+
+    // --- the queues --------------------------------------------------------
+    $orphans = [];
+    $thin    = [];
+    foreach ($nodes as $key => $node) {
+        if (!$node['live']) {
+            continue;
+        }
+        if ($node['in_total'] === 0) {
+            $orphans[] = $key;
+        }
+        // Only a page or a post: a product description with no links in it is
+        // normal copy, not a gap, and listing twenty of them would bury the two
+        // blog posts that really should be selling something.
+        if ($node['out'] === 0 && in_array($node['type'], ['page', 'post'], true)) {
+            $thin[] = $key;
+        }
+    }
+
+    $order  = array_keys(SEO_ENTITY_TYPES);
+    $sorted = static function (array $keys) use ($nodes, $order): array {
+        usort($keys, static function (string $a, string $b) use ($nodes, $order): int {
+            return [(int) array_search($nodes[$a]['type'], $order, true), strtolower($nodes[$a]['label'])]
+               <=> [(int) array_search($nodes[$b]['type'], $order, true), strtolower($nodes[$b]['label'])];
+        });
+        return $keys;
+    };
+
+    // The inbound detail is keyed for de-duplication; the screen wants lists.
+    foreach ($nodes as $key => $node) {
+        $nodes[$key]['in'] = array_values($node['in']);
+    }
+
+    $problems = array_values($problems);
+    $weight   = ['gone' => 0, 'case' => 1, 'draft' => 2, 'redirected' => 3];
+    usort($problems, static function (array $a, array $b) use ($weight): int {
+        return [$weight[$a['reason']] ?? 9, -$a['count'], strtolower((string) $a['label'])]
+           <=> [$weight[$b['reason']] ?? 9, -$b['count'], strtolower((string) $b['label'])];
+    });
+
+    return [
+        'version'  => 1,
+        'built_at' => time(),
+        'ms'       => round((microtime(true) - $started) * 1000, 1),
+        'db'       => defined('DB_NAME') ? (string) DB_NAME : '',
+        'counts'   => $counts,
+        'nodes'    => $nodes,
+        'slugs'    => $slugIndex,
+        // Carried so the per-record panel resolves a link through exactly the
+        // same index and the same rules, and can never contradict the report.
+        'blogcats' => $blogcats,
+        'rules'    => $rules,
+        'orphans'  => $sorted($orphans),
+        'thin'     => $sorted($thin),
+        'problems' => $problems,
+        'overflow' => $overflow,
+    ];
+}
+
+/**
+ * Records a thin page could plausibly link to, by shared words in the title.
+ *
+ * A SUGGESTION and nothing else - no copy is ever rewritten from this screen.
+ * Deliberately crude: shared significant words, products and categories only,
+ * scored by how many words match and broken by the longer word. Something
+ * cleverer would need embeddings the store does not have, and something the
+ * operator cannot see the reasoning behind is something they will not trust.
+ *
+ * @return array<int,string> node keys, best first
+ */
+function seo_link_suggestions(string $key, array $graph, int $limit = 3): array
+{
+    $node = $graph['nodes'][$key] ?? null;
+    if ($node === null) {
+        return [];
+    }
+
+    $stop = [
+        'and', 'the', 'for', 'with', 'your', 'from', 'that', 'this', 'what', 'which',
+        'how', 'why', 'when', 'into', 'without', 'about', 'they', 'them', 'best',
+        'guide', 'policy', 'page', 'compared', 'decide', 'choose', 'suits',
+    ];
+
+    $words = static function (string $text) use ($stop): array {
+        $found = [];
+        foreach (preg_split('/[^a-z0-9]+/', strtolower($text)) ?: [] as $word) {
+            if (strlen($word) >= 4 && !in_array($word, $stop, true)) {
+                $found[$word] = true;
+            }
+        }
+        return array_keys($found);
+    };
+
+    $mine = $words($node['label']);
+    if ($mine === []) {
+        return [];
+    }
+
+    $scores = [];
+    foreach ($graph['nodes'] as $other => $candidate) {
+        if ($other === $key || !$candidate['live']
+            || !in_array($candidate['type'], ['product', 'category'], true)) {
+            continue;
+        }
+        $shared = array_intersect($mine, $words($candidate['label']));
+        if ($shared === []) {
+            continue;
+        }
+        // A match on "curtain" says more than a match on "lights", which every
+        // product in a lighting store has, so the longest shared word breaks
+        // the tie between two candidates that share the same number of words.
+        $scores[$other] = count($shared) * 100 + max(array_map('strlen', $shared));
+    }
+
+    arsort($scores);
+
+    return array_slice(array_keys($scores), 0, max(1, $limit));
+}
+
+/**
+ * Every link that points at one record, for the per-record panel.
+ *
+ * @return array{total:int,more:int,links:array<int,array<string,mixed>>}
+ */
+function seo_links_here(string $type, int $id): array
+{
+    $graph = seo_link_graph();
+    $node  = $graph['nodes'][$type . ':' . $id] ?? null;
+
+    return $node === null
+        ? ['total' => 0, 'more' => 0, 'links' => []]
+        : ['total' => (int) $node['in_total'], 'more' => (int) $node['in_more'], 'links' => (array) $node['in']];
+}
+
+/**
+ * The verdict on one internal path, read from an already-built report.
+ *
+ * It uses the report's own slug index rather than the database, so the
+ * per-record panel can never disagree with the numbers on the screen.
+ *
+ * @return array{status:string,label:string}
+ */
+function seo_link_verdict(string $path, string $query, array $graph): array
+{
+    $target = seo_link_target($path, $query);
+
+    if ($target['kind'] === 'home' || $target['kind'] === 'dynamic') {
+        return ['status' => 'ok', 'label' => ''];
+    }
+    if ($target['kind'] === 'unmapped') {
+        return ['status' => 'unmapped', 'label' => ''];
+    }
+
+    $rules   = (array) ($graph['rules'] ?? []);
+    $missing = static function () use ($path, $rules): array {
+        $to = seo_link_redirect_target($path, $rules);
+        return $to === null
+            ? ['status' => 'gone', 'label' => '']
+            : ['status' => 'redirected', 'label' => $to];
+    };
+
+    if ($target['kind'] === 'blogcat') {
+        $name = ($graph['blogcats'] ?? [])[$target['slug']] ?? null;
+        return $name === null ? $missing() : ['status' => 'ok', 'label' => 'Blog category ' . $name];
+    }
+    if ($target['kind'] === 'route') {
+        $route = seo_link_route_verdict($target['slug']);
+
+        return $route['status'] === 'miss' ? $missing() : $route;
+    }
+
+    $key   = $graph['slugs'][$target['type']][$target['slug']] ?? null;
+    $node  = $key === null ? null : ($graph['nodes'][$key] ?? null);
+    $route = (string) ($target['route'] ?? '');
+
+    // Same as the builder: a fixed route renders with or without its record.
+    if (($node === null || !$node['live']) && $route !== ''
+        && seo_link_route_verdict($route)['status'] === 'ok') {
+        return ['status' => 'ok', 'label' => ''];
+    }
+    if ($node === null) {
+        return $missing();
+    }
+
+    return [
+        'status' => $node['live'] ? 'ok' : 'draft',
+        'label'  => (SEO_ENTITY_TYPES[$node['type']]['label'] ?? '') . ' ' . $node['label'],
+    ];
+}
+
+/**
+ * The links one record's own copy makes, resolved.
+ *
+ * Re-parsed on demand rather than stored in the cached report: it is one body,
+ * and keeping every outbound link for every record would multiply the cache for
+ * a panel that shows one record at a time.
+ *
+ * @return array<int,array<string,mixed>>
+ */
+function seo_links_from(string $type, int $id): array
+{
+    $spec = seo_entity_type($type);
+    if ($spec === null || $id <= 0) {
+        return [];
+    }
+
+    try {
+        $html = (string) Database::fetchColumn(
+            'SELECT `' . $spec['body_col'] . '` FROM `' . $spec['table'] . '` WHERE `id` = :id',
+            ['id' => $id]
+        );
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    $graph = seo_link_graph();
+    $out   = [];
+
+    foreach (seo_link_tags($html) as $link) {
+        $classified = seo_link_classify($link['href']);
+        if ($classified === null) {
+            continue;
+        }
+        if (!$classified['internal']) {
+            $out[] = $link + ['internal' => false, 'path' => '', 'status' => 'external', 'label' => ''];
+            continue;
+        }
+
+        $out[] = $link
+            + ['internal' => true, 'path' => $classified['path']]
+            + seo_link_verdict($classified['path'], $classified['query'], $graph);
+    }
+
+    return $out;
 }

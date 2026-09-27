@@ -2,7 +2,7 @@
 /**
  * ShopInnKart Admin - Settings shell.
  *
- * The nine settings screens share one tab strip and one save path, so adding
+ * The settings screens share one tab strip and one save path, so adding
  * a field is a spec entry rather than another copy of
  * validate -> setting_save() -> log_activity() -> admin_after_write().
  *
@@ -57,6 +57,10 @@ const SETTINGS_SCREENS = [
     // that is where the GA and Pixel ids already live, and an operator who
     // pastes a tag id there needs to find the switch that lets it run.
     'analytics' => ['label' => 'Analytics', 'file' => 'analytics.php'],
+    // Every third-party service in one place, and the register that says which
+    // screen owns each id. It sits straight after Analytics because that is the
+    // screen holding the consent switch that decides whether any of them run.
+    'integrations' => ['label' => 'Integrations', 'file' => 'integrations.php'],
     'theme'    => ['label' => 'Theme',    'file' => 'theme.php'],
     'social'   => ['label' => 'Social',   'file' => 'social.php'],
     // The `widgets` group - popup kill switches, the ticker, the floating
@@ -87,7 +91,7 @@ function settings_breadcrumbs(string $screen): array
     ];
 }
 
-/** Horizontal tab strip linking the nine screens. */
+/** Horizontal tab strip linking every settings screen. */
 function settings_tabs(string $current): string
 {
     $html = '<div class="ad-card"><div class="ad-tabs">';

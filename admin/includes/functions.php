@@ -132,6 +132,18 @@ function admin_menu(): array
             'badge' => 'new_messages',
         ],
         [
+            // Beside Reports and above it, because the two answer adjacent
+            // questions: this one is what VISITORS did, Reports is what the
+            // BUSINESS did. An operator sets a range here first, then drills.
+            'label' => 'Analytics', 'icon' => 'activity', 'permission' => 'analytics.view',
+            'children' => [
+                ['label' => 'Overview',         'url' => 'analytics/', 'permission' => 'analytics.view'],
+                ['label' => 'Acquisition',      'url' => 'analytics/acquisition.php', 'permission' => 'analytics.view'],
+                ['label' => 'Pages & products', 'url' => 'analytics/content.php',     'permission' => 'analytics.view'],
+                ['label' => 'Speed',            'url' => 'analytics/performance.php', 'permission' => 'analytics.view'],
+            ],
+        ],
+        [
             'label' => 'Reports', 'icon' => 'trending', 'permission' => 'reports.view',
             'children' => [
                 ['label' => 'Sales',     'url' => 'reports/sales.php',     'permission' => 'reports.view'],
@@ -152,6 +164,7 @@ function admin_menu(): array
             'children' => [
                 ['label' => 'Overview',       'url' => 'seo/index.php',   'permission' => 'settings.view'],
                 ['label' => 'Broken links',   'url' => 'seo/404s.php',    'permission' => 'settings.view'],
+                ['label' => 'Internal links', 'url' => 'seo/links.php',   'permission' => 'settings.view'],
                 ['label' => 'Image alt text', 'url' => 'seo/images.php',  'permission' => 'settings.view'],
                 ['label' => 'Schema',         'url' => 'seo/schema.php',  'permission' => 'settings.view'],
                 ['label' => 'Sitemap',        'url' => 'seo/sitemap.php', 'permission' => 'settings.view'],
@@ -181,6 +194,9 @@ function admin_menu(): array
             // is reached is a narrower question than who may edit settings.
             'label' => 'Security', 'icon' => 'lock', 'permission' => 'security',
             'children' => [
+                // First, because it is the screen that says whether anything is
+                // wrong. Settings is twenty cards for CHANGING things.
+                ['label' => 'Overview',          'url' => 'security/dashboard.php', 'permission' => 'security.view'],
                 ['label' => 'Security Settings', 'url' => 'security/settings.php', 'permission' => 'security.view'],
                 ['label' => 'Security Log',      'url' => 'security/events.php',   'permission' => 'security.view'],
                 ['label' => 'IP Rules',          'url' => 'security/ip-rules.php', 'permission' => 'security.view'],
