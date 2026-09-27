@@ -227,6 +227,56 @@ function secret_decrypt(string $stored): string
     return $plain === false ? '' : $plain;
 }
 
+/**
+ * WHY a stored secret came back empty.
+ *
+ * secret_decrypt() answers '' four different ways - nothing stored, no key,
+ * a mangled value, and a failed tag check - and also for the perfectly
+ * ordinary case of an operator clearing a password, which encrypts to a
+ * valid 71-byte blob holding nothing. A caller that treats "empty" as "the
+ * key is wrong" tells the owner their whole install is broken because they
+ * once blanked an SMTP password.
+ *
+ * AES-GCM is what makes the difference sayable: openssl_decrypt() returns
+ * false when the authentication tag does not verify, which means this key did
+ * not encrypt this value - and returns '' when it did, and the plaintext was
+ * empty. Those two are opposite answers and only this function can see both.
+ *
+ * @return 'plaintext'|'empty'|'no-key'|'corrupt'|'wrong-key'|'ok'
+ */
+function secret_status(string $stored): string
+{
+    if ($stored === '') {
+        return 'empty';
+    }
+    if (preg_match('/^enc:(v1|v2):/', $stored, $m) !== 1) {
+        return 'plaintext';
+    }
+    if (!app_key_available()) {
+        return 'no-key';
+    }
+
+    $raw = base64_decode(substr($stored, 7), true);
+    if ($raw === false || strlen($raw) < 29) {
+        return 'corrupt';
+    }
+
+    $plain = openssl_decrypt(
+        substr($raw, 28),
+        'aes-256-gcm',
+        secret_storage_key($m[1]),
+        OPENSSL_RAW_DATA,
+        substr($raw, 0, 12),
+        substr($raw, 12, 16)
+    );
+
+    if ($plain === false) {
+        return 'wrong-key';
+    }
+
+    return $plain === '' ? 'empty' : 'ok';
+}
+
 // ---------------------------------------------------------------------------
 //  Configuration
 // ---------------------------------------------------------------------------

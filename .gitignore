@@ -73,3 +73,11 @@ storage/privacy/*
 !storage/privacy/index.html
 !storage/privacy/web.config
 !storage/privacy/.gitkeep
+
+# When each scheduled job last finished ON THIS MACHINE. The whole point of a
+# heartbeat is that it cannot travel: a laptop's stamp vouching for a live
+# server's cron is the inference this replaced. The folder's own deny rules
+# are kept, so a fresh clone still has them.
+storage/cron/*
+!storage/cron/.htaccess
+!storage/cron/index.html

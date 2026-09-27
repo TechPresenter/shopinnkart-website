@@ -43,6 +43,12 @@ if (PHP_SAPI !== 'cli') {
 }
 
 require_once dirname(__DIR__) . '/includes/init.php';
+
+// Record that the schedule fired on THIS machine. Checked by
+// bin/deploy-check.php, which used to infer a working cron from data that
+// can arrive inside an imported dump. See includes/cron-heartbeat.php.
+require_once INCLUDES_PATH . '/cron-heartbeat.php';
+cron_heartbeat_on_finish('backup');
 require_once INCLUDES_PATH . '/backup.php';
 
 $options = getopt('', [
