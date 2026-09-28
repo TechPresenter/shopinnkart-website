@@ -63,7 +63,66 @@ const STORE_IDENTITY = [
     // Decides CGST+SGST versus IGST on every invoice, so it is not cosmetic.
     'invoice_seller_state'    => 'Haryana',
     'gst_number'              => '06AQXPJ7622A2ZR',
+
+    // The PDF prints the address as one line and then city/state/PIN on the
+    // next, so these are filled too rather than leaving a ragged block.
+    'store_city'    => 'Karnal',
+    'store_state'   => 'Haryana',
+    'store_pincode' => '132001',
+    'store_country' => 'India',
+
 ];
+
+/**
+ * The bank account, which is NOT in the list above.
+ *
+ * It belongs on the invoice - somebody paying by transfer needs it in front of
+ * the amount they owe - and it does not belong in this file, because this file
+ * is committed to a repository that is public. A printed invoice reaches the
+ * customers who bought something; a public repository reaches everybody
+ * forever, including after the account is closed.
+ *
+ * So it is read from config/business.local.php, which is git-ignored, exactly
+ * as config/db.local.php holds the database password. Create it on the server:
+ *
+ *     <?php return [
+ *         'invoice_bank_account_name'   => 'Navkar Enterprises',
+ *         'invoice_bank_account_number' => '...',
+ *         'invoice_bank_ifsc'           => 'SBIN0000000',
+ *         'invoice_bank_name'           => 'State Bank of India (SBI)',
+ *         'invoice_bank_account_type'   => 'Current Account',
+ *     ];
+ *
+ * Or simply type them into Settings > Invoice > Bank details, which is the
+ * same thing through a screen. Without either, the seed sets everything else
+ * and the invoice omits the bank block entirely rather than printing a
+ * heading over three blanks.
+ */
+function store_identity_bank_details(): array
+{
+    $file = CONFIG_PATH . '/business.local.php';
+    if (!is_file($file)) {
+        return [];
+    }
+
+    $local = @include $file;
+    if (!is_array($local)) {
+        return [];
+    }
+
+    $allowed = ['invoice_bank_account_name', 'invoice_bank_account_number',
+                'invoice_bank_ifsc', 'invoice_bank_name', 'invoice_bank_account_type'];
+
+    $out = [];
+    foreach ($allowed as $key) {
+        $value = trim((string) ($local[$key] ?? ''));
+        if ($value !== '') {
+            $out[$key] = $value;
+        }
+    }
+
+    return $out;
+}
 
 /** The categories the shop actually sells. */
 const STORE_CATEGORIES = [
@@ -89,7 +148,13 @@ echo str_repeat('-', 66), "\n";
 
 // --- 1. settings -----------------------------------------------------------
 
-foreach (STORE_IDENTITY as $key => $want) {
+$bank = store_identity_bank_details();
+if ($bank === []) {
+    $notes[] = 'no config/business.local.php, so the bank block is left unset - '
+        . 'the invoice omits it rather than printing an empty heading';
+}
+
+foreach (array_merge(STORE_IDENTITY, $bank) as $key => $want) {
     $row = Database::fetch(
         'SELECT `id`, `setting_value` FROM `settings` WHERE `setting_key` = :k',
         ['k' => $key]
@@ -208,12 +273,25 @@ foreach ($notes as $n) {
     echo "  note  ", $n, "\n";
 }
 
-echo "\nNOT SET BY THIS SEED, and why:\n";
-echo "  The bank account. Nothing in this store reads settlement details - a\n";
-echo "  payment gateway settles to the account configured in its own\n";
-echo "  dashboard. Recording it here would look configured and do nothing.\n";
-echo "  If you want customers to see it so they can pay by NEFT, put it in\n";
-echo "  Settings > Invoice > Terms, where it prints on every invoice.\n";
+echo "\nTHE BANK ACCOUNT:\n";
+if ($bank !== []) {
+    echo "  Read from config/business.local.php and written to the settings the\n";
+    echo "  invoice prints. It is NOT in this seed and not in the repository -\n";
+    echo "  that file is git-ignored, like config/db.local.php. Copy it to the\n";
+    echo "  server alongside this seed, or type the same values into\n";
+    echo "  Settings > Invoice > Bank details.\n";
+    echo "  Every customer who gets an invoice sees these. That is the point of\n";
+    echo "  them, and worth knowing.\n";
+} else {
+    echo "  Not set, so the invoice omits the block entirely rather than printing\n";
+    echo "  a heading over three blanks. To set it, create\n";
+    echo "  config/business.local.php (git-ignored - the account has no business\n";
+    echo "  in a public repository) and run this again, or fill in\n";
+    echo "  Settings > Invoice > Bank details.\n";
+    echo "  Note this is NOT a gateway settlement account: a gateway pays out to\n";
+    echo "  whatever is configured in its own dashboard, and nothing here\n";
+    echo "  changes that. This is only what a customer paying by transfer sees.\n";
+}
 
 echo "\nWORTH CHECKING NOW:\n";
 echo "  - Settings > Email: mail_from_email is still no-reply@shopinnkart.com.\n";

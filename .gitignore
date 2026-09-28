@@ -81,3 +81,8 @@ storage/privacy/*
 storage/cron/*
 !storage/cron/.htaccess
 !storage/cron/index.html
+
+# The store's bank account, for the "pay by transfer" block on invoices. It is
+# printed for customers who bought something; it has no business in a public
+# repository, where it would outlive the account. Same pattern as db.local.php.
+config/business.local.php

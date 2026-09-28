@@ -101,6 +101,17 @@ function invoice_company_details(): array
         'website'    => SITE_URL,
         'gstin'      => trim((string) setting('gst_number', '')),
         'pan'        => trim((string) setting('invoice_pan', '')),
+        // Bank details are for a customer who wants to pay by transfer, so
+        // they are printed only when there is an account number to print -
+        // a "Bank details" heading over three blanks is worse than no
+        // heading. invoice_pdf_bank_html() decides that; this only gathers.
+        'bank'       => [
+            'account_name'   => trim((string) setting('invoice_bank_account_name', '')),
+            'account_number' => trim((string) setting('invoice_bank_account_number', '')),
+            'ifsc'           => trim((string) setting('invoice_bank_ifsc', '')),
+            'bank_name'      => trim((string) setting('invoice_bank_name', '')),
+            'account_type'   => trim((string) setting('invoice_bank_account_type', '')),
+        ],
         'logo'       => brand_logo_rel(),
         'tax_label'  => (string) setting('tax_label', 'GST'),
         'terms'      => (string) setting('invoice_terms', invoice_default_terms()),

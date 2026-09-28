@@ -72,6 +72,32 @@ $spec = [
         'type' => 'text', 'label' => 'Authorised signatory', 'max' => 120,
         'help' => 'Printed above the signature line.',
     ],
+
+    // Printed on every invoice, so every customer sees them. That is the
+    // point of putting them there - somebody paying by transfer needs them -
+    // but it is worth knowing before filling them in, which is what the
+    // account-number help line says. The block is omitted entirely when
+    // there is no account number.
+    'invoice_bank_account_name' => [
+        'type' => 'text', 'label' => 'Bank: account name', 'max' => 120,
+    ],
+    'invoice_bank_account_number' => [
+        'type' => 'text', 'label' => 'Bank: account number', 'max' => 34,
+        'help' => 'Printed on every invoice. Leave blank to omit the block.',
+    ],
+    'invoice_bank_ifsc' => [
+        'type' => 'text', 'label' => 'Bank: IFSC', 'max' => 15,
+        'placeholder' => 'SBIN0000123',
+        'pattern' => '/^[A-Z]{4}0[A-Z0-9]{6}$/i',
+        'pattern_error' => 'An IFSC is four letters, a zero, then six characters.',
+    ],
+    'invoice_bank_name' => [
+        'type' => 'text', 'label' => 'Bank: name', 'max' => 120,
+    ],
+    'invoice_bank_account_type' => [
+        'type' => 'select', 'label' => 'Bank: account type',
+        'options' => ['' => 'Not set', 'Current Account' => 'Current Account', 'Savings Account' => 'Savings Account'],
+    ],
     'invoice_terms' => [
         'type' => 'textarea', 'label' => 'Terms & conditions', 'rows' => 5,
     ],
@@ -237,6 +263,33 @@ $nextNumber = invoice_format_number($currentSeries, max($lastNumber + 1, setting
                     <div class="ad-row ad-row--2">
                         <?= settings_field('invoice_pan', $spec, $values, $errors) ?>
                         <?= settings_field('invoice_signatory', $spec, $values, $errors) ?>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ad-card">
+                <div class="ad-card__head">
+                    <div>
+                        <div class="ad-card__title">Bank details</div>
+                        <div class="ad-card__sub">Printed on every invoice, for customers paying by transfer.</div>
+                    </div>
+                </div>
+                <div class="ad-card__body">
+                    <div class="ad-row ad-row--2">
+                        <?= settings_field('invoice_bank_account_name', $spec, $values, $errors) ?>
+                        <?= settings_field('invoice_bank_account_number', $spec, $values, $errors) ?>
+                    </div>
+                    <div class="ad-row ad-row--2">
+                        <?= settings_field('invoice_bank_ifsc', $spec, $values, $errors) ?>
+                        <?= settings_field('invoice_bank_name', $spec, $values, $errors) ?>
+                    </div>
+                    <?= settings_field('invoice_bank_account_type', $spec, $values, $errors) ?>
+                    <div class="sik-alert sik-alert--warning">
+                        <?= icon('alert', 'w-5 h-5') ?>
+                        <div>
+                            <strong>Every customer sees these.</strong>
+                            Leave the account number blank and the whole block is left off the invoice.
+                        </div>
                     </div>
                 </div>
             </div>

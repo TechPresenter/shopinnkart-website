@@ -660,6 +660,35 @@ function invoice_pdf_body_html(array $data, array $invoice): string
         . implode(' &nbsp;·&nbsp; ', $paymentBits)
         . '</td></tr></table>';
 
+    // ---- Bank details ----------------------------------------------------
+    // Under PAYMENT, because that is the question it answers: the customer is
+    // looking at what they owe and how they were meant to pay it. Printed only
+    // when there is an account number - a heading over three blanks tells
+    // somebody the store forgot rather than that it does not take transfers.
+    $bank = is_array($data['company']['bank'] ?? null) ? $data['company']['bank'] : [];
+    if (trim((string) ($bank['account_number'] ?? '')) !== '') {
+        $bankBits = [];
+        foreach ([
+            'Account name' => $bank['account_name'] ?? '',
+            'Account no.'  => $bank['account_number'] ?? '',
+            'IFSC'         => $bank['ifsc'] ?? '',
+            'Bank'         => $bank['bank_name'] ?? '',
+            'Type'         => $bank['account_type'] ?? '',
+        ] as $label => $value) {
+            $value = trim((string) $value);
+            if ($value !== '') {
+                $bankBits[] = '<span style="color:#6b7280;">' . $esc($label) . ':</span> ' . $esc($value);
+            }
+        }
+
+        $html .= '<table cellpadding="5" cellspacing="0" width="100%" style="width:100%;'
+            . 'border:0.5px solid #e5e7eb;font-size:7.2pt;">'
+            . '<tr><td>'
+            . '<span style="color:#6b7280;font-weight:bold;font-size:6.5pt;">BANK DETAILS FOR DIRECT TRANSFER</span><br />'
+            . implode(' &nbsp;·&nbsp; ', $bankBits)
+            . '</td></tr></table>';
+    }
+
     // ---- Terms -----------------------------------------------------------
     $terms = trim((string) $data['company']['terms']);
     if ($terms !== '') {
