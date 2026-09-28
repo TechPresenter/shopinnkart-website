@@ -93,6 +93,22 @@ $storeName = (string) setting('store_name', SITE_NAME);
     <meta name="robots" content="noindex, nofollow">
     <title>Admin Sign In &middot; <?= e($storeName) ?></title>
     <?= brand_favicon_links() ?>
+    <?php
+    /* The same two preloads admin/includes/header.php prints, for the same
+       reason: app.css declares Plus Jakarta Sans with font-display: optional,
+       which means an uncached font is not used AT ALL for that page load
+       rather than swapped in late. This page builds its own <head>, so it was
+       the one screen in the admin still rendering in the fallback.
+
+       asset() is deliberately not used - it appends ?v=<filemtime>, and
+       app.css asks for these files with no query, so a preload of a different
+       URL is a second download rather than a head start. crossorigin is
+       required even same-origin: a font is fetched in CORS mode, and a
+       preload without it is discarded and fetched twice. */
+    foreach (['plus-jakarta-sans-latin.woff2', 'plus-jakarta-sans-latin-ext.woff2'] as $adFontFile): ?>
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="<?= e(ASSET_URL . '/fonts/' . $adFontFile) ?>">
+    <?php endforeach; ?>
     <?php // utilities.css, not tailwind.css: see admin/includes/header.php. ?>
     <link rel="stylesheet" href="<?= e(asset('css/utilities.css')) ?>">
     <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
@@ -113,17 +129,39 @@ $storeName = (string) setting('store_name', SITE_NAME);
 <body class="ad-login">
 
 <main>
-    <div class="ad-login__card">
-        <a href="<?= e(url()) ?>">
-            <img class="ad-login__logo"
-                 src="<?= e(brand_logo_src()) ?>"
-                 alt="<?= e($storeName) ?>" width="200" height="42">
-        </a>
+    <div class="ad-login__card ad-login__card--split">
 
-        <h1 style="font-size:var(--ad-text-xl);text-align:center;margin-bottom:5px">Admin Sign In</h1>
-        <p style="text-align:center;color:var(--ad-muted);font-size:var(--ad-text-sm);margin-bottom:var(--ad-space-6)">
-            Sign in to manage your store.
-        </p>
+        <?php /* Decoration, and it says so: the panel is display:none below
+                 900px and everything inside it is hidden from assistive
+                 technology, so nothing here is a thing anybody needs. The
+                 store sells decorative lighting, which is why the one moving
+                 element on the page is a string of lights rather than a
+                 spinner. */ ?>
+        <aside class="ad-login__brand" aria-hidden="true">
+            <div>
+                <h2><?= e($storeName) ?></h2>
+                <p>Everything behind the shop front.</p>
+                <ul class="ad-login__points">
+                    <li>Orders, shipments and returns</li>
+                    <li>Catalogue, stock and pricing</li>
+                    <li>Customers, offers and content</li>
+                </ul>
+            </div>
+            <ul class="ad-login__lights">
+                <li></li><li></li><li></li><li></li><li></li><li></li>
+            </ul>
+        </aside>
+
+        <div class="ad-login__panel">
+            <div class="ad-login__form">
+                <a href="<?= e(url()) ?>">
+                    <img class="ad-login__logo"
+                         src="<?= e(brand_logo_src()) ?>"
+                         alt="<?= e($storeName) ?>" width="200" height="42">
+                </a>
+
+                <h1 class="ad-login__title">Admin Sign In</h1>
+                <p class="ad-login__sub">Sign in to manage your store.</p>
 
         <?php if (isset($errors['password']) && !isset($errors['identifier'])): ?>
             <div class="sik-alert sik-alert--error">
@@ -165,9 +203,11 @@ $storeName = (string) setting('store_name', SITE_NAME);
             </button>
         </form>
 
-        <p style="text-align:center;font-size:var(--ad-text-sm);color:var(--ad-muted);margin-top:22px">
-            <a href="<?= e(url()) ?>" style="color:var(--ad-primary);font-weight:600">&larr; Back to storefront</a>
-        </p>
+                <p class="ad-login__foot">
+                    <a href="<?= e(url()) ?>" style="color:var(--ad-primary);font-weight:600">&larr; Back to storefront</a>
+                </p>
+            </div>
+        </div>
     </div>
 
     <script>

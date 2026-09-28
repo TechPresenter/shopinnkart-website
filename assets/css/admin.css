@@ -3666,3 +3666,276 @@ pre.ad-mono,
     color: var(--ad-warning-ink);
     font-weight: var(--ad-weight-semibold, 600);
 }
+
+/* ---------------------------------------------------------------------------
+   50. THE SIGN-IN SCREEN
+
+   It was a 420px card on a gradient: correct, and the least interesting page
+   in the product. It is also the only page every operator sees every day, and
+   the first thing anyone sees of the store's back office at all.
+
+   This makes it a two-panel composition. The left panel carries the brand and
+   a string of festive lights - this store sells decorative lighting, so the
+   one animation on the page is the thing it sells rather than a spinner. The
+   right panel is the form, and it is WIDER than it was: the card goes from
+   420px to 960px, and the form column inside it gets 400px of its own rather
+   than sharing 420 with the logo, the heading and the copy.
+
+   The form column is deliberately NOT the full 960. A text input the width of
+   a laptop screen is harder to use, not easier: the eye loses the left edge on
+   the way back from the right. The extra width buys breathing room around the
+   fields, not longer fields.
+
+   EVERY ANIMATION HERE IS DECORATION AND NOTHING DEPENDS ON IT. The brand
+   panel is hidden below 900px, the lights are aria-hidden, and section 1's
+   prefers-reduced-motion block already flattens every duration on .ad-login to
+   .001ms - so somebody who has asked for stillness gets the same layout, fully
+   usable, with nothing moving. Nothing is REVEALED by an animation; the
+   entrance only moves what is already in the document.
+   --------------------------------------------------------------------------- */
+
+.ad-login {
+    /* A second light source from the bottom right, so the page reads as lit
+       rather than as a coloured rectangle. */
+    background:
+        radial-gradient(1100px 460px at 15% -10%, color-mix(in srgb, var(--ad-primary) 18%, transparent), transparent 60%),
+        radial-gradient(900px 500px at 92% 108%, color-mix(in srgb, var(--ad-gold) 14%, transparent), transparent 62%),
+        var(--ad-grad-rail);
+}
+
+/* --- the card, now two panels -------------------------------------------- */
+/* The <main> landmark, added when the admin gained its skip link, is the
+   grid item - the card sits INSIDE it. Under place-items:center a grid item
+   is sized to its content, so the card was resolving its width against a
+   shrink-to-fit parent and settling at 520px however wide the card asked to
+   be. The landmark has to carry the width for the card to be able to use it. */
+.ad-login > main:has(.ad-login__card--split) {
+    width: min(960px, 100%);
+}
+
+.ad-login__card--split {
+    /* An explicit width, not width:100% + max-width.
+       .ad-login is `display: grid; place-items: center`, and with a centred
+       item in an `auto` track `width: 100%` resolves against a track that was
+       itself sized to the item - so it settles at max-content. The old card
+       never noticed because max-width:420px capped it below that anyway;
+       raising the cap to 960 exposed it, and the card rendered 520px wide. */
+    width: min(960px, 100%);
+    max-width: none;
+    padding: 0;                 /* the panels own their padding now */
+    overflow: hidden;           /* so the brand panel meets the corner radius */
+    display: grid;
+    grid-template-columns: 1fr;
+    animation: ad-login-in var(--ad-dur-slow, .42s) var(--ad-ease-out, cubic-bezier(.2,.8,.3,1)) both;
+}
+
+@media (min-width: 900px) {
+    .ad-login__card--split { grid-template-columns: 0.85fr 1fr; }
+}
+
+@keyframes ad-login-in {
+    from { opacity: 0; transform: translateY(14px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* --- left: the brand panel ----------------------------------------------- */
+.ad-login__brand {
+    display: none;              /* below 900px the form is the whole card */
+    position: relative;
+    padding: 40px 36px;
+    color: #fff;
+    background: var(--ad-grad-cta);
+    isolation: isolate;
+}
+@media (min-width: 900px) {
+    .ad-login__brand {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+}
+
+/* A slow wash across the panel. Eighteen seconds, because anything quicker on
+   a page somebody stares at while typing a password is a distraction. */
+.ad-login__brand::before {
+    content: "";
+    position: absolute;
+    inset: -40%;
+    z-index: -1;
+    background: radial-gradient(40% 40% at 50% 50%, color-mix(in srgb, var(--ad-gold) 34%, transparent), transparent 70%);
+    animation: ad-login-wash 18s var(--ad-ease-standard, ease-in-out) infinite alternate;
+}
+@keyframes ad-login-wash {
+    from { transform: translate3d(-12%, -8%, 0); }
+    to   { transform: translate3d(12%, 10%, 0); }
+}
+
+.ad-login__brand h2 {
+    font-size: var(--ad-text-2xl);
+    line-height: var(--ad-lh-2xl);
+    margin: 0 0 10px;
+    font-weight: var(--ad-weight-bold, 700);
+}
+.ad-login__brand p {
+    margin: 0;
+    /* White at 82% on this gradient still clears AA - measured, not guessed. */
+    color: color-mix(in srgb, #fff 82%, transparent);
+    font-size: var(--ad-text-sm);
+    line-height: var(--ad-lh-md);
+    max-width: 34ch;
+}
+
+/* --- the string of lights ------------------------------------------------ */
+.ad-login__lights {
+    display: flex;
+    gap: 14px;
+    margin: 28px 0 0;
+    padding: 0;
+    list-style: none;
+}
+.ad-login__lights li {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: color-mix(in srgb, #fff 26%, transparent);
+    box-shadow: 0 0 0 0 transparent;
+    animation: ad-login-bulb 2.6s var(--ad-ease-standard, ease-in-out) infinite;
+}
+/* Staggered, so it reads as a string being lit rather than six things
+   blinking at once. */
+.ad-login__lights li:nth-child(1) { animation-delay: 0s; }
+.ad-login__lights li:nth-child(2) { animation-delay: .22s; }
+.ad-login__lights li:nth-child(3) { animation-delay: .44s; }
+.ad-login__lights li:nth-child(4) { animation-delay: .66s; }
+.ad-login__lights li:nth-child(5) { animation-delay: .88s; }
+.ad-login__lights li:nth-child(6) { animation-delay: 1.1s; }
+
+@keyframes ad-login-bulb {
+    0%, 100% { background: color-mix(in srgb, #fff 26%, transparent); box-shadow: 0 0 0 0 transparent; }
+    45%      { background: var(--ad-gold, #E8B340); box-shadow: 0 0 14px 3px color-mix(in srgb, var(--ad-gold) 55%, transparent); }
+}
+
+/* --- right: the form ----------------------------------------------------- */
+.ad-login__panel {
+    padding: 42px 38px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.ad-login__form {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 auto;
+}
+@media (max-width: 599px) {
+    .ad-login__panel { padding: 30px 22px; }
+}
+
+/* Each field arrives a beat after the one above it. Only movement is
+   animated: the fields are in the document and usable from the first frame. */
+.ad-login__panel .sik-field,
+.ad-login__panel .ad-btn--block,
+.ad-login__panel .ad-login__foot {
+    animation: ad-login-rise var(--ad-dur-base, .3s) var(--ad-ease-out, cubic-bezier(.2,.8,.3,1)) both;
+}
+.ad-login__panel .sik-field:nth-of-type(1) { animation-delay: .10s; }
+.ad-login__panel .sik-field:nth-of-type(2) { animation-delay: .17s; }
+.ad-login__panel .ad-btn--block            { animation-delay: .24s; }
+.ad-login__panel .ad-login__foot           { animation-delay: .31s; }
+
+@keyframes ad-login-rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* A focused field warms its ring, so the eye does not have to hunt for where
+   it is. The ring is additive - it does not replace the focus outline the
+   rest of the admin uses. */
+.ad-login__panel .sik-input {
+    transition: border-color var(--ad-dur-fast, .16s) var(--ad-ease-out, ease),
+                box-shadow var(--ad-dur-fast, .16s) var(--ad-ease-out, ease);
+}
+.ad-login__panel .sik-input:focus {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--ad-primary) 16%, transparent);
+}
+
+.ad-login__panel .ad-btn--primary {
+    background: var(--ad-grad-cta);
+    transition: transform var(--ad-dur-fast, .16s) var(--ad-ease-spring, cubic-bezier(.2,1.2,.3,1)),
+                box-shadow var(--ad-dur-fast, .16s) var(--ad-ease-out, ease);
+}
+.ad-login__panel .ad-btn--primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--ad-primary) 65%, transparent);
+}
+.ad-login__panel .ad-btn--primary:active { transform: translateY(0); }
+
+.ad-login__logo { height: 40px; margin: 0 0 26px; }
+@media (max-width: 899px) {
+    /* With no brand panel beside it, the logo carries the top of the card. */
+    .ad-login__logo { margin-inline: auto; }
+}
+
+.ad-login__title {
+    margin: 0 0 4px;
+    font-size: var(--ad-text-xl);
+    line-height: var(--ad-lh-xl);
+    font-weight: var(--ad-weight-bold, 700);
+}
+.ad-login__sub {
+    margin: 0 0 24px;
+    font-size: var(--ad-text-sm);
+    color: var(--ad-muted);
+}
+.ad-login__foot {
+    margin: 22px 0 0;
+    font-size: var(--ad-text-sm);
+    color: var(--ad-muted);
+}
+
+/* --- the brand panel's own text colour -------------------------------------
+   app.css:1017 gives every h1-h6 `color: var(--sik-ink)`, which is a dark ink
+   meant for a white card. Inside this panel that put the store's name in dark
+   maroon on a pink gradient - measured 1.9:1, which is not readable and not
+   close. `color: #fff` on the panel was inherited by the paragraph and lost by
+   the heading, because a type selector beats inheritance every time.
+
+   Stated on the element rather than fought with !important: the panel owns its
+   own colours, and that is worth one extra selector. */
+.ad-login__brand h2,
+.ad-login__brand h3,
+.ad-login__brand p,
+.ad-login__brand li {
+    color: #fff;
+}
+.ad-login__brand p { color: color-mix(in srgb, #fff 82%, transparent); }
+
+/* --- what is behind the door -----------------------------------------------
+   The panel was `space-between` with two things in it, so at 1440 it read as
+   an unfinished rectangle with a gap in the middle. Three short lines fill it
+   honestly and tell an operator what they are signing into, which is more use
+   than a decorative shape would have been. */
+.ad-login__points {
+    margin: 26px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 12px;
+}
+.ad-login__points li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--ad-text-sm);
+    line-height: var(--ad-lh-sm);
+    color: color-mix(in srgb, #fff 88%, transparent);
+}
+.ad-login__points li::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ad-gold, #E8B340);
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ad-gold) 50%, transparent);
+}
