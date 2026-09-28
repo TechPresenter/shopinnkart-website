@@ -41,6 +41,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/rollup.php';
+// an_geo_note() and an_geo_status(): analytics_quality() reports what location
+// source the store has, and it must say the same thing Settings > Analytics
+// says rather than keeping a second copy of the sentence.
+require_once __DIR__ . '/geo.php';
 
 /** Date-range presets every analytics screen offers. */
 const AN_RANGES = [
@@ -499,7 +503,14 @@ function an_dim_label(string $dim, string $key): string
         case 'country':
         case 'region':
         case 'city':
-            // Not missing: never collected. No geo source is configured.
+            // Empty is not missing data: it is a visit counted while no location
+            // source was configured, so nothing was ever derived for it.
+            //
+            // A non-empty country or region is returned AS THE STORED CODE - IN,
+            // IN-MH - not as a name. includes/countries.php holds the ISO-to-name
+            // table if that is ever wanted; changing it here changes the label
+            // column of every CSV export as well, so it is a decision rather
+            // than a tidy-up.
             return $key === '' ? 'Unknown' : $key;
         case 'source':
             return an_source_name((int) $key);
@@ -1003,8 +1014,15 @@ function analytics_quality(array $range): array
                  . 'came on Monday and Thursday counts twice.';
     }
 
-    $notes[] = 'Country, region and city read "Unknown" - no location source is configured, so no location '
-             . 'was ever collected.';
+    // Location, in the SAME sentence Settings > Analytics prints. This used to be
+    // a hard-coded "no location source is configured", which was true only while
+    // there was no way to configure one. There is now (analytics_geo_source), so
+    // a store that had switched location on was reading a report - and a CSV
+    // export, which prints these notes verbatim - that flatly denied collecting
+    // it. an_geo_note() is the one wording, deliberately built from what is
+    // CONFIGURED rather than from this particular request, so a report rendered
+    // from cron says the same thing as the screen.
+    $notes[] = an_geo_note(true);
 
     $notes[] = 'Orders and revenue come from your orders, not from the tracker. The smaller "attributed" '
              . 'figures are the part that could be tied to a visit: a shopper whose browser blocked the '
@@ -1036,7 +1054,10 @@ function analytics_quality(array $range): array
         'fresh_through' => $through,
         'stale_days'    => $status['lag_days'],
         'partial_days'  => $partial,
-        'geo'           => false,
+        // Is a location source configured and capable? Was hard-coded false.
+        // `configured_ok` rather than `live`: Cloudflare's header arrives per
+        // request, so a report must not report on the request that rendered it.
+        'geo'           => an_geo_status()['configured_ok'],
         'raw_from'      => $status['oldest_raw'],
     ];
 }

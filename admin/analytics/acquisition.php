@@ -12,10 +12,15 @@
  * that list, not thirteen hand-written queries. A dimension added to the
  * rollup tomorrow appears here with no edit.
  *
- * GEO IS NOT MISSING, IT WAS NEVER COLLECTED. Country, region and city read
- * "Unknown" for every row until a location source is configured, and
- * analytics_quality() says so. They are still listed rather than hidden,
- * because an owner looking for them needs to find the answer, not the absence.
+ * GEO IS EITHER COLLECTED OR IT IS NOT, AND THIS SCREEN SAYS WHICH. Country,
+ * region and city read "Unknown" for every visit counted before a location
+ * source was configured, and for all of them while none is. Those three cards
+ * therefore take their subtitle and their attribution from an_geo_status() /
+ * an_geo_note() at render time - the same sentence Settings > Analytics and the
+ * CSV export print - rather than from a constant that asserted "no location
+ * source is configured" whatever the setting said. They are still listed rather
+ * than hidden, because an owner looking for them needs to find the answer, not
+ * the absence.
  *
  * READ-ONLY: no POST handler, nothing written.
  */
@@ -75,13 +80,17 @@ const ANALYTICS_ACQ_GROUPS = [
         ['exit',    'Last pages',  'The page a visit ended on.',
             'an_daily_dim, dimension 8, resolved against an_paths.'],
     ],
+    // These three are REPLACED at render time from $geoCopy, because what they
+    // have to say depends on a setting and a const cannot ask. The strings here
+    // are the "nothing is configured" case and are never printed while
+    // $geoCopy covers the dimension - do not put a claim about the setting here.
     'Where they were' => [
-        ['country', 'Countries', 'Unknown until a location source is set up.',
-            'an_daily_traffic.country. No location source is configured, so no location was collected.'],
-        ['region',  'Regions',   'Unknown until a location source is set up.',
-            'an_daily_traffic.region. No location source is configured, so no location was collected.'],
-        ['city',    'Cities',    'Unknown until a location source is set up.',
-            'an_daily_dim, dimension 6. No location source is configured, so no location was collected.'],
+        ['country', 'Countries', 'Set up a location source to fill this in.',
+            'an_daily_traffic.country.'],
+        ['region',  'Regions',   'Set up a location source to fill this in.',
+            'an_daily_traffic.region.'],
+        ['city',    'Cities',    'Set up a location source to fill this in.',
+            'an_daily_dim, dimension 6.'],
     ],
 ];
 
@@ -93,6 +102,47 @@ if ($hasData) {
         }
     }
 }
+
+/**
+ * The three location cards say what the store is ACTUALLY doing.
+ *
+ * ANALYTICS_ACQ_GROUPS is a const, so it cannot ask a function - and the three
+ * strings it held said "no location source is configured, so no location was
+ * ever collected" whatever the setting. That was true only while there was no
+ * way to configure one. Settings > Analytics now writes analytics_geo_source, so
+ * a store with location switched on was reading a report that denied collecting
+ * it while the rows below it showed countries.
+ *
+ * The replacement comes from an_geo_status() / an_geo_note(), which is the same
+ * wording the settings screen and the CSV export print, so the three cannot
+ * describe three different behaviours.
+ *
+ * @var array<string,array{0:string,1:string}> dim => [subtitle, attribution]
+ */
+$geoCopy = (static function (): array {
+    $geo   = an_geo_status();
+    $note  = an_geo_note(true);
+    $grain = $geo['precision'] === 'country' ? 'Country only.' : 'Country, city, and state within India.';
+
+    if (!$geo['configured_ok']) {
+        // Either off, or set and not working. an_geo_note() distinguishes them.
+        $sub = $geo['source'] === 'off'
+            ? 'Unknown until a location source is set up.'
+            : 'Unknown: ' . an_geo_source_label($geo['source']) . ' is set but not working.';
+    } else {
+        $sub = $grain . ' Visits counted before you switched it on read Unknown.';
+    }
+
+    return [
+        'country' => [$sub, 'an_daily_traffic.country. ' . $note],
+        'region'  => [$geo['configured_ok'] && $geo['precision'] === 'country'
+            ? 'Not recorded: location is set to country only.'
+            : $sub, 'an_daily_traffic.region. State is recorded for India only. ' . $note],
+        'city'    => [$geo['configured_ok'] && $geo['precision'] === 'country'
+            ? 'Not recorded: location is set to country only.'
+            : $sub, 'an_daily_dim, dimension 6. ' . $note],
+    ];
+})();
 
 $pageTitle    = 'Analytics - Acquisition';
 $pageSubtitle = analytics_admin_subtitle($state);
@@ -134,7 +184,13 @@ require ADMIN_PATH . '/includes/header.php';
             <?= admin_card_open($group, ['sub' => 'Visits split by each of these, most visits first.']) ?>
                 <div class="ad-grid ad-grid--2">
                     <?php foreach ($dims as [$dim, $title, $sub, $why]): ?>
-                        <?php $rows = $breakdowns[$dim] ?? []; ?>
+                        <?php
+                        $rows = $breakdowns[$dim] ?? [];
+                        // The location cards are told by the setting, not by a const.
+                        if (isset($geoCopy[$dim])) {
+                            [$sub, $why] = $geoCopy[$dim];
+                        }
+                        ?>
                         <div class="ad-minw0">
                             <div class="ad-split" style="margin-bottom:8px">
                                 <h3 class="ad-card__title"><?= e($title) ?></h3>

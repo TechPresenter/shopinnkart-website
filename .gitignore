@@ -86,3 +86,15 @@ storage/cron/*
 # printed for customers who bought something; it has no business in a public
 # repository, where it would outlive the account. Same pattern as db.local.php.
 config/business.local.php
+
+# The owner's MaxMind GeoLite2 database, which Settings > Analytics tells them to
+# drop in here. It must not be committed for two separate reasons: it is tens of
+# megabytes, and GeoLite2's licence does not permit redistributing it - which is
+# what pushing it to a public repository would be. The folder's deny rules and
+# its README are kept, so a fresh clone still explains what goes in it and still
+# refuses to serve it over HTTP.
+storage/geo/*
+!storage/geo/.htaccess
+!storage/geo/README.txt
+!storage/geo/index.html
+!storage/geo/.gitkeep

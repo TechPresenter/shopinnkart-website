@@ -173,6 +173,18 @@ function cron_heartbeat_jobs(): array
             'stale'    => 7200,
             'required' => false,
         ],
+        // bin/send-integration-events.php has stamped this since it shipped, but
+        // the job was never listed here, so deploy-check never asked about it -
+        // and Settings > Integrations can show a webhook as "Sending" while
+        // nothing is scheduled to send it. Not `required`: a store with no
+        // Conversions API and no webhook does not need the cron, so a never-run
+        // stamp is a to-do rather than a stop.
+        'send-integration-events' => [
+            'label'    => 'Integration events',
+            'every'    => 'every 5 minutes',
+            'stale'    => 1800,
+            'required' => false,
+        ],
         'analytics-rollup' => [
             'label'    => 'Analytics rollup',
             'every'    => 'nightly',

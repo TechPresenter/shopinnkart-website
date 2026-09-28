@@ -30,12 +30,24 @@
  * with a link to the screen that owns them. Consolidating them properly means
  * editing those two screens, which is a separate change.
  *
- * WHAT IS CONFIGURED HERE AND NOT SENT
- * -----------------------------------
- * The Meta Conversions API and the custom webhook are storage only. No
- * server-to-server sender exists for either, and `sends` records that, so the
- * screen can say "stored, nothing is sent" rather than leave an operator
- * believing their conversions are flowing.
+ * WHAT SENDS FROM OUR SERVER RATHER THAN A BROWSER
+ * ------------------------------------------------
+ * The Meta Conversions API and the custom webhook used to be storage only, and
+ * `sends` said 'stored' so the screen could admit it. Both now have a real
+ * sender in includes/integration-senders.php: an event is queued and delivered
+ * from cron by bin/send-integration-events.php, never inline during a request.
+ * Their `sends` is 'queued', and the screen asks
+ * integration_sender_status() - not this register - whether anything is
+ * actually flowing, because that depends on a switch, a credential and a
+ * source, not on a key existing.
+ *
+ * SOME ENTRIES ARE SWITCHES, NOT IDS
+ * ---------------------------------
+ * The two senders need an on/off flag, an event selection and a retention
+ * number. Those are owned by this screen exactly like the ids are, so they are
+ * in the register - the ownership guard reads it and would otherwise refuse
+ * them - but `table` is false so they stay out of the "every service" table,
+ * which is a list of services and not a list of preferences.
  */
 
 declare(strict_types=1);
@@ -71,7 +83,10 @@ const INTEGRATION_OWNERS = [
  *   secret  true when the value must never be rendered back into the form
  *   sends   'gated'  - a third-party script, loaded only after marketing consent
  *           'meta'   - a meta tag in our own HTML; no request to anybody
+ *           'queued' - our server posts it, from cron, never inside a request
+ *           'config' - a switch or a preference; it is not sent anywhere
  *           'stored' - saved, and nothing sends it yet
+ *   table   false keeps the entry out of the "every service" table (switches)
  *   cost    the consent and privacy consequence, one line, operator-facing
  */
 const INTEGRATION_REGISTER = [
@@ -131,26 +146,34 @@ const INTEGRATION_REGISTER = [
         'sends' => 'gated',
         'cost'  => 'Tells Meta who browsed what, linked to their account.',
     ],
+    'meta_capi_enabled' => [
+        'label' => 'Meta CAPI sender',
+        'owner' => 'integrations',
+        'slot'  => '',
+        'sends' => 'config',
+        'table' => false,
+        'cost'  => 'Off until you switch it on. A switch, not an identifier.',
+    ],
     'meta_capi_dataset_id' => [
         'label' => 'Meta CAPI dataset',
         'owner' => 'integrations',
         'slot'  => '',
-        'sends' => 'stored',
-        'cost'  => 'Would send orders to Meta from our server, bypassing blockers.',
+        'sends' => 'queued',
+        'cost'  => 'Sends orders to Meta from our server, bypassing ad blockers.',
     ],
     'meta_capi_token' => [
         'label'  => 'Meta CAPI access token',
         'owner'  => 'integrations',
         'slot'   => '',
         'secret' => true,
-        'sends'  => 'stored',
+        'sends'  => 'queued',
         'cost'   => 'A credential that can write to your Meta ad account.',
     ],
     'meta_capi_test_code' => [
         'label' => 'Meta CAPI test event code',
         'owner' => 'integrations',
         'slot'  => '',
-        'sends' => 'stored',
+        'sends' => 'queued',
         'cost'  => 'Routes test events away from your real ad reporting.',
     ],
     'clarity_project_id' => [
@@ -160,20 +183,44 @@ const INTEGRATION_REGISTER = [
         'sends' => 'gated',
         'cost'  => 'Records mouse movement and can replay a session.',
     ],
+    'integration_webhook_enabled' => [
+        'label' => 'Webhook sender',
+        'owner' => 'integrations',
+        'slot'  => '',
+        'sends' => 'config',
+        'table' => false,
+        'cost'  => 'Off until you switch it on. A switch, not an identifier.',
+    ],
     'integration_webhook_url' => [
         'label' => 'Custom webhook',
         'owner' => 'integrations',
         'slot'  => '',
-        'sends' => 'stored',
-        'cost'  => 'Would post store events to a URL you control.',
+        'sends' => 'queued',
+        'cost'  => 'Posts order events, with customer details, to a URL you own.',
     ],
     'integration_webhook_secret' => [
         'label'  => 'Webhook signing secret',
         'owner'  => 'integrations',
         'slot'   => '',
         'secret' => true,
-        'sends'  => 'stored',
+        'sends'  => 'queued',
         'cost'   => 'Lets your endpoint prove a request really came from us.',
+    ],
+    'integration_webhook_events' => [
+        'label' => 'Webhook events',
+        'owner' => 'integrations',
+        'slot'  => '',
+        'sends' => 'config',
+        'table' => false,
+        'cost'  => 'Which order events are posted. Nothing else is.',
+    ],
+    'integration_queue_retention_days' => [
+        'label' => 'Send log retention',
+        'owner' => 'integrations',
+        'slot'  => '',
+        'sends' => 'config',
+        'table' => false,
+        'cost'  => 'How long a sent event keeps its copy of the order.',
     ],
 ];
 
@@ -182,9 +229,24 @@ function integration_register(): array
 {
     $rows = [];
     foreach (INTEGRATION_REGISTER as $key => $entry) {
-        $rows[$key] = $entry + ['key' => $key, 'secret' => false, 'slot' => '', 'sends' => 'stored'];
+        $rows[$key] = $entry + [
+            'key'    => $key,
+            'secret' => false,
+            'slot'   => '',
+            'sends'  => 'stored',
+            'table'  => true,
+        ];
     }
     return $rows;
+}
+
+/** The register rows the "every service" table shows: services, not switches. */
+function integration_table_rows(): array
+{
+    return array_filter(
+        integration_register(),
+        static fn (array $entry): bool => !empty($entry['table'])
+    );
 }
 
 /** One entry, or [] for a key this register does not know. */
@@ -300,17 +362,30 @@ function integration_tag_state(string $key, string $value): array
 }
 
 /**
- * How many gated tags are live, how many are misconfigured, and what else is
- * merely stored.
+ * How many gated tags are live, how many are misconfigured, and how many of our
+ * own server-side senders are switched on.
  *
- * @return array{gated:int, live:int, broken:int, stored:int, metas:int}
+ * `stored` is kept and is now normally 0: it counts values that are saved with
+ * nothing to send them, which was the whole state of this screen before the two
+ * senders existed. A non-zero `stored` means a new key has been added without a
+ * sender, and the screen should say so rather than hide it.
+ *
+ * @return array{gated:int, live:int, broken:int, stored:int, metas:int,
+ *               senders:int, senders_on:int}
  */
 function integration_summary(): array
 {
     $values = integration_values();
-    $counts = ['gated' => 0, 'live' => 0, 'broken' => 0, 'stored' => 0, 'metas' => 0];
+    $counts = [
+        'gated' => 0, 'live' => 0, 'broken' => 0, 'stored' => 0, 'metas' => 0,
+        'senders' => 2, 'senders_on' => 0,
+    ];
 
     foreach (integration_register() as $key => $entry) {
+        if ($entry['sends'] === 'config') {
+            continue;
+        }
+
         $state = integration_tag_state($key, $values[$key]);
 
         if ($entry['sends'] === 'gated') {
@@ -329,9 +404,25 @@ function integration_summary(): array
 
         if ($entry['sends'] === 'meta') {
             $counts['metas']++;
-        } else {
+        } elseif ($entry['sends'] === 'stored') {
             $counts['stored']++;
         }
+    }
+
+    // A sender counts as on only when its switch is on AND it has the two
+    // values it cannot work without. A switch on its own sends nothing, and a
+    // tile that counted it would be the first false claim on this screen.
+    if (setting_bool('meta_capi_enabled', false)
+        && trim((string) ($values['meta_capi_token'] ?? '')) !== ''
+        && (trim((string) ($values['meta_capi_dataset_id'] ?? '')) !== ''
+            || trim((string) ($values['meta_pixel_id'] ?? '')) !== '')) {
+        $counts['senders_on']++;
+    }
+
+    if (setting_bool('integration_webhook_enabled', false)
+        && trim((string) ($values['integration_webhook_url'] ?? '')) !== ''
+        && trim((string) ($values['integration_webhook_secret'] ?? '')) !== '') {
+        $counts['senders_on']++;
     }
 
     return $counts;

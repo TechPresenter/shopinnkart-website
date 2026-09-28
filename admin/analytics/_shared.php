@@ -247,6 +247,12 @@ function analytics_admin_range_bar(string $screen, array $state, bool $withFilte
             . e(analytics_admin_url($screen, ['query' => $keep])) . '">Clear filters</a>';
     }
 
+    // The export lives in the bar that owns the period and the filters, because
+    // those are exactly what it has to carry. It is built from the APPLIED
+    // state rather than from whatever is half-typed into the selects beside it,
+    // so the file is the screen as rendered - not the query about to be run.
+    $out .= analytics_admin_export_button($screen, $state);
+
     return $out . '</form>';
 }
 
@@ -523,4 +529,241 @@ function analytics_admin_points(array $series, string $metric): array
 function analytics_admin_bucket_label(string $bucket): string
 {
     return ['day' => 'by day', 'week' => 'by week', 'month' => 'by month'][$bucket] ?? 'by day';
+}
+
+// ===========================================================================
+//  CSV export
+//
+//  export.php does the writing. What lives HERE is the part the four screens
+//  and that endpoint have to agree about: which tables exist, which of them
+//  each screen shows, and how a link carries the period, the filters and the
+//  screen's own extra controls. Held in two places, the button and the
+//  endpoint would eventually describe different periods, and the file on the
+//  owner's desktop would not be the screen he was looking at.
+//
+//  The button is emitted from analytics_admin_range_bar() rather than added to
+//  each screen, so all four get the same control in the same place and a fifth
+//  screen gets it for free.
+// ===========================================================================
+
+/**
+ * Every table the four screens show, in the order a full export writes them.
+ *
+ * The keys are also the values ?what= accepts for a single table, so the
+ * catalogue and the parameter cannot drift apart.
+ */
+const ANALYTICS_EXPORT_TABLES = [
+    'summary'      => 'Headline totals',
+    'series'       => 'Visits by day',
+    'channel'      => 'Channels',
+    'source'       => 'Sources',
+    'medium'       => 'Mediums',
+    'campaign'     => 'Campaigns',
+    'referrer'     => 'Referrers',
+    'device'       => 'Devices',
+    'browser'      => 'Browsers',
+    'os'           => 'Systems',
+    'visitor_type' => 'New or returning',
+    'landing'      => 'First pages',
+    'exit'         => 'Last pages',
+    'country'      => 'Countries',
+    'region'       => 'Regions',
+    'city'         => 'Cities',
+    'pages'        => 'Top pages',
+    'products'     => 'Top products',
+    'searches'     => 'Searches',
+    'events'       => 'Events',
+    'vitals'       => 'Core Web Vitals',
+    'funnel'       => 'From looking to paying',
+    'carts'        => 'Carts left behind',
+];
+
+/**
+ * What each screen's own export contains, in the order that screen shows it.
+ *
+ * Read off the screens rather than invented: these are the metric calls each
+ * file actually makes. "This screen" therefore means this screen, and the
+ * tables offered one at a time in the menu are the ones in front of the
+ * reader.
+ */
+const ANALYTICS_EXPORT_BUNDLES = [
+    'index'       => ['summary', 'series', 'channel', 'device', 'pages', 'products',
+                      'funnel', 'carts', 'searches', 'vitals'],
+    'acquisition' => ['summary', 'channel', 'source', 'medium', 'campaign', 'referrer',
+                      'device', 'browser', 'os', 'visitor_type', 'landing', 'exit',
+                      'country', 'region', 'city'],
+    'content'     => ['pages', 'products', 'searches', 'events'],
+    'performance' => ['vitals'],
+];
+
+/**
+ * The sorts analytics_top_products() accepts.
+ *
+ * The same four content.php offers, named again here because export.php does
+ * not include content.php. They cannot disagree in a way that matters:
+ * an_top_products_query() maps exactly these four and falls back to `views`
+ * for anything else, and the export's header block prints the sort it used.
+ */
+const ANALYTICS_EXPORT_SORTS = ['views', 'cart_adds', 'units', 'revenue'];
+
+/**
+ * Rows the export asks metrics.php for, per kind of table.
+ *
+ * These are that layer's own ceilings, not a choice made here: analytics_
+ * breakdown(), analytics_top_pages() and analytics_top_products() clamp to 200
+ * and analytics_top_searches() to 100. The export asks for the most it can get
+ * rather than the five or fifteen or thirty the screen had room for, and the
+ * header block says so per table - a top-five CSV is not an analysis.
+ */
+const ANALYTICS_EXPORT_ROWS = ['breakdown' => 200, 'pages' => 200, 'products' => 200, 'searches' => 100];
+
+/** Every table, for ?what=all. A const cannot call array_keys(). */
+function analytics_export_all_tables(): array
+{
+    return array_keys(ANALYTICS_EXPORT_TABLES);
+}
+
+/**
+ * The tables one ?what= asks for, or none when it names nothing.
+ *
+ * A bundle name is a screen key or 'all'; anything else is looked up as a
+ * single table. Returned with the label the file will call the selection, so
+ * the header block and the filename say what the menu item said.
+ *
+ * @return array{tables:string[], label:string}
+ */
+function analytics_export_selection(string $what): array
+{
+    if ($what === 'all') {
+        return ['tables' => analytics_export_all_tables(), 'label' => 'Everything'];
+    }
+
+    if (isset(ANALYTICS_EXPORT_BUNDLES[$what])) {
+        return [
+            'tables' => ANALYTICS_EXPORT_BUNDLES[$what],
+            'label'  => (ANALYTICS_SCREENS[$what]['label'] ?? $what) . ' screen',
+        ];
+    }
+
+    if (isset(ANALYTICS_EXPORT_TABLES[$what])) {
+        return ['tables' => [$what], 'label' => ANALYTICS_EXPORT_TABLES[$what]];
+    }
+
+    return ['tables' => [], 'label' => ''];
+}
+
+/**
+ * The controls that live on ONE screen rather than in the shared range bar.
+ *
+ * content.php sorts the product table; performance.php splits the vitals by
+ * device and page type. Neither is part of analytics_admin_state(), so an
+ * export built from the range alone would hand back a differently sorted or
+ * an unsplit table while looking exactly like the screen it came from.
+ * Validated here, once, and read by both the link and the endpoint.
+ *
+ * @return array{sort:string, vdev:?int, ptype:?int}
+ */
+function analytics_admin_extras(): array
+{
+    $sort = (string) ($_GET['sort'] ?? '');
+    $vdev = (string) ($_GET['vdev'] ?? '');
+    $type = (string) ($_GET['ptype'] ?? '');
+
+    return [
+        'sort'  => in_array($sort, ANALYTICS_EXPORT_SORTS, true) ? $sort : 'views',
+        // performance.php's own test, so device 0 ("other") stays a real choice.
+        'vdev'  => $vdev !== '' && ctype_digit($vdev) ? (int) $vdev : null,
+        'ptype' => $type !== '' && ctype_digit($type) ? (int) $type : null,
+    ];
+}
+
+/**
+ * Those same controls as query parameters, so an export link carries them.
+ *
+ * `sort` is left out when it is the default, because export.php defaults to the
+ * same value - nothing is lost and the link stays readable.
+ */
+function analytics_admin_extras_query(): array
+{
+    $extras = analytics_admin_extras();
+    $query  = [];
+
+    if ($extras['sort'] !== 'views') {
+        $query['sort'] = $extras['sort'];
+    }
+    if ($extras['vdev'] !== null) {
+        $query['vdev'] = (string) $extras['vdev'];
+    }
+    if ($extras['ptype'] !== null) {
+        $query['ptype'] = (string) $extras['ptype'];
+    }
+
+    return $query;
+}
+
+/** An export link carrying the period, the filters and the screen's controls. */
+function analytics_admin_export_url(string $what, array $state, array $extra = []): string
+{
+    $query = array_merge(['what' => $what], (array) ($state['query'] ?? []), $extra);
+
+    foreach ($query as $key => $value) {
+        if ($value === '' || $value === null) {
+            unset($query[$key]);
+        }
+    }
+
+    return admin_url('analytics/export.php') . '?' . http_build_query($query);
+}
+
+/**
+ * The Export control, for the range bar all four screens already print.
+ *
+ * Nothing at all when the admin cannot export: analytics.view lets you read a
+ * dashboard, analytics.export lets you carry the page URLs and the search terms
+ * away as a file, and export.php refuses the second on its own. A button whose
+ * only destination is a refusal is a worse screen than no button.
+ */
+function analytics_admin_export_button(string $screen, array $state): string
+{
+    if (!admin_can('analytics.export')) {
+        return '';
+    }
+
+    $extras = analytics_admin_extras_query();
+
+    $items = [
+        ['heading' => 'CSV for this period'],
+        ['label' => 'This screen', 'icon' => 'download',
+            'url' => analytics_admin_export_url($screen, $state, $extras)],
+        ['label' => 'All four screens', 'icon' => 'download',
+            'url' => analytics_admin_export_url('all', $state, $extras)],
+    ];
+
+    $tables = ANALYTICS_EXPORT_BUNDLES[$screen] ?? [];
+
+    if ($tables !== []) {
+        $items[] = ['divider' => true];
+        $items[] = ['heading' => 'One table on its own'];
+
+        foreach ($tables as $table) {
+            $items[] = [
+                'label' => (string) (ANALYTICS_EXPORT_TABLES[$table] ?? $table),
+                'icon'  => 'table',
+                'url'   => analytics_admin_export_url($table, $state, $extras),
+            ];
+        }
+    }
+
+    return admin_dropdown([
+        'trigger' => [
+            'label'      => 'Export',
+            'icon'       => 'download',
+            'caret'      => true,
+            'class'      => 'ad-btn--sm',
+            'aria_label' => 'Export this period as a CSV file',
+        ],
+        'items'          => $items,
+        'align'          => 'end',
+        'sheet_on_phone' => true,
+    ]);
 }
