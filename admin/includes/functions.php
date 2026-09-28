@@ -185,6 +185,12 @@ function admin_menu(): array
                 ['label' => 'Analytics','url' => 'settings/analytics.php','permission' => 'settings.view'],
                 ['label' => 'SEO',      'url' => 'settings/seo.php',      'permission' => 'settings.view'],
                 ['label' => 'Theme',    'url' => 'settings/theme.php',    'permission' => 'settings.view'],
+                // settings.view, not settings.scripts, because that is what the
+                // screen itself opens on: it lists the snippets for anyone who
+                // may see settings and refuses to SAVE without settings.scripts.
+                // Gating the menu harder than the page hides a screen from
+                // someone the page would have let in.
+                ['label' => 'Custom code', 'url' => 'settings/scripts.php', 'permission' => 'settings.view'],
                 ['label' => 'Social',   'url' => 'settings/social.php',   'permission' => 'settings.view'],
                 ['label' => 'Widgets',  'url' => 'settings/widgets.php',  'permission' => 'settings.view'],
             ],
