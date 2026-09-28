@@ -196,6 +196,14 @@ const PERMISSION_MODULES = [
     'pages'       => ['view', 'create', 'edit', 'delete'],
     'faq'         => ['view', 'create', 'edit', 'delete'],
     'blog'        => ['view', 'create', 'edit', 'delete'],
+    // Analytics was never registered here, so both of its keys resolved to
+    // "nobody" - the rule admin/combos/create.php:11 already writes down - and
+    // the four Analytics screens plus the CSV export were reachable ONLY by a
+    // Super Admin, whose ['*'] bypasses the lookup. No other role could even
+    // be GRANTED them, because admin/admins/roles.php builds its matrix from
+    // this list. Registering the module does not hand it to anybody: it makes
+    // the two checkboxes exist so the owner can decide.
+    'analytics'   => ['view', 'export'],
     'reports'     => ['view'],
     'settings'    => ['view', 'edit', 'scripts'],
     'system'      => ['backup'],

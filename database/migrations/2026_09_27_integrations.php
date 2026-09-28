@@ -137,6 +137,9 @@ function migration_integrations_run(): array
 }
 
 if (PHP_SAPI === 'cli' && realpath($argv[0] ?? '') === realpath(__FILE__)) {
+    require_once __DIR__ . '/_cli.php';
+    migration_refuse_arguments($argv);
+
     $result = migration_integrations_run();
     echo "Integrations migration\n";
     foreach ($result['applied'] as $line) {
