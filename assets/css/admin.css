@@ -3648,3 +3648,21 @@ pre.ad-mono,
     color: var(--ad-muted);
     max-width: 40ch;
 }
+
+/* ---------------------------------------------------------------------------
+   49. A CELL THAT IS CARRYING BAD NEWS
+
+   admin/seo/index.php has marked a table cell `.ad-warn` since it was written,
+   for a count that should be zero and is not. Nothing anywhere defined the
+   class, so the number rendered exactly like every other number and the
+   warning was invisible - the kind of defect that survives review because the
+   markup reads as if it works.
+
+   Weight and colour, not a background: these sit inside a dense table where a
+   tinted cell would read as a selected row. The token is the same warning ink
+   the callouts use, so it follows the palette into dark mode on its own.
+   --------------------------------------------------------------------------- */
+.ad-warn {
+    color: var(--ad-warning-ink);
+    font-weight: var(--ad-weight-semibold, 600);
+}

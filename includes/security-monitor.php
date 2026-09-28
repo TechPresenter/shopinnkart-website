@@ -1255,7 +1255,17 @@ function security_monitor_rules(): array
             'key'       => 'webhook_signatures',
             'title'     => 'Payment callbacks with a bad signature',
             'scope'     => 'global',
-            'types'     => ['webhook.payment_throttled', 'webhook.payment_needs_review'],
+            // webhook.bad_signature FIRST, because it is the one this rule is
+            // named after and it was missing. api/payments/webhook.php:171
+            // writes it the moment a signature fails to verify; the two types
+            // that were listed here instead are both downstream of that.
+            // payment_throttled only fires once a caller has already spent the
+            // failure budget, so the CRITICAL detector - the only critical one
+            // in the set - could not see a forged callback until the attacker
+            // was noisy enough to trip a rate limit, and then reported it as a
+            // throttle rather than as a forgery. A patient attacker sending
+            // two a minute was invisible.
+            'types'     => ['webhook.bad_signature', 'webhook.payment_throttled', 'webhook.payment_needs_review'],
             'window'    => 3600,
             'threshold' => max(1, setting_int('sec_alert_webhook', 3)),
             'severity'  => 'critical',

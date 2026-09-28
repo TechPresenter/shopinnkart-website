@@ -333,15 +333,20 @@ function an_admin_num(?int $value): string
 /**
  * One breakdown row's share of ALL visits in the period.
  *
- * NOT analytics_breakdown()'s own `share`, and the difference is not cosmetic.
+ * NOT analytics_breakdown()'s own `share`, though the two now agree.
  * That function fetches LIMIT+1 rows, sums the visits of those rows, and
  * divides each row by that sum - so when a dimension has more distinct values
  * than the limit, the denominator is not the period's traffic and every share
  * is overstated. Measured on 30 campaigns of 100 visits each with a limit of 5:
- * it reports 16.7% per row where the truth is 3.3%, and the five rows add up to
- * 83.5% of a period they are 16.7% of. That is a defect in
- * includes/analytics/metrics.php, which is not this section's file to change;
- * it is reported rather than patched around silently.
+ * it reported 16.7% per row where the truth is 3.3%, and the five rows added up
+ * to 83.5% of a period they are 16.7% of.
+ *
+ * THAT DEFECT IS FIXED: analytics_breakdown() now asks the database for the
+ * range total separately instead of summing the rows it just fetched
+ * (scratchpad/test_analytics_breakdown.php holds it down). This helper is kept
+ * anyway, because it answers a slightly different question on purpose - see
+ * below - and because two independent routes to the same figure is how a
+ * regression in either becomes visible rather than quietly agreed with.
  *
  * So the share is taken here against analytics_summary()['sessions'] - the same
  * function's own figure for the period, through the same function's own

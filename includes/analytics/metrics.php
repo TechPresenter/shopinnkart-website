@@ -413,7 +413,7 @@ function analytics_breakdown(string $dim, array $range, int $limit = 10): array
                     COALESCE(SUM(`pageviews`), 0)         AS pageviews,
                     COALESCE(SUM(`engaged_sessions`), 0)  AS engaged_sessions,
                     COALESCE(SUM(`purchase_sessions`), 0) AS purchase_sessions,
-                    0                                     AS orders,
+                    NULL                                  AS orders,
                     COALESCE(SUM(`revenue`), 0)           AS revenue
                FROM `an_daily_dim`
               WHERE `dim` = :dim AND `day` BETWEEN :from AND :to
@@ -426,10 +426,31 @@ function analytics_breakdown(string $dim, array $range, int $limit = 10): array
         return [];
     }
 
-    $total = 0;
-    foreach ($rows as $r) {
-        $total += (int) $r['sessions'];
+    // The share has to be of the WHOLE range, so it is asked for separately.
+    // Summing the fetched rows gave a share of the top $limit+1 instead: on a
+    // dimension with fifty values and a limit of ten, every row's share was
+    // inflated and they added up to 100% while describing a fraction of the
+    // traffic. That is the kind of wrong number a dashboard gets believed for.
+    if (isset(AN_CUBE_DIMS[$dim])) {
+        [$tWhere, $tParams] = an_cube_where($range);
+        $total = (int) Database::fetchColumn(
+            'SELECT COALESCE(SUM(`sessions`), 0) FROM `an_daily_traffic` WHERE ' . $tWhere,
+            $tParams
+        );
+    } else {
+        $total = (int) Database::fetchColumn(
+            'SELECT COALESCE(SUM(`sessions`), 0) FROM `an_daily_dim`
+              WHERE `dim` = :dim AND `day` BETWEEN :from AND :to',
+            ['dim' => AN_DIMS[$dim], 'from' => $range['from'], 'to' => $range['to']]
+        );
     }
+
+    // A row can only ever be a share of something it is part of.
+    $fetched = 0;
+    foreach ($rows as $r) {
+        $fetched += (int) $r['sessions'];
+    }
+    $total = max($total, $fetched);
 
     $out = [];
     foreach (array_slice($rows, 0, $limit) as $r) {
@@ -443,7 +464,9 @@ function analytics_breakdown(string $dim, array $range, int $limit = 10): array
             'engagement_rate'   => an_pct((int) $r['engaged_sessions'], $sessions),
             'purchase_sessions' => (int) $r['purchase_sessions'],
             'conversion_rate'   => an_pct((int) $r['purchase_sessions'], $sessions),
-            'orders'            => (int) $r['orders'],
+            // null, not 0: an_daily_dim cannot answer this, and a screen must
+            // be able to print "-" rather than a figure nobody measured.
+            'orders'            => $r['orders'] === null ? null : (int) $r['orders'],
             'revenue'           => round((float) $r['revenue'], 2),
             'share'             => an_pct($sessions, $total),
         ];
