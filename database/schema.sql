@@ -1927,8 +1927,8 @@ INSERT INTO `settings` (`setting_group`, `setting_key`, `setting_value`, `settin
 ('theme', 'custom_js',               '',                                         'textarea', 'Custom JavaScript', 21),
 
 -- admin theme
-('admin_theme', 'admin_primary',     '#F4511E',                                  'color',    'Admin Accent Colour', 1),
-('admin_theme', 'admin_sidebar_bg',  '#0F2143',                                  'color',    'Admin Sidebar Background', 2),
+('admin_theme', 'admin_primary',     '#D8402A',                                  'color',    'Admin Accent Colour', 1),
+('admin_theme', 'admin_sidebar_bg',  '#4A1206',                                  'color',    'Admin Sidebar Background', 2),
 ('admin_theme', 'admin_sidebar_collapsed', '0',                                  'boolean',  'Collapse Sidebar by Default', 3),
 
 -- social

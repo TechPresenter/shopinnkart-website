@@ -19,6 +19,12 @@ require_once INCLUDES_PATH . '/skeletons.php';
 // consent banner is needed. The footer is where the tags are printed and where
 // the "Cookie preferences" control lives, so it is the only page that needs it.
 require_once INCLUDES_PATH . '/consent.php';
+// The body-end injection point. Named here rather than relied on from
+// includes/header.php: every page in the tree that requires this file also
+// requires that one (measured: 42 files require footer.php, 0 of them without
+// header.php), so this is require_once insurance for the day one does not,
+// not a second load.
+require_once INCLUDES_PATH . '/custom-scripts.php';
 
 // The mobile search dialog lives down here but reads the header's settings.
 // $hd is a local that includes/header.php leaves in the including page's
@@ -319,22 +325,15 @@ $footerColIndex = 0;   // gives every disclosure panel a stable, unique id
                     <?php endif; ?>
 
                     <?php
-                    /* Who built the store. Admin-owned like the copyright beside it, so
-                       the owner can reword or remove it without an edit here; an empty
-                       credit line prints nothing at all, and an empty link prints the
-                       text as plain words rather than a dead anchor. */
-                    $creditText = trim((string) setting('credit_text', ''));
-                    $creditUrl  = trim((string) setting('credit_url', ''));
+                    /* Who built the store. Admin-owned like the copyright beside it,
+                       so the owner can reword or remove it without an edit here.
+                       credit_line_html() returns '' for a cleared credit and drops
+                       the anchor for a cleared link, rather than printing a dead
+                       one; it also splits the sentence from the name it ends on so
+                       the two can be set in different type. */
+                    require_once INCLUDES_PATH . '/credit-line.php';
                     ?>
-                    <?php if ($creditText !== ''): ?>
-                        <span class="sik-footer__credit">
-                            <?php if ($creditUrl !== ''): ?>
-                                <a href="<?= e($creditUrl) ?>" target="_blank" rel="noopener noreferrer"><?= e($creditText) ?></a>
-                            <?php else: ?>
-                                <?= e($creditText) ?>
-                            <?php endif; ?>
-                        </span>
-                    <?php endif; ?>
+                    <?= credit_line_html('sik-footer__credit') ?>
                 </p>
 
                 <?php
@@ -1008,12 +1007,38 @@ try {
 // $GLOBALS['SIK_NO_THIRD_PARTY'] before the footer. reset-password.php does:
 // it carries a live reset token in its URL, and a tag container reports
 // document.location - token and all - to somebody else's server.
-$sikNoThirdParty = !empty($GLOBALS['SIK_NO_THIRD_PARTY']);
+//
+// Nothing in this file reads it directly any more: consent_state() reads it for
+// the tag block below, and custom_scripts_may_run() reads it for the snippets.
+// The local it used to be assigned to was removed rather than left unused, so
+// the next reader does not wire a new check to a stale copy.
 ?>
 
-<?php if (!$sikNoThirdParty && ($customJs = setting('custom_js', ''))): ?>
-<script><?= strip_tags((string) $customJs) ?></script>
-<?php endif; ?>
+<?php
+/* Admin > Settings > Custom code, body-end placement.
+ *
+ * This replaced `<script><?= strip_tags(setting('custom_js')) ?></script>`.
+ * strip_tags() on JavaScript is not a control, it is a corruptor: the value was
+ * already inside a <script> element so nothing was being escaped INTO safety,
+ * while any `<` with a letter straight after it was read as the start of a tag
+ * and deleted up to the next `>`. Measured on this PHP 8.2:
+ * `if (i <n) { ping(); }` came back as `if (i ` and `a<b` as `a`, while
+ * `if (i < n)` - space on both sides - survived. So it corrupted the tight
+ * spelling and every literal `</script>`, and left the spaced one alone: a
+ * filter that eats correct code some of the time and blocks nothing any of it.
+ * includes/custom-scripts.php writes down what the contract is instead.
+ *
+ * The SIK_NO_THIRD_PARTY check moved in there too, because the answer now
+ * depends on the snippet: that flag exists to stop a page whose URL carries a
+ * live token reporting document.location, so JavaScript and raw HTML are
+ * withheld on those pages whatever their consent category, and only essential
+ * CSS survives. reset-password.php's guarantee is unchanged.
+ *
+ * Emitted BEFORE the consent tag block below on purpose: a snippet an operator
+ * wrote to prime a dataLayer has to exist before the container that drains it.
+ */
+?>
+<?= custom_scripts_render('body_end') ?>
 
 <?php
 /*

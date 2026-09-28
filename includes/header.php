@@ -16,6 +16,9 @@ require_once INCLUDES_PATH . '/header-actions.php';
 require_once INCLUDES_PATH . '/account-menu.php';
 require_once INCLUDES_PATH . '/header-settings.php';
 require_once INCLUDES_PATH . '/theme-fonts.php';
+// Admin > Settings > Custom code. The head and body-start injection points are
+// in this file; the body-end one is in includes/footer.php.
+require_once INCLUDES_PATH . '/custom-scripts.php';
 
 $storeName     = (string) setting('store_name', SITE_NAME);
 $announcements = active_announcements();
@@ -188,10 +191,28 @@ $burgerOnLeft = $hd['header_burger_position'] === 'left';
                  used to be re-declared here against #fff. They live in app.css
                  now, derived against the CURRENT surface, so the dark theme can
                  re-point them — a copy here would pin them to light mode. */ ?>
-        <?php if (!empty($theme['custom_css'])): ?>
-        <?= strip_tags((string) $theme['custom_css']) ?>
-        <?php endif; ?>
     </style>
+<?php
+/* Admin > Settings > Custom code, head placement.
+ *
+ * This replaced an inline `strip_tags($theme['custom_css'])` inside the style
+ * block above. Two things changed and both matter:
+ *
+ *   - strip_tags() is gone. On a CSS field it removed nothing an attacker
+ *     needed (the value was already inside <style>) while eating from any `<`
+ *     with a letter straight after it up to the next `>` - measured on this
+ *     PHP 8.2, `a<b` becomes `a` and a literal `</style>` disappears, while a
+ *     spaced `a < b` survives. includes/custom-scripts.php states the contract
+ *     that replaced it.
+ *   - the snippets are their own elements AFTER this one, not text inside it,
+ *     so a snippet can be JS or a verification <meta> as well as CSS - and a
+ *     CSS snippet still lands after the theme tokens, which is where the old
+ *     field sat and what the cascade depends on.
+ *
+ * It prints '' when nothing is enabled, when consent has not been given, and
+ * always inside /admin. */
+?>
+<?= custom_scripts_render('head') ?>
 </head>
 <?php
 // Footer and Animations are two more Settings > Theme fields that were saved
@@ -213,6 +234,9 @@ $themeBodyClass = (($theme['footer_style'] ?? 'dark') === 'light' ? 'sik-footer-
    this exact record AND the visitor's consent allows it - seo_render_body_open()
    is what decides both, so nothing here needs to know. */
 ?><?= seo_render_body_open() ?>
+<?php /* The store-wide equivalent: snippets placed at "body start", which is
+         where a tag manager's <noscript> iframe belongs. */ ?>
+<?= custom_scripts_render('body_start') ?>
 
 <a href="#sikMain" class="sik-skip">Skip to content</a>
 

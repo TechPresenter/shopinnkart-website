@@ -108,8 +108,8 @@ $collapsed = ($_COOKIE['sik_admin_sidebar'] ?? setting('admin_sidebar_collapsed'
     ?>
     <style>
         :root {
-            --ad-primary: <?= e(setting('admin_primary', '#D4134E')) ?>;
-            --ad-sidebar: <?= e(setting('admin_sidebar_bg', '#4A041C')) ?>;
+            --ad-primary: <?= e(setting('admin_primary', '#D8402A')) ?>;
+            --ad-sidebar: <?= e(setting('admin_sidebar_bg', '#4A1206')) ?>;
         }
     </style>
 </head>

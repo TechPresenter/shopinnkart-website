@@ -655,6 +655,17 @@ function homepage_rows_styles(): string
         . 'transition:transform var(--dur-slower,.5s) var(--ease-out,ease)}'
         . '.hr-media--auto{aspect-ratio:auto}'
         . '.hr-media--auto img{height:auto}'
+        /* A category with no picture anywhere gets its drawn glyph instead of
+           the grey "no image" fallback. Sized and weighted here rather than
+           left to .sik-caticon in app.css, because this block is also what
+           dresses the admin designer canvas, where app.css is not loaded and a
+           bare <svg> with no width would render at the replaced-element
+           default of 300x150. The `svg` in the selector is what makes it win
+           over app.css's own rule when app.css IS present. */
+        . '.hr-media--glyph{display:grid;place-items:center;'
+        . 'background:var(--sik-primary-soft,#FDEFEA);color:var(--sik-primary-ink,#B93A1E)}'
+        . '.hr-media--glyph svg{display:block;width:46%;height:46%;'
+        . 'stroke-width:var(--icon-stroke,1.6);stroke-linecap:round;stroke-linejoin:round}'
         . '@media(hover:hover){a.hr-item:hover .hr-media img{transform:scale(1.04)}'
         . 'a.hr-item:hover .hr-title{text-decoration:underline;text-underline-offset:3px}}'
         . '.hr-body{display:grid;gap:2px;margin-top:var(--sp-3,12px);min-width:0}'
@@ -844,6 +855,11 @@ function homepage_rows_tile(array $item, array $row): string
 {
     $payload = $item['payload'];
     $type    = (string) $item['type'];
+    // A drawn glyph, for a category with no picture anywhere. Set instead of
+    // $src, never beside it: the alternative is a grey fallback SVG that says
+    // only "no image", where the same category in a Grid row now shows a
+    // drawing of what it sells.
+    $glyph   = '';
 
     // A product or a category asked for as a tile borrows its own artwork and
     // name, so an admin does not have to retype either - and so a rename on
@@ -861,7 +877,11 @@ function homepage_rows_tile(array $item, array $row): string
         if ($category === null) {
             return '';
         }
-        $src   = (string) category_tile_image($category)['src'];
+        $picture = category_tile_picture($category);
+        $src     = $picture === null ? '' : (string) $picture['src'];
+        $glyph   = $picture === null
+            ? category_icon_svg((string) $category['slug'], 'sik-caticon--plate')
+            : '';
         $title = $payload['title'] !== '' ? $payload['title'] : (string) $category['name'];
         $href  = category_url((string) $category['slug']);
     } else {
@@ -885,6 +905,8 @@ function homepage_rows_tile(array $item, array $row): string
             . '<img src="' . e($src) . '" alt="' . e_attr($payload['alt']) . '"'
             . ' loading="lazy" decoding="async">'
             . '</span>';
+    } elseif ($glyph !== '') {
+        $media = '<span class="hr-media hr-media--glyph">' . $glyph . '</span>';
     }
 
     $body = '';

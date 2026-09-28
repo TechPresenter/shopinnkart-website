@@ -40,8 +40,22 @@ const THEME_DEFAULTS = [
     'enable_animations'  => '1',
     'theme_mode_default' => 'system',
     'theme_toggle_enabled' => '1',
-    'custom_css'         => '',
-    'custom_js'          => '',
+    // custom_css and custom_js are deliberately NOT here any more. They moved
+    // to the `custom_scripts` table (Settings > Custom code) and this screen no
+    // longer writes them; leaving them in the defaults would give "reset to
+    // shipped defaults" a key to blank that nothing reads, and would keep
+    // Admin > Appearance able to write one through its snapshot restore.
+
+    // The admin theme has only these two inputs; every other admin colour is
+    // color-mix()ed from them in admin.css section 1. Both were missing here
+    // while the spec below marks them required, so "reset to shipped
+    // defaults" had nothing to reset them TO. The pair is a measured tomato:
+    // #D8402A carries 6.21:1 as text on a card and 5.71:1 on the canvas,
+    // clearing the palette's 5.29 floor, which plain CSS `tomato` (2.95:1)
+    // does not. Same family as the storefront's #F4511E, one step deeper so
+    // it can hold text.
+    'admin_primary'      => '#D8402A',
+    'admin_sidebar_bg'   => '#4A1206',
 ];
 
 /**
@@ -126,14 +140,6 @@ $spec += [
         'type' => 'bool', 'label' => 'Show the light / dark switch',
         'help' => 'Off locks every visitor to the default above.',
     ],
-    'custom_css' => [
-        'type' => 'code', 'label' => 'Custom CSS', 'rows' => 8,
-        'help' => 'Injected after the theme tokens. Tags are stripped.',
-    ],
-    'custom_js' => [
-        'type' => 'code', 'label' => 'Custom JavaScript', 'rows' => 8,
-        'help' => 'Admin-level access, not a styling tweak.',
-    ],
     'admin_primary' => [
         'type' => 'color', 'label' => 'Admin accent', 'required' => true, 'group' => 'admin_theme',
     ],
@@ -158,25 +164,29 @@ if (defined('SETTINGS_SPEC_ONLY')) {
 $action = (string) input('action', '');
 
 /**
- * Custom CSS and JavaScript are not styling fields.
+ * The two code boxes that used to be on this screen have moved.
  *
- * custom_js is printed inside a <script> tag on every storefront page,
- * including checkout, on the same origin and the same session as /admin. A
- * settings.edit holder who can write it can make the next Super Admin who
- * browses the shop POST a new admin account for them, or skim card details at
- * checkout. So the two boxes need settings.scripts (or Super Admin), they need
- * the actor's own password, and every change is recorded with a hash of the
- * before and after.
+ * custom_css and custom_js were printed into every storefront page - inside the
+ * style block above for one, inside a <script> before </body> for the other -
+ * and a settings.edit holder who could write either could make the next Super
+ * Admin who browses the shop POST a new admin account for them, or skim card
+ * details at checkout. All of that is still true of the code; what changed is
+ * that one textarea per kind could not name, order, gate or switch off the
+ * several snippets an operator really has. Settings > Custom code
+ * (admin/settings/scripts.php) is one row per snippet with the same
+ * settings.scripts gate, the same re-authentication and the same audit trail,
+ * and includes/header.php and includes/footer.php now read only that table.
+ *
+ * So this screen no longer declares, renders or writes those two keys: an
+ * editable box whose value nothing reads is worse than no box. The permission
+ * is still read here, to word the card below.
  */
 $canScripts = admin_can_edit_scripts();
 
-if (!$canScripts) {
-    // Still rendered, so the operator can see what is running and ask for it -
-    // but not editable, and never writable (see the save branch below).
-    foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
-        $spec[$scriptKey]['attr'] = 'disabled readonly';
-        $spec[$scriptKey]['help'] = 'Read-only: needs the settings.scripts permission.';
-    }
+$scriptSummary = [];
+if (is_file(INCLUDES_PATH . '/custom-scripts.php')) {
+    require_once INCLUDES_PATH . '/custom-scripts.php';
+    $scriptSummary = custom_scripts_summary();
 }
 
 // ---------------------------------------------------------------------------
@@ -185,12 +195,10 @@ if (!$canScripts) {
 if (is_post() && $action === 'reset') {
     admin_require_action('settings.edit');
 
+    // No code key is in THEME_DEFAULTS any more, so a reset cannot reach a
+    // snippet - which is the behaviour the old ADMIN_SCRIPT_SETTING_KEYS guard
+    // in this loop was here to approximate.
     foreach (THEME_DEFAULTS as $key => $value) {
-        // A reset must not be a way to wipe (or keep) code the operator could
-        // not have written in the first place.
-        if (in_array($key, ADMIN_SCRIPT_SETTING_KEYS, true) && !$canScripts) {
-            continue;
-        }
         setting_save($key, $value, 'theme', settings_store_type($spec[$key] ?? []));
     }
 
@@ -209,53 +217,12 @@ $stored = settings_group('theme') + settings_group('admin_theme');
 if (is_post()) {
     admin_require_action('settings.edit');   // POST + CSRF + permission, before any decision below
 
-    $saveSpec = $spec;
-
-    foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
-        $submittedCode = (string) ($_POST[$scriptKey] ?? ($stored[$scriptKey] ?? ''));
-        $storedCode    = (string) ($stored[$scriptKey] ?? '');
-
-        if ($submittedCode === $storedCode) {
-            continue;   // nothing to guard: an ordinary theme save carrying the box along
-        }
-
-        if (!$canScripts) {
-            // The field is disabled in the HTML, so anything arriving here was
-            // hand-crafted. Refuse the whole save rather than quietly dropping
-            // one field, and leave a record of the attempt.
-            admin_deny_back(
-                'Changing the storefront\'s custom CSS or JavaScript needs the settings.scripts permission. '
-                    . 'Nothing was saved.',
-                settings_url('theme'),
-                ['setting' => $scriptKey, 'bytes' => mb_strlen($submittedCode)]
-            );
-        }
-
-        if (!admin_reauth_ok()) {
-            flash_errors(['reauth_password' => admin_reauth_error('change code that runs on every storefront page')]);
-            flash_old($_POST);
-            flash('error', 'Nothing was saved. Confirm with your own password to change the custom code.');
-            redirect(settings_url('theme'));
-        }
-
-        security_event('settings.scripts_changed', 'critical', [
-            'setting'     => $scriptKey,
-            'bytes_from'  => mb_strlen($storedCode),
-            'bytes_to'    => mb_strlen($submittedCode),
-            'sha256_from' => $storedCode === '' ? null : hash('sha256', $storedCode),
-            'sha256_to'   => $submittedCode === '' ? null : hash('sha256', $submittedCode),
-        ], (int) $admin['id'], 'admin');
-    }
-
-    if (!$canScripts) {
-        // Belt and braces: even an unchanged value is not written by someone
-        // who may not write it.
-        foreach (ADMIN_SCRIPT_SETTING_KEYS as $scriptKey) {
-            unset($saveSpec[$scriptKey]);
-        }
-    }
-
-    settings_handle_save('theme', 'theme', $saveSpec, $stored);
+    // The step-up password check, the settings.scripts refusal and the
+    // settings.scripts_changed security event that used to stand here all moved
+    // to admin/settings/scripts.php with the fields themselves.
+    // settings_handle_save() only ever writes keys the spec declares, so a
+    // hand-crafted POST carrying custom_js to this screen now writes nothing.
+    settings_handle_save('theme', 'theme', $spec, $stored);
 }
 
 $errors = errors_pull();
@@ -468,27 +435,29 @@ require ADMIN_PATH . '/includes/header.php';
             <div class="ad-card__head">
                 <div>
                     <div class="ad-card__title">Custom code</div>
-                    <div class="ad-card__sub">For a tweak with no settings field.</div>
+                    <div class="ad-card__sub">Moved to its own screen, one row per snippet.</div>
                 </div>
             </div>
             <div class="ad-card__body">
-                <?= settings_field('custom_css', $spec, $values, $errors) ?>
-                <?= settings_field('custom_js', $spec, $values, $errors) ?>
-                <?php if ($canScripts): ?>
-                    <?= admin_reauth_field('change the custom CSS or JavaScript',
-                        (string) ($errors['reauth_password'] ?? '')) ?>
+                <p class="ad-muted" style="margin:0 0 12px">
+                    The two code boxes that were here held every snippet in one field, so removing one
+                    meant editing around the others and none of them could be named, ordered, gated on
+                    consent or switched off.
+                    <?php if ($scriptSummary !== []): ?>
+                        There <?= $scriptSummary['total'] === 1 ? 'is' : 'are' ?>
+                        <strong><?= (int) $scriptSummary['total'] ?></strong>
+                        snippet<?= $scriptSummary['total'] === 1 ? '' : 's' ?> now,
+                        <?= (int) $scriptSummary['live'] ?> running.
+                    <?php endif; ?>
+                </p>
+                <a class="ad-btn ad-btn--primary" href="<?= e(admin_url('settings/scripts.php')) ?>">
+                    <?= icon('code', 'w-4 h-4') ?> Open Custom code
+                </a>
+                <?php if (!$canScripts): ?>
+                    <p class="ad-muted" style="margin:12px 0 0">
+                        You can see what is there; changing it needs <code>settings.scripts</code>.
+                    </p>
                 <?php endif; ?>
-                <div class="sik-alert sik-alert--warning" style="margin:0">
-                    <?= icon('alert', 'w-5 h-5') ?>
-                    <div>
-                        <strong>JavaScript here can do anything a signed-in admin can.</strong>
-                        Both blocks run on every storefront page, checkout included; a syntax error
-                        breaks the shop for real visitors.
-                        <?php if (!$canScripts): ?>
-                            <br><strong>Read-only for you</strong> (<code>settings.scripts</code> changes them).
-                        <?php endif; ?>
-                    </div>
-                </div>
             </div>
         </div>
 

@@ -19,7 +19,7 @@
    section boundary may hardcode a colour, a size, a radius or a duration.
 
    Contrast figures in the comments were computed, not eyeballed, with
-   --ad-primary #D4134E and --ad-sidebar #4A041C. They move if an operator
+   --ad-primary #D8402A and --ad-sidebar #4A1206. They move if an operator
    changes the admin theme colours, which is why every derived role is a
    color-mix() of the input rather than a frozen hex.
    ========================================================================== */
@@ -28,8 +28,8 @@
 
     /* --- Inputs: header.php prints --ad-primary / --ad-sidebar from settings
            admin_primary / admin_sidebar_bg; these are only the fallbacks. --- */
-    --ad-primary:  #D4134E;
-    --ad-sidebar:  #4A041C;
+    --ad-primary:  #D8402A;
+    --ad-sidebar:  #4A1206;
     --ad-gold:     #F59E0B;   /* storefront --sik-gold; never a fill behind text */
     --ad-gold-2:   #FCD34D;   /* on dark surfaces only                           */
     --ad-gold-ink: #92610A;   /* 5.33:1 on white - gold as text                  */
@@ -69,7 +69,7 @@
     --ad-line-input:  #948687;
 
     /* --- Brand roles --- */
-    --ad-primary-ink:   color-mix(in srgb, var(--ad-primary) 82%, #000);   /* #AE1040, 7.14 */
+    --ad-primary-ink:   color-mix(in srgb, var(--ad-primary) 82%, #000);   /* #B13422, 6.21 */
     /* The FILL behind white text, kept apart from the TEXT shade above. They
        are the same colour in light and must not be in dark, where
        --ad-primary-ink becomes a pale pink for reading on a dark surface:
@@ -78,19 +78,19 @@
     --ad-primary-hover: color-mix(in srgb, var(--ad-primary) 70%, #000);
     --ad-primary-soft:  color-mix(in srgb, var(--ad-primary) 8%, var(--ad-surface));
     --ad-primary-line:  color-mix(in srgb, var(--ad-primary) 30%, var(--ad-surface));
-    --ad-focus:         var(--ad-primary-ink);                              /* 6.65 vs canvas */
+    --ad-focus:         var(--ad-primary-ink);                              /* 5.70 vs canvas */
     --ad-focus-ring:    0 0 0 2px var(--ad-surface), 0 0 0 4px var(--ad-focus);
 
     /* --- Rail --- */
     --ad-rail:            var(--ad-sidebar);
-    --ad-rail-ink:        color-mix(in srgb, #fff 74%, var(--ad-rail));   /* 8.94 */
+    --ad-rail-ink:        color-mix(in srgb, #fff 74%, var(--ad-rail));   /* 8.73 */
     --ad-rail-ink-strong: #FFFFFF;
-    --ad-rail-label:      color-mix(in srgb, #fff 56%, var(--ad-rail));   /* 5.54 (was 2.60) */
+    --ad-rail-label:      color-mix(in srgb, #fff 56%, var(--ad-rail));   /* 5.55 */
     --ad-rail-hover:      color-mix(in srgb, #fff 8%, var(--ad-rail));    /* replaces navy #16304F */
-    --ad-rail-active:     color-mix(in srgb, var(--ad-primary) 26%, var(--ad-rail)); /* white 12.5 */
-    --ad-rail-indicator:  var(--ad-gold);                                 /* 3px bar, 7.61 */
+    --ad-rail-active:     color-mix(in srgb, var(--ad-primary) 26%, var(--ad-rail)); /* white 11.24 */
+    --ad-rail-indicator:  var(--ad-gold);                                 /* 3px bar, 7.08 */
     --ad-rail-line:       color-mix(in srgb, #fff 9%, var(--ad-rail));
-    --ad-rail-focus:      var(--ad-gold-2);                               /* 11.3 */
+    --ad-rail-focus:      var(--ad-gold-2);                               /* 10.55 */
 
     /* --- Status: one hue each; -ink clears 6:1 on its tint AND on the canvas --- */
     --ad-success: #16A34A; --ad-success-ink: #166534; --ad-success-soft: color-mix(in srgb, var(--ad-success) 7%, var(--ad-surface));
@@ -114,8 +114,12 @@
     --ad-series-1: #D4134E; --ad-series-2: #EDA100; --ad-series-3: #2A78D6; --ad-series-4: #EB6834;
     --ad-series-5: #1BAF7A; --ad-series-6: #4A3AA7; --ad-series-7: #008300; --ad-series-8: #E87BA4;
     --ad-series-other: #9C8E8F;
-    --ad-seq-1: #FA7F8F; --ad-seq-2: #E83960; --ad-seq-3: #B90041; --ad-seq-4: #7B0F2C; --ad-seq-5: #490C19;
-    --ad-div-neg: #2A78D6; --ad-div-mid: #EDE6E6; --ad-div-pos: #D4134E;
+    /* Tomato, pale to deep. Every step carries a label - black on 1-2,
+       white on 3-5: 11.45 / 7.34 / 4.83 / 8.70 / 14.45. The crimson ramp
+       this replaces had an unlabelable middle (#E83960: 4.35 black,
+       4.05 white), so this is a repair as well as a recolour. */
+    --ad-seq-1: #F3C6BF; --ad-seq-2: #E89083; --ad-seq-3: #CF3D28; --ad-seq-4: #8A291B; --ad-seq-5: #4E170F;
+    --ad-div-neg: #2A78D6; --ad-div-mid: #EDE6E6; --ad-div-pos: #D8402A;
     --ad-chart-grid: #EDE6E6; --ad-chart-axis: #CCC1C2; --ad-chart-label: var(--ad-muted);
     --ad-chart-compare: var(--ad-faint);
 
@@ -256,19 +260,19 @@
     /* Gold as TEXT has to flip too: #92610A is a dark amber made for white
        paper and measures 3.38 on the dark surface. The bright step reads. */
     --ad-gold-ink: var(--ad-gold-2);
-    --ad-primary-ink:  color-mix(in srgb, var(--ad-primary) 58%, #fff);                /* #E67698 6.36, TEXT only */
+    --ad-primary-ink:  color-mix(in srgb, var(--ad-primary) 58%, #fff);                /* #E89083 7.51, TEXT only */
     --ad-primary-soft: color-mix(in srgb, var(--ad-primary) 16%, var(--ad-surface));
     --ad-primary-line: color-mix(in srgb, var(--ad-primary) 45%, var(--ad-surface));
     --ad-focus:        color-mix(in srgb, var(--ad-primary) 58%, #fff);
     /* Filled buttons keep the LIGHT ink shade: the dark text shade cannot carry white. */
-    --ad-primary-fill: color-mix(in srgb, var(--ad-primary) 82%, #000);   /* white 7.14 */
+    --ad-primary-fill: color-mix(in srgb, var(--ad-primary) 82%, #000);   /* white 6.21 */
     --ad-success-fill: #166534;                                          /* white 7.13 */
     --ad-danger-fill:  #DC2626;                                          /* white 4.83 */
     /* The neutral button inverts instead: near-black on a near-black canvas
        reads as a hole, not a control. */
     --ad-neutral-fill: #E9E1E2; --ad-on-neutral: #211617;                /* 15.63 */
     --ad-grad-cta: linear-gradient(135deg, var(--ad-primary) 0%, var(--ad-primary-fill) 100%);
-    --ad-rail: color-mix(in srgb, var(--ad-sidebar) 45%, #0D0708);                      /* ~#28050F */
+    --ad-rail: color-mix(in srgb, var(--ad-sidebar) 45%, #0D0708);                      /* ~#280C07 */
     --ad-success-ink: color-mix(in srgb, var(--ad-success) 55%, #fff); --ad-success-soft: color-mix(in srgb, var(--ad-success) 16%, var(--ad-surface));
     --ad-warning-ink: color-mix(in srgb, var(--ad-warning) 55%, #fff); --ad-warning-soft: color-mix(in srgb, var(--ad-warning) 16%, var(--ad-surface));
     --ad-danger-ink:  color-mix(in srgb, var(--ad-danger) 55%, #fff);  --ad-danger-soft:  color-mix(in srgb, var(--ad-danger) 16%, var(--ad-surface));
@@ -276,7 +280,10 @@
     --ad-series-1: #E23A6C; --ad-series-2: #C98500; --ad-series-3: #3987E5; --ad-series-4: #D95926;
     --ad-series-5: #199E70; --ad-series-6: #9085E9; --ad-series-7: #008300; --ad-series-8: #D55181;
     --ad-series-other: #827778;
-    --ad-seq-1: #961738; --ad-seq-2: #C41849; --ad-seq-3: #E44062; --ad-seq-4: #F47284; --ad-seq-5: #FCA0A9;
+    /* Deep to pale. Labels: white on 1-3, black on 4-5 - 9.77 / 6.21 /
+       4.83 / 6.47 / 9.82. The crimson ramp here had the same unlabelable
+       middle as the light one (#E44062: 4.37 / 4.03). */
+    --ad-seq-1: #7D2518; --ad-seq-2: #B13422; --ad-seq-3: #CF3D28; --ad-seq-4: #E58172; --ad-seq-5: #EFB3AA;
     --ad-div-mid: #362E2E; --ad-chart-grid: #2E2727; --ad-chart-axis: #494040;
     --ad-shadow-1: 0 1px 2px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.03);
     --ad-shadow-2: 0 8px 20px -8px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.04);
@@ -3938,4 +3945,143 @@ pre.ad-mono,
     border-radius: 50%;
     background: var(--ad-gold, #E8B340);
     box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ad-gold) 50%, transparent);
+}
+
+/* --- 51. The build credit -------------------------------------------------
+   Same markup and same helper as the storefront footer (includes/credit-line.php),
+   so the two cannot drift. The underline that used to be written inline in
+   admin/includes/footer.php is gone: it is a pseudo-element here, which can
+   take its own colour and can animate, and which disappears entirely when the
+   credit has no link behind it.
+
+   app.css is loaded before admin.css on every admin page, so --sik-font-display
+   and the Playfair @font-face are already present - this adds no font. */
+.ad-credit { font-size: var(--ad-text-xs); color: inherit; }
+.ad-credit .sik-credit__link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: .42em;
+    color: inherit;
+    text-decoration: none;
+    border-radius: 3px;
+}
+.ad-credit .sik-credit__lead { opacity: .8; }
+.ad-credit .sik-credit__name {
+    position: relative;
+    font-family: var(--sik-font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 1.18em;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--ad-ink-2);
+}
+.ad-credit .sik-credit__name::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -3px;
+    height: 1.5px;
+    border-radius: 2px;
+    background: var(--ad-primary-ink);
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--ad-dur-base) var(--ad-ease-out);
+}
+.ad-credit a.sik-credit__link:hover .sik-credit__name,
+.ad-credit a.sik-credit__link:focus-visible .sik-credit__name { color: var(--ad-primary-ink); }
+.ad-credit a.sik-credit__link:hover .sik-credit__name::after,
+.ad-credit a.sik-credit__link:focus-visible .sik-credit__name::after { transform: scaleX(1); }
+.ad-credit a.sik-credit__link:focus-visible {
+    outline: 2px solid var(--ad-focus);
+    outline-offset: 3px;
+}
+.ad-credit span.sik-credit__link { cursor: default; }
+.ad-credit span.sik-credit__link .sik-credit__name::after { content: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ad-credit .sik-credit__name::after { transition: none; }
+}
+
+/* --- 52. THE SOUND SWITCH -------------------------------------------------
+   The control for assets/js/admin-sound.js, printed by admin/includes/footer.php.
+
+   A pill in the footer's status row rather than a row in Settings, because the
+   preference is per browser and per operator - see the head of admin-sound.js.
+   It is the only interactive thing in a line of 12px grey meta, so it stays
+   flat until it is hovered and only then takes a surface.
+
+   MEASURED against --ad-primary #D8402A on the footer's own --ad-surface:
+     idle      --ad-muted on #FFFFFF                             6.05:1
+     hover     --ad-ink-2 on the 4% ink wash (#F6F6F6)           10.19:1
+     pressed   --ad-primary-ink #B13422 on --ad-primary-soft #FCF0EE  5.57:1
+   In the prepared dark palette (:root[data-theme="dark"], section 1) the same
+   three rules measure 7.73, 10.29 and 6.46. All six clear the admin floor of
+   5.29:1, and there is no hex below this comment - every colour is a token, so
+   an operator who retunes admin_primary retunes this too.
+
+   The pressed border measures 1.54:1 and is DECORATION. The state is carried
+   by the glyph - a bare cone versus a cone with waves - and by aria-pressed,
+   so nothing here asks anybody to tell two tints apart (1.4.11).
+
+   prefers-reduced-motion is not consulted for the SOUND, which is a different
+   sense and a different request; it is honoured for this pill's transition,
+   which is motion and nothing else.
+   --------------------------------------------------------------------------- */
+.ad-sound {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ad-space-1-5);
+    /* The negative block margin keeps the footer row the height it was before
+       a bordered control was put in it. */
+    margin-block: calc(var(--ad-space-1) * -1);
+    padding: var(--ad-space-1) var(--ad-space-2);
+    border: 1px solid transparent;
+    border-radius: var(--ad-radius-pill);
+    background: none;
+    font: inherit;          /* the footer already sets --ad-text-xs */
+    color: var(--ad-muted);
+    cursor: pointer;
+    transition: color var(--ad-dur-fast) var(--ad-ease-standard),
+                background var(--ad-dur-fast) var(--ad-ease-standard),
+                border-color var(--ad-dur-fast) var(--ad-ease-standard);
+}
+.ad-sound:hover { background: var(--ad-hover); color: var(--ad-ink-2); }
+.ad-sound:active { background: var(--ad-press); }
+.ad-sound:focus-visible { outline: 2px solid var(--ad-focus); outline-offset: 2px; }
+
+.ad-sound[aria-pressed="true"] {
+    color: var(--ad-primary-ink);
+    background: var(--ad-primary-soft);
+    border-color: var(--ad-primary-line);
+}
+/* Hover on the pressed pill moves the BORDER, not the fill: a second tint
+   behind --ad-primary-ink would be a fourth contrast figure to keep true. */
+.ad-sound[aria-pressed="true"]:hover { border-color: var(--ad-primary); }
+
+/* Both glyphs are printed and one is taken out of flow, so the swap is a
+   class change rather than a DOM rewrite in the middle of a click. The `on`
+   glyph hides on :not([aria-pressed="true"]) rather than on ="false", so a
+   button that somehow arrives with no state attribute reads as OFF - which is
+   the default - instead of showing both cones at once. */
+.ad-sound__glyph { display: inline-flex; flex: none; }
+.ad-sound:not([aria-pressed="true"]) .ad-sound__glyph--on { display: none; }
+.ad-sound[aria-pressed="true"] .ad-sound__glyph--off { display: none; }
+
+/* Scripts off, no switch. header.php ships `no-js` on <html> and admin.js
+   swaps it for `js`, so this is the one state in which the control genuinely
+   cannot do its job, and offering it anyway would be a lie. */
+html.no-js .ad-sound { display: none; }
+
+/* Section 40's floor. 24px of pill in a footer is a fine mouse target and a
+   poor thumb one. */
+@media (pointer: coarse), (max-width: 767px) {
+    .ad-sound {
+        min-height: var(--tap, 44px);
+        padding-inline: var(--ad-space-3);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ad-sound { transition: none; }
 }

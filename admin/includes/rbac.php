@@ -8,10 +8,10 @@
  * own. Without it, one permission (admins.edit) is the whole panel, because the
  * holder can simply reset a Super Admin's password and sign in as them.
  *
- * It lives in its own file because five unrelated screens need the same answer
- * - admin users, roles, customers, the theme's script boxes and the database
- * backup - and a guard that is re-typed per screen is a guard that is missed on
- * the sixth.
+ * It lives in its own file because six unrelated screens need the same answer
+ * - admin users, roles, customers, the storefront snippets on Settings > Custom
+ * code, the SEO panel's per-record code boxes and the database backup - and a
+ * guard that is re-typed per screen is a guard that is missed on the seventh.
  *
  * Every refusal and every successful privilege change is written to
  * security_events, which the UI cannot clear.
@@ -33,6 +33,11 @@ if (!defined('SIK_BOOTSTRAPPED')) {
  * admin's own origin, system.backup reads every password hash, and
  * customers.credentials takes over shopper accounts. Delegating them has to be
  * a deliberate act by the owner, not a side effect of holding admins.edit.
+ *
+ * settings.scripts is the whole control on Settings > Custom code: the snippet
+ * field there is remote code execution by design, so what guards it is this
+ * permission, the password box below and the audit trail - never a filter that
+ * pretends to sanitise code. See includes/custom-scripts.php.
  */
 const ADMIN_SUPER_ONLY_PERMISSIONS = [
     'security.edit',
@@ -41,7 +46,21 @@ const ADMIN_SUPER_ONLY_PERMISSIONS = [
     'customers.credentials',
 ];
 
-/** Settings whose value is executed in the browser, so they are not ordinary text. */
+/**
+ * Settings whose value was executed in the browser.
+ *
+ * Kept, and kept in this order, although both rows are now empty: the
+ * storefront's snippets live in the `custom_scripts` table (Settings > Custom
+ * code) since the 2026_09_28_custom_scripts migration moved them, and neither
+ * includes/header.php nor includes/footer.php reads these keys any more.
+ *
+ * It is not dead code. admin/appearance/_registry.php still consults this list
+ * inside appearance_write() to refuse a key an operator without
+ * settings.scripts may not write, and Admin > Appearance restores snapshots
+ * taken before the move. Emptying the constant would turn that refusal into a
+ * no-op for exactly the pair it was written for, so the list stays and the rows
+ * stay blank. Nothing new belongs here - a new snippet is a row, not a setting.
+ */
 const ADMIN_SCRIPT_SETTING_KEYS = ['custom_js', 'custom_css'];
 
 /** How long a fresh re-authentication is accepted for, in seconds. */

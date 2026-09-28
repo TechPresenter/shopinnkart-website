@@ -5791,6 +5791,365 @@ a.sik-trust__item:focus-visible .sik-trust__icon { background: var(--sik-elevate
    the row's end-stop rather than as another department. */
 .sik-catrow__ring--all { background: var(--sik-surface-2); color: var(--sik-primary-ink); }
 
+
+/* --------------------------------------------------------------------------
+   10b. Shop by category: the department grid and its glyphs
+
+   The homepage row used to be a flat line of circles, each showing a
+   photograph borrowed from one of its products. It is now the store's
+   departments: one card per top-level category, that department's own ranges
+   listed underneath as links, and a drawn glyph in place of the borrowed
+   photograph. category_groups() and category_icon_svg() in
+   includes/widgets.php carry the reasoning for both.
+
+   Nothing above this comment changed. The circular row is still what the
+   carousel layout renders, what skeleton_category_grid() mimics, and what the
+   designer's own category tiles use, so it keeps its geometry, its tints and
+   its hover exactly as they were.
+   -------------------------------------------------------------------------- */
+.sik-catgrid {
+    display: grid;
+    /* minmax(0, …) at every step: a bare 1fr floors at its widest child, which
+       is how one long category name pushes a two-up grid past 360px. */
+    grid-template-columns: repeat(var(--cols-mobile, 1), minmax(0, 1fr));
+    gap: var(--sp-3);
+    /* Tops aligned, each card its own height. Equal heights were the first
+       try, and they gave a department with three ranges under it a 330px card
+       and the three with none a 330px empty box each. A department that has
+       more to say is allowed to be taller than one that has not. */
+    align-items: start;
+}
+@media (min-width: 768px) {
+    .sik-catgrid {
+        grid-template-columns: repeat(var(--cols-tablet, 3), minmax(0, 1fr));
+        gap: var(--sp-4);
+    }
+}
+@media (min-width: 1024px) {
+    .sik-catgrid { grid-template-columns: repeat(var(--cols-desktop, 4), minmax(0, 1fr)); }
+}
+
+.sik-catcard {
+    display: flex;
+    flex-direction: column;
+    /* The other half of minmax(0, 1fr): the column may shrink only if the card may. */
+    min-width: 0;
+    /* The box is the card, not the link inside it: a department and the ranges
+       hanging off it are one thing, and an edge drawn around only the link left
+       the one card that has ranges looking like loose text beside three boxes. */
+    border: 1px solid var(--sik-line);
+    border-radius: var(--sik-radius);
+    background: var(--sik-surface);
+    overflow: hidden;
+    /* The plate tint and the glyph's ink travel down from here, so one pair of
+       lines per card decides both. */
+    --cat-tint: var(--sik-primary-soft);
+    --cat-ico:  var(--sik-primary-ink);
+    --cat-plate: 56px;
+}
+/* An unstocked department is not a link (see widget_categories()). The dashed
+   edge says so before the tap that would not have happened: it is the one card
+   on the row a shopper cannot open. */
+.sik-catcard--soon { border-style: dashed; background: transparent; }
+@media (min-width: 768px) { .sik-catcard { --cat-plate: 64px; } }
+
+/* The tints cycle by position so four departments read as four things rather
+   than four copies of one swatch — the same device .sik-trust__item uses, and
+   the same pairs, because each *-soft / *-ink pair is already tuned against
+   both the light and the dark surface. Measured on the four cards this store
+   renders, glyph against plate: 5.96, 5.57, 6.78 and 5.69 to 1, so the drawing
+   clears the 3:1 bar for a non-text graphic several times over and would still
+   clear 4.5:1 if it were text. --sik-gold-soft is deliberately not in the
+   cycle: it is a fixed pale hex that is never redefined for dark mode, so it
+   would burn a hole in a near-black page. */
+.sik-catcard:nth-child(4n + 2) { --cat-tint: var(--sik-success-soft); --cat-ico: var(--sik-success-ink); }
+.sik-catcard:nth-child(4n + 3) { --cat-tint: var(--sik-info-soft);    --cat-ico: var(--sik-info-ink); }
+.sik-catcard:nth-child(4n + 4) { --cat-tint: var(--sik-warning-soft); --cat-ico: var(--sik-warning-ink); }
+
+/* The card's edge is authored above from --sik-line rather than from
+   --sik-card-border / --sik-card-shadow. Those are the theme's card pair, and
+   on this store they are the Flat pair, transparent and none — right for a
+   product card standing on its own photograph, wrong for a department that has
+   nothing but a glyph and a name to hold it together. */
+.sik-catcard__main {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-width: 0;
+    padding: var(--sp-3);
+    color: var(--sik-ink);
+    transition: background-color var(--dur-base) var(--ease-out);
+}
+/* The glyphs read this: 0 at rest, 1 while a shopper is on the tile. One
+   custom property instead of a copy of every part rule per state — see the
+   motion note below. */
+.sik-catcard__main,
+.sik-catcard__subs .sik-catsub,
+.sik-catrow__tile { --ci: 0; }
+@media (hover: hover) {
+    .sik-catcard__main:hover,
+    .sik-catcard__subs .sik-catsub:hover,
+    .sik-catrow__tile:hover { --ci: 1; }
+    .sik-catcard__main:hover { background: var(--sik-surface-2); }
+    .sik-catcard__main:hover .sik-catcard__name { color: var(--sik-primary-ink); }
+}
+/* A tap has no hover, so :active is the only acknowledgement a phone can give. */
+.sik-catcard__main:is(:focus-visible, :active),
+.sik-catcard__subs .sik-catsub:is(:focus-visible, :active),
+.sik-catrow__tile:is(:focus-visible, :active) { --ci: 1; }
+/* The global :focus-visible rule rounds the focused element to 4px, which
+   would square the top corners of a 12px card for as long as it is focused.
+   The offset is negative because the card clips its overflow: an outline drawn
+   outside the link would be cut off by the card's own edge. */
+.sik-catcard__main:focus-visible {
+    border-radius: var(--sik-radius);
+    outline-offset: -3px;
+}
+.sik-catcard__main--soon { cursor: default; }
+
+.sik-catcard__plate {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: var(--cat-plate);
+    aspect-ratio: 1;
+    overflow: hidden;
+    border-radius: var(--sik-radius-pill);
+    background: var(--cat-tint);
+    color: var(--cat-ico);
+    /* A 0px ring is invisible, so the resting and the active ring are one
+       declaration and cross-fade in one property. */
+    box-shadow: 0 0 0 calc(var(--ci, 0) * 2px) var(--cat-ico), var(--sik-shadow-soft);
+    transform: translateY(calc(var(--ci, 0) * var(--lift-sm)));
+    transition: box-shadow var(--dur-base) var(--ease-out),
+                transform var(--dur-base) var(--ease-out);
+}
+.sik-catcard__plate img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* A photograph an operator uploaded onto the category fills the plate, so the
+   tint behind it would never be seen. */
+.sik-catcard__plate--photo { background: var(--sik-media); }
+.sik-catcard__plate--contain img { object-fit: contain; padding: 18%; }
+/* The end-stop card is a destination, not a department. */
+.sik-catcard__plate--all { background: var(--sik-surface-2); color: var(--sik-ink-2); }
+
+.sik-catcard__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sik-catcard__name {
+    min-width: 0;
+    font-family: var(--sik-font-display);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-snug);
+    /* A single unbroken name is the only thing that can widen the card past its
+       column; let it break mid-word instead. */
+    overflow-wrap: anywhere;
+    transition: color var(--dur-base) var(--ease-out);
+}
+.sik-catcard__meta { font-size: var(--fs-xs); color: var(--sik-muted); }
+
+/* The ranges inside a department. Indented to the parent's text column so they
+   read as belonging to the name above them, not to the card's edge. */
+.sik-catcard__subs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    /* Left padding = the card's own padding + the plate + the gap, so the
+       ranges start exactly under the department's name. */
+    padding: 0 var(--sp-3) var(--sp-3) calc(var(--sp-3) + var(--cat-plate) + var(--sp-3));
+    list-style: none;
+}
+@media (max-width: 479px) {
+    /* Measured in a 360px viewport: with the aligned indent the longest range
+       name, "String & Curtain Lights", renders in a 120px box against a
+       natural width of 120px — it fits with nothing at all to spare, so one
+       more word in a name wraps it. The ranges take the card's own padding
+       instead, which gives the same row 302px. */
+    .sik-catcard__subs { padding-left: var(--sp-3); }
+}
+.sik-catsub {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+    /* A full tap target on a phone, the way .sik-footer__legal a does it; a
+       mouse gets the tighter list a nav column should be. */
+    min-height: var(--tap);
+    padding-inline: var(--sp-2);
+    border-radius: var(--sik-radius);
+    font-size: var(--fs-xs);
+    color: var(--sik-ink-2);
+    transition: background-color var(--dur-fast) var(--ease-out),
+                color var(--dur-fast) var(--ease-out);
+}
+@media (min-width: 1024px) { .sik-catsub { min-height: 32px; } }
+.sik-catsub__name { min-width: 0; overflow-wrap: anywhere; }
+.sik-catsub__n {
+    flex: none;
+    margin-left: auto;
+    font-size: var(--fs-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--sik-muted);
+}
+@media (hover: hover) {
+    .sik-catsub:hover { background: var(--sik-surface-2); color: var(--sik-ink); }
+}
+.sik-catsub:focus-visible { border-radius: var(--sik-radius); }
+.sik-catsub--soon { color: var(--sik-muted); cursor: default; }
+
+/* The circular tile, when the builder asks for the carousel layout: the same
+   glyph on the same tinted plate, so the two layouts are one design. The tints
+   cycle on the rail's slot rather than on the tile, because the rail wraps
+   every tile in one and a :nth-child() on the tile would only ever see 1. */
+.sik-catrow { --cat-tint: var(--sik-primary-soft); --cat-ico: var(--sik-primary-ink); }
+.sik-catrow__slot:nth-child(4n + 2) { --cat-tint: var(--sik-success-soft); --cat-ico: var(--sik-success-ink); }
+.sik-catrow__slot:nth-child(4n + 3) { --cat-tint: var(--sik-info-soft);    --cat-ico: var(--sik-info-ink); }
+.sik-catrow__slot:nth-child(4n + 4) { --cat-tint: var(--sik-warning-soft); --cat-ico: var(--sik-warning-ink); }
+.sik-catrow__ring--icon {
+    background: var(--cat-tint);
+    color: var(--cat-ico);
+    /* Two rings of colour around a coloured disc is one too many; the active
+       ring still arrives, out of --ci. */
+    box-shadow: 0 0 0 calc(var(--ci, 0) * 2px) var(--cat-ico), var(--sik-shadow-soft);
+}
+.sik-catrow__meta { font-size: var(--fs-2xs); color: var(--sik-muted); }
+.sik-catrow__tile--soon { cursor: default; }
+
+/* The square tile the designer's category items render, when the category has
+   no picture at all: its glyph, rather than the letter in a box this used to
+   end at. */
+.sik-cat__media--glyph { background: var(--sik-primary-soft); color: var(--sik-primary-ink); }
+
+/* --- the glyphs -----------------------------------------------------------
+   One 24x24 stroke drawing per category, in pieces the rules below move. */
+.sik-caticon {
+    display: block;
+    /* A share of the plate rather than the whole of it, so the drawing has air
+       around it on a disc. Sized here rather than as padding on the plate,
+       because the plate also has to be able to hold a photograph edge to edge. */
+    width: 58%;
+    height: 58%;
+    /* One weight for the set, as .sik-ico does it: the 1.7 in the markup is
+       only the no-CSS fallback. A glyph filling a 64px plate carries a shade
+       more than a 20px interface glyph or it reads as a hairline. */
+    stroke-width: calc(var(--icon-stroke) + 0.15);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    /* A part that scales past the 24-unit box is meant to be seen, not clipped. */
+    overflow: visible;
+}
+/* A fixed size, not a share of the row: a range link's height is a tap target
+   and says nothing about how big the glyph should read beside 12px text. This
+   sits AFTER the rule above on purpose — both are one class, so the later one
+   is the one that applies, and stating it earlier gave every range in the list
+   a 40px drawing and three lines of wrapped name. */
+.sik-caticon--chip { flex: none; width: 17px; height: 17px; color: var(--cat-ico); }
+/* Part transforms are authored against the shape's own bounding box, so a
+   scale grows from the middle of the flame rather than from the corner of the
+   SVG's user space. */
+.ci-spark, .ci-ray, .ci-bolt, .ci-flame, .ci-loop, .ci-trend {
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    transition: opacity var(--dur-base) var(--ease-out),
+                transform var(--dur-base) var(--ease-out);
+}
+/* A flame grows from its wick, and a ribbon loop turns about its knot. */
+.ci-flame   { transform-origin: 50% 100%; }
+.ci-loop--l { transform-origin: 100% 50%; }
+.ci-loop--r { transform-origin: 0 50%; }
+
+/* Resting values first, active values second, both out of --ci: the still icon
+   has to look deliberate, because the still icon is what a phone, .sik-noanim
+   and prefers-reduced-motion all get. Half-lit bulbs on a string, a flame at
+   rest, rays drawn close in — every one of them is a sensible drawing before
+   anything moves.
+
+   Reading --ci in a calc() instead of repeating each part's rule under :hover,
+   :focus-visible and :active: the value is inherited, the transition still
+   interpolates when it changes, and each part is described exactly once. */
+.ci-spark { opacity: calc(0.45 + 0.55 * var(--ci, 0)); }
+.ci-ray   { opacity: calc(0.5 + 0.5 * var(--ci, 0)); transform: scale(calc(1 + 0.16 * var(--ci, 0))); }
+.ci-bolt  { opacity: calc(0.55 + 0.45 * var(--ci, 0)); }
+.ci-flame { transform: scale(calc(1 + 0.1 * var(--ci, 0))) translateY(calc(var(--ci, 0) * -0.7px)); }
+.ci-loop--l { transform: rotate(calc(var(--ci, 0) * -6deg)); }
+.ci-loop--r { transform: rotate(calc(var(--ci, 0) * 6deg)); }
+.ci-trend { transform: translate(calc(var(--ci, 0) * 0.8px), calc(var(--ci, 0) * -1.3px)); }
+/* The string's four bulbs light left to right rather than together. */
+.ci-d2 { transition-delay: 60ms; }
+.ci-d3 { transition-delay: 120ms; }
+.ci-d4 { transition-delay: 180ms; }
+
+/* --- when the glyphs move ------------------------------------------------
+   Not a loop. Seven glyphs animating forever sit directly under the hero and
+   above the product grid, and a homepage where everything twitches is a
+   fairground — on a phone they would also be the only thing moving while the
+   shopper scrolls past, for no gain and some battery.
+
+   So: one staggered entrance as the row arrives, which plays once and is the
+   only motion a touch device sees; then movement whenever a shopper hovers a
+   tile or tabs onto it, where it answers an intention and doubles as the focus
+   affordance.
+
+   .is-in is added by app.js when the row scrolls into view. --i is the card's
+   index, printed inline by widget_categories(), because a :nth-child() cycle
+   could only name a fixed number of cards. The rail's track deliberately
+   carries no data-anim, so in the carousel layout there is no entrance and the
+   glyphs move on hover and focus alone. */
+[data-anim].is-in .sik-caticon--plate {
+    animation: sik-caticon-in var(--dur-reveal) var(--ease-out) calc(var(--i, 0) * 60ms) both;
+}
+@keyframes sik-caticon-in {
+    from { opacity: 0; transform: scale(0.72) rotate(-6deg); }
+    60%  { opacity: 1; transform: scale(1.06) rotate(1deg); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* --- motion off ---------------------------------------------------------
+   Both switches, because they are two separate requests: the OS setting, and
+   Settings > Theme > "Enable entrance animations" = off, which lands as
+   body.sik-noanim. Section 1 already collapses --dur-fast and --dur-base to
+   .01ms under prefers-reduced-motion, but --dur-reveal is not in that list and
+   an animation travels its whole distance regardless, so the entrance is
+   cancelled outright rather than sped up.
+
+   The brightening stays under both: which tile a shopper is on is state, not
+   decoration. It simply arrives at once. The movement does not — a transform
+   that jumps straight to its end is more jarring than the motion it replaced,
+   which is the lesson the row above this one already recorded. */
+.sik-noanim .sik-caticon,
+.sik-noanim .sik-caticon *,
+.sik-noanim .sik-catcard__main,
+.sik-noanim .sik-catcard__name,
+.sik-noanim .sik-catcard__plate,
+.sik-noanim .sik-catsub { transition: none; }
+/* The entrance is declared at `[data-anim].is-in .sik-caticon--plate`, three
+   selectors of weight. A cancel written as `.sik-noanim .sik-caticon--plate`
+   is only two and loses to it outright — the glyphs went on playing with the
+   switch off, which is the one real bug the first draft of this block shipped.
+   Both cancels restate the whole selector instead. */
+.sik-noanim [data-anim].is-in .sik-caticon--plate { animation: none; }
+.sik-noanim .ci-ray,
+.sik-noanim .ci-flame,
+.sik-noanim .ci-loop,
+.sik-noanim .ci-trend,
+.sik-noanim .sik-catcard__plate { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+    .sik-caticon,
+    .sik-caticon *,
+    .sik-catcard__main,
+    .sik-catcard__name,
+    .sik-catcard__plate,
+    .sik-catsub { transition: none; }
+    /* Equal weight to the entrance rule, and later in the file, which is what
+       decides it here. */
+    [data-anim].is-in .sik-caticon--plate { animation: none; }
+    .ci-ray,
+    .ci-flame,
+    .ci-loop,
+    .ci-trend,
+    .sik-catcard__plate { transform: none; }
+}
+
 /* --------------------------------------------------------------------------
    11. Product card
 
@@ -8497,14 +8856,72 @@ a.sik-social__link {
    wraps with it, so on a phone it takes its own line rather than crowding the
    year. Muted on purpose: it is an attribution, not a claim competing with the
    store's own name. */
-.sik-footer__credit { font-size: var(--fs-xs); color: var(--footer-ink, inherit); opacity: .8; }
-.sik-footer__credit a {
+.sik-footer__credit { font-size: var(--fs-xs); color: var(--footer-ink, inherit); }
+
+/* The credit reads as two voices: the sentence in the UI face at footer
+   weight, and the name it ends on in the display italic the storefront already
+   uses for its flourishes. Playfair is deliberately NOT preloaded and is
+   declared font-display: optional with ascent/descent overrides that sit
+   Georgia italic on exactly the same line box - so a cold view sets the name
+   in Georgia italic, in the same position, and it never reflows. No second
+   font is downloaded for this line.
+
+   No underline. text-decoration cannot be given its own colour and cannot
+   animate, so the rule is a pseudo-element: it grows from the leading edge on
+   hover, and is simply present on keyboard focus. */
+.sik-credit__link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: .42em;
     color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-    text-decoration-thickness: from-font;
+    text-decoration: none;
+    border-radius: 3px;
 }
-.sik-footer__credit a:hover { color: var(--footer-strong, inherit); opacity: 1; }
+.sik-credit__lead { opacity: .72; letter-spacing: var(--ls-wide); }
+.sik-credit__name {
+    position: relative;
+    font-family: var(--sik-font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: 1.16em;
+    line-height: 1;
+    /* A company name broken across two lines stops being a name. */
+    white-space: nowrap;
+}
+/* inset-inline rather than left/right so the rule follows the writing
+   direction; 1.5px because a 1px hairline under an italic serif at this size
+   reads as a rendering artefact rather than an underline. */
+.sik-credit__name::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -3px;
+    height: 1.5px;
+    border-radius: 2px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform var(--dur-fast) var(--ease-out);
+}
+a.sik-credit__link:hover,
+a.sik-credit__link:focus-visible { color: var(--footer-strong, inherit); }
+a.sik-credit__link:hover .sik-credit__name::after,
+a.sik-credit__link:focus-visible .sik-credit__name::after { transform: scaleX(1); }
+a.sik-credit__link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+/* Without a credit_url the helper emits a <span>, not an <a>. It is text, so
+   it gets no rule, no hover and no focus ring - promising a link that is not
+   there is worse than plain words. */
+span.sik-credit__link { cursor: default; }
+span.sik-credit__link .sik-credit__name::after { content: none; }
+
+/* Both motion switches, as the block below this one explains: the OS setting
+   and Settings > Theme > "Enable entrance animations" = off. A scaleX that
+   collapses to .01ms still animates; these drop the transition and show the
+   rule outright, so the hover still says something. */
+@media (prefers-reduced-motion: reduce) {
+    .sik-credit__name::after { transition: none; }
+}
+.sik-noanim .sik-credit__name::after { transition: none; }
 
 /* Renders only when Settings > Store has a gst_number. Boxed so it reads as a
    registration number rather than a second sentence of the copyright line;
@@ -14773,3 +15190,20 @@ a.sik-buylist__name:hover { color: var(--sik-primary-ink); }
     .sik-consent__track, .sik-consent__track::after { transition: none; }
 }
 body.sik-noanim .sik-consent { transition: none; transform: none; }
+
+/* A category with no picture shows its own glyph inside the circle, where the
+   single capital letter used to be. The letter was there to avoid an empty
+   well; it never said anything about the range, and with three empty
+   categories on the front page it said nothing three times.
+
+   Sized against the circle rather than in px, because the circle itself is
+   sized by --cat-size, which the renderer sets from how many tiles there are:
+   a fixed 32px glyph would be lost in a 104px feature tile and crowd a 72px
+   one. The animations live with the glyph set (sik-caticon), including both of
+   the motion switches. */
+.sik-catrow__glyph {
+    width: 46%;
+    height: 46%;
+    color: var(--sik-primary-ink);
+}
+.sik-catrow__ring--contain .sik-catrow__glyph { padding: 0; }

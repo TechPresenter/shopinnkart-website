@@ -1372,13 +1372,73 @@ function widget_trust(array $widget): void
 }
 
 /**
- * The featured categories at any depth, for the homepage tiles.
+ * The departments behind "Shop by category": every top-level category, each
+ * carrying its own children.
  *
- * featured_categories() only reads the top of the tree, so a store with one
- * umbrella category and three featured children showed a single tile. A
- * featured parent whose children are featured too is replaced by those
- * children — a tile for "everything" beside tiles for its parts says the same
- * thing twice.
+ * This replaced a version that read `is_featured` on its own authority and
+ * then swapped a featured parent for its featured children. On this catalogue
+ * that silently published three tiles out of seven: "Decorative Lights" was
+ * flagged featured and so were its three children, so the three children
+ * stood in for the whole store, and the three departments added at the
+ * rebrand — Hair Accessories, Mobile Accessories, Trending Products — were
+ * never flagged and so never appeared at all. Nobody had asked for a
+ * featured-only row either: the widget's own `settings` JSON says
+ * `featured_only: false`, and the flag was consulted regardless.
+ *
+ * So the flag is now the caller's choice, and the shape of the catalogue is
+ * kept: a department is one tile, its ranges hang under it. A flat row mixing
+ * four departments with three of one department's ranges claims a hierarchy
+ * the store does not have.
+ *
+ * product_count arrives rolled up from the children by category_tree(), which
+ * is the only count worth printing on a parent — the eleven products in this
+ * catalogue all sit in child categories, so the raw count on every parent is
+ * zero.
+ *
+ * @param int  $limit        Departments, not tiles.
+ * @param bool $featuredOnly Honours the widget's `featured_only` setting.
+ */
+function category_groups(int $limit = 8, bool $featuredOnly = false): array
+{
+    $groups = [];
+    foreach (category_tree() as $root) {
+        if ($featuredOnly && (int) $root['is_featured'] !== 1) {
+            continue;
+        }
+        $children = $root['children'] ?? [];
+        if ($featuredOnly) {
+            $children = array_values(array_filter(
+                $children,
+                static fn ($child) => (int) $child['is_featured'] === 1
+            ));
+        }
+        $root['children'] = $children;
+        $groups[] = $root;
+    }
+
+    // Departments that have something to sell first. This catalogue's
+    // sort_order puts the only stocked department (90) behind the three empty
+    // ones (0), so the first thing a shopper reached for led nowhere. usort is
+    // stable in PHP 8, so the admin's own order still decides everything
+    // within each half.
+    usort(
+        $groups,
+        static fn ($a, $b) => ((int) $b['product_count'] > 0 ? 1 : 0) <=> ((int) $a['product_count'] > 0 ? 1 : 0)
+    );
+
+    return array_slice($groups, 0, max(1, $limit));
+}
+
+/**
+ * The categories the homepage row shows.
+ *
+ * A parent with featured children is represented BY those children rather than
+ * by itself: "Decorative Lights" and then its three ranges beside it would be
+ * the same shelf twice. A parent with none of its own stands for itself.
+ *
+ * is_featured is the owner's switch for this row, in Catalogue > Categories.
+ * Nothing here second-guesses it - a category they have not featured is one
+ * they have decided not to put on the front page.
  */
 function category_tiles(int $limit = 8): array
 {
@@ -1395,6 +1455,120 @@ function category_tiles(int $limit = 8): array
         }
     }
     return array_slice($tiles, 0, max(1, $limit));
+}
+
+/**
+ * Which glyph a category gets, decided from its slug.
+ *
+ * Slug first so the seven categories this store actually sells are drawn on
+ * purpose, then keywords so a department added tomorrow still gets something
+ * sensible instead of a generic mark. Order inside the keyword list matters:
+ * "string curtain lights" and "diyas led candles" both contain "light"-ish
+ * words, so the specific ranges are tested before the umbrella.
+ */
+function category_icon_key(string $slug): string
+{
+    static $exact = [
+        'decorative-lights'       => 'bulb',
+        'string-curtain-lights'   => 'string',
+        'diyas-led-candles'       => 'diya',
+        'lamps-projectors'        => 'lamp',
+        'hair-accessories'        => 'bow',
+        'mobile-accessories'      => 'phone',
+        'trending-products'       => 'trend',
+    ];
+    if (isset($exact[$slug])) {
+        return $exact[$slug];
+    }
+
+    static $keywords = [
+        'string'    => 'string',   'curtain'   => 'string',   'fairy'  => 'string',
+        'diya'      => 'diya',     'candle'    => 'diya',     'wick'   => 'diya',
+        'lamp'      => 'lamp',     'projector' => 'lamp',     'torch'  => 'lamp',
+        'hair'      => 'bow',      'clip'      => 'bow',      'ribbon' => 'bow',
+        'mobile'    => 'phone',    'phone'     => 'phone',     'charger' => 'phone',
+        'trend'     => 'trend',    'best'      => 'trend',     'popular' => 'trend',
+        'light'     => 'bulb',     'led'       => 'bulb',      'lantern' => 'bulb',
+        'decor'     => 'bulb',     'festive'   => 'bulb',      'diwali'  => 'bulb',
+    ];
+    foreach ($keywords as $needle => $key) {
+        if (str_contains($slug, $needle)) {
+            return $key;
+        }
+    }
+    return 'tag';
+}
+
+/**
+ * One category's glyph as inline SVG.
+ *
+ * A drawing, not a photograph, because there is no photograph to use: not one
+ * category in this catalogue carries an image, so every tile was borrowing the
+ * picture of its single most popular product — one particular diya standing in
+ * for the whole diya range — and the three departments with no products yet
+ * had nothing to borrow and fell back to a letter in a coloured circle. A
+ * glyph is the same drawing at 18px and at 72px, follows the theme because it
+ * strokes in currentColor, and costs no request.
+ *
+ * Geometry is the 24x24 stroke grid of includes/icons.php. These do not live
+ * in that file because each one has named parts the CSS animates — .ci-spark,
+ * .ci-flame, .ci-ray — and icon() has no way to express a glyph in pieces.
+ *
+ * aria-hidden always: the tile's own text is the accessible name, and a glyph
+ * that repeats it makes a screen reader say the category twice.
+ */
+function category_icon_svg(string $slug, string $class = ''): string
+{
+    $bodies = [
+        // A hanging bulb throwing light — the department, not one of its ranges.
+        'bulb' => '<path d="M12 2.6v2.8"/><circle cx="12" cy="11.4" r="4.3"/>'
+            . '<path d="M9.7 16.1h4.6M10.4 18.6h3.2M11 21h2"/>'
+            . '<path class="ci-ray" d="M4.4 11.4H2.6M21.4 11.4h-1.8M6.2 5.6L4.9 4.3M17.8 5.6l1.3-1.3"/>',
+        // A swag of wire with bulbs on drops of uneven length: a curtain, not a garland.
+        'string' => '<path d="M2.5 5.5C7 12 17 12 21.5 5.5"/>'
+            . '<path d="M5.8 8.6v2.8M9.8 10.2v2M14.2 10.2v3.4M18.2 8.6v4"/>'
+            // ci-d1..ci-d4 are the CSS's transition delays, so the four bulbs
+            // light left to right rather than all at once. Positional classes
+            // rather than :nth-of-type(), because two other glyphs in this set
+            // draw a spark with a <path> and one draws a <circle> that is not a
+            // spark at all.
+            . '<circle class="ci-spark ci-d1" cx="5.8" cy="13" r="1.5"/>'
+            . '<circle class="ci-spark ci-d2" cx="9.8" cy="13.7" r="1.5"/>'
+            . '<circle class="ci-spark ci-d3" cx="14.2" cy="15.1" r="1.5"/>'
+            . '<circle class="ci-spark ci-d4" cx="18.2" cy="14.1" r="1.5"/>',
+        // A diya: the shallow dish is the giveaway, so it gets the wide rim.
+        'diya' => '<path d="M3.6 15.6h16.8"/><path d="M4.4 15.6c0 2.6 3.4 4.2 7.6 4.2s7.6-1.6 7.6-4.2"/>'
+            . '<path class="ci-flame" d="M12 14c1.6 0 2.7-1.1 2.7-2.6C14.7 9.4 12 6.6 12 6.6S9.3 9.4 9.3 11.4C9.3 12.9 10.4 14 12 14z"/>',
+        // A table lamp with its light falling out of the shade.
+        'lamp' => '<path d="M7 9.8l2.5-5.4h5l2.5 5.4z"/><path d="M12 9.8v9M8.4 20.4h7.2"/>'
+            . '<path class="ci-ray" d="M5.4 12.6L3.6 15.6M18.6 12.6l1.8 3M12 12.8v2"/>',
+        // A bow: two loops, a knot and two tails.
+        'bow' => '<path class="ci-loop ci-loop--l" d="M10.5 12.3C8.3 9.7 5.7 8.5 4.3 9.7c-1.5 1.3-.9 4 1.4 4.9 1.9.7 3.7-.4 4.8-2.3z"/>'
+            . '<path class="ci-loop ci-loop--r" d="M13.5 12.3c2.2-2.6 4.8-3.8 6.2-2.6 1.5 1.3.9 4-1.4 4.9-1.9.7-3.7-.4-4.8-2.3z"/>'
+            . '<circle cx="12" cy="12.4" r="1.7"/>'
+            . '<path d="M10.9 13.8L9.2 19.6M13.1 13.8l1.7 5.8"/>',
+        // A phone on charge: the bolt is the accessory, the phone is the context.
+        'phone' => '<rect x="6.6" y="2.6" width="10.8" height="18.8" rx="2.6"/>'
+            . '<path d="M10.4 5.4h3.2"/>'
+            . '<path class="ci-bolt" d="M12.7 8.6l-2.4 4.2h2.1l-.5 3 2.5-4.4h-2z"/>',
+        // A rising line with its own spark: what is selling, not what is stocked.
+        'trend' => '<g class="ci-trend"><path d="M3.4 16.6l4.6-4.6 3.4 3.4 6-6"/><path d="M13.6 9.4h3.8v3.8"/></g>'
+            . '<path class="ci-spark" d="M20 17.8v3M18.5 19.3h3"/>',
+        // The fallback: a price tag says "a range of things to buy" and nothing more.
+        'tag' => '<path d="M3.5 12.4V5.2a1.7 1.7 0 011.7-1.7h7.2c.45 0 .88.18 1.2.5l7 7a1.7 1.7 0 010 2.4l-6.6 6.6a1.7 1.7 0 01-2.4 0l-7-7a1.7 1.7 0 01-.5-1.2z"/>'
+            . '<circle cx="8.1" cy="8.1" r="1.6"/>',
+    ];
+
+    $key  = category_icon_key($slug);
+    $body = $bodies[$key] ?? $bodies['tag'];
+
+    // stroke-width here is only the no-CSS fallback, exactly as in icon():
+    // .sik-caticon sets it from --icon-stroke and a class beats a presentation
+    // attribute, so the whole set has one weight.
+    return '<svg class="' . e_attr(trim('sik-caticon sik-caticon--' . $key . ' ' . $class)) . '"'
+        . ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"'
+        . ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+        . $body . '</svg>';
 }
 
 /**
@@ -1430,20 +1604,49 @@ function category_tile_image(array $category): array
     ];
 }
 
-/** One category tile: photo, name and item count. */
-function category_tile(array $category): string
+/**
+ * The tile's picture, or null when there is not really one.
+ *
+ * category_tile_image() always answers with a URL, and two of those URLs are
+ * placeholders: no image on the category and no product to borrow a photo
+ * from, or a stored path whose file has since gone missing. One helper folds
+ * both into "there is no picture", so a caller can draw a glyph instead of a
+ * grey box. Compared by value rather than by a new key in the cached array,
+ * because category.tile.* entries live for ten minutes and an added key would
+ * be missing on every already-cached category until they expire.
+ */
+function category_tile_picture(array $category): ?array
 {
     $image = cache_remember(
         'category.tile.' . (int) $category['id'],
         600,
         static fn (): array => category_tile_image($category)
     );
+
+    $src = (string) ($image['src'] ?? '');
+    if ($src === '' || in_array($src, [img_url(null), category_image_url(null)], true)) {
+        return null;
+    }
+    return ['src' => $src, 'contain' => !empty($image['contain'])];
+}
+
+/** One category tile: photo, name and item count. */
+function category_tile(array $category): string
+{
+    $image = category_tile_picture($category);
     $count = (int) ($category['product_count'] ?? 0);
 
+    // No picture anywhere: the category's own glyph, which is a drawing of the
+    // range rather than the letter-in-a-box this used to end at.
+    $media = $image === null
+        ? '<span class="sik-cat__media sik-cat__media--glyph">'
+            . category_icon_svg((string) $category['slug'], 'sik-caticon--plate') . '</span>'
+        : '<span class="sik-cat__media' . ($image['contain'] ? ' sik-cat__media--contain' : '') . '">'
+            . '<img src="' . e($image['src']) . '" alt="" width="480" height="480" loading="lazy" decoding="async">'
+            . '</span>';
+
     return '<a class="sik-cat" href="' . e(category_url((string) $category['slug'])) . '">'
-        . '<span class="sik-cat__media' . ($image['contain'] ? ' sik-cat__media--contain' : '') . '">'
-        . '<img src="' . e($image['src']) . '" alt="" width="480" height="480" loading="lazy" decoding="async">'
-        . '</span>'
+        . $media
         . '<span class="sik-cat__body">'
         . '<span class="sik-cat__name">' . e((string) $category['name']) . '</span>'
         . '<span class="sik-cat__count">' . $count . ' ' . ($count === 1 ? 'item' : 'items') . '</span>'
@@ -1485,7 +1688,7 @@ function widget_categories(array $widget): void
     // Settings > Theme > "Enable entrance animations" off means "nothing moves
     // on its own". initRails' autoplay is a setInterval that scrolls the rail
     // forever and checks neither that switch nor prefers-reduced-motion, and
-    // CSS cannot stop a timer — withholding the interval is the only lever the
+    // CSS cannot stop a timer - withholding the interval is the only lever the
     // renderer has. The builder's own autoplay choice still decides the rest.
     $autoplay = (int) $widget['autoplay'] === 1 && setting_bool('enable_animations', true)
         ? (int) $widget['autoplay_speed']
@@ -1496,35 +1699,26 @@ function widget_categories(array $widget): void
     // lives.
     $allUrl = !empty($widget['link_url']) ? url((string) $widget['link_url']) : url('shop.php');
 
-    // The two placeholders category_tile_image() ends at when there is nothing
-    // real to show: no image on the category, no product to borrow a photo
-    // from, or a stored path whose file has since gone missing. Compared by
-    // value rather than by a new flag in the cached array, because
-    // category.tile.* entries live for ten minutes and an added key would be
-    // missing on every already-cached category until they expire.
-    $blanks = [img_url(null), category_image_url(null)];
+    $tile = static function (array $category): string {
+        // category_tile_picture() folds both of the placeholder cases - no
+        // image on the category and no product to borrow a photo from, or a
+        // stored path whose file has gone missing - into "there is no picture",
+        // through the same ten-minute cache entry category_tile() uses.
+        $image = category_tile_picture($category);
+        $name  = (string) $category['name'];
 
-    $tile = static function (array $category) use ($blanks): string {
-        // Same cache entry category_tile() uses, so the two never disagree.
-        $image = cache_remember(
-            'category.tile.' . (int) $category['id'],
-            600,
-            static fn (): array => category_tile_image($category)
-        );
+        // No picture: the category's own glyph, not the capital letter this
+        // used to fall back to. A letter in a circle tells a shopper nothing,
+        // and with three empty categories on the front page it told them the
+        // same nothing three times.
+        $inner = $image === null
+            ? category_icon_svg((string) $category['slug'], 'sik-catrow__glyph')
+            : '<img src="' . e($image['src']) . '" alt="" width="480" height="480" loading="lazy" decoding="async">';
 
-        $name    = (string) $category['name'];
-        $src     = (string) ($image['src'] ?? '');
-        $isBlank = $src === '' || in_array($src, $blanks, true);
         // A logo or an SVG icon is artwork, not a photograph: it sits inside
-        // the circle rather than being cropped to fill it.
-        $contain = !$isBlank && !empty($image['contain']);
-
-        // The letter is decorative twice over: the link text already carries
-        // the name, and the glyph is a stand-in for a picture.
-        $inner = $isBlank
-            ? '<span class="sik-catrow__initial" aria-hidden="true">'
-                . e(mb_strtoupper(mb_substr(trim($name), 0, 1))) . '</span>'
-            : '<img src="' . e($src) . '" alt="" width="480" height="480" loading="lazy" decoding="async">';
+        // the circle rather than being cropped to fill it. A glyph is artwork
+        // by definition.
+        $contain = $image === null || !empty($image['contain']);
 
         return '<a class="sik-catrow__tile" href="' . e(category_url((string) $category['slug'])) . '">'
             . '<span class="sik-catrow__ring' . ($contain ? ' sik-catrow__ring--contain' : '') . '">'
