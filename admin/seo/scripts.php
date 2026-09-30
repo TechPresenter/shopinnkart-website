@@ -6,7 +6,9 @@
  *
  * Three sources feed the storefront's <head> and <body>, and until this screen
  * existed you had to know where all three lived to find out:
- *   1. the store-wide custom CSS/JS in Settings > Theme;
+ *   1. the store-wide snippets in Settings > Custom code, one row each - they
+ *      used to be two textareas on Settings > Theme, and reading those settings
+ *      here now reports nothing at all, because the migration emptied them;
  *   2. the third-party tag ids in Settings > Analytics, behind the consent layer;
  *   3. the per-record code the SEO panel added - which is the one this section
  *      owns, and the only one that could otherwise hide on any of six hundred
@@ -27,6 +29,7 @@ $admin = admin_require('settings.view');
 
 require_once ADMIN_PATH . '/includes/rbac.php';   // admin_can_edit_scripts(), admin_deny_back()
 require_once __DIR__ . '/_layout.php';
+require_once INCLUDES_PATH . '/custom-scripts.php';   // the store-wide snippets
 
 // consent_tag_ids(): normally loaded by the storefront footer, so an admin
 // screen that wants to report what the consent layer holds asks for it.
@@ -85,8 +88,13 @@ $entries = seo_injected_code_inventory(500);
 
 // The two store-wide sources, so this screen is the whole picture rather than
 // a third place to look. Neither is edited here - each links to its own screen.
-$themeCss = trim((string) setting('custom_css', ''));
-$themeJs  = trim((string) setting('custom_js', ''));
+//
+// custom_scripts_all(), NOT setting('custom_css') / setting('custom_js'): the
+// migration moved every snippet into the custom_scripts table and blanked both
+// settings, and nothing on the storefront reads them any more. Reading them
+// here would have printed "empty" on the one screen an owner opens to find out
+// what is running - the exact false answer this file's docblock forbids.
+$snippets = function_exists('custom_scripts_all') ? custom_scripts_all() : [];
 $tagIds   = function_exists('consent_tag_ids') ? array_filter(consent_tag_ids()) : [];
 
 $pageTitle    = 'Injected code';
@@ -121,20 +129,35 @@ require ADMIN_PATH . '/includes/header.php';
             <table class="ad-table">
                 <thead><tr><th>What</th><th>Size</th><th>Gated by consent?</th><th></th></tr></thead>
                 <tbody>
+                    <?php if ($snippets === []): ?>
                     <tr>
-                        <td>Theme custom CSS</td>
-                        <td><?= $themeCss === '' ? '<span class="ad-muted">empty</span>'
-                                : e(format_bytes(strlen($themeCss))) ?></td>
-                        <td class="ad-muted">No &mdash; presentation only</td>
-                        <td><a class="ad-btn ad-btn--sm" href="<?= e(admin_url('settings/theme.php')) ?>">Open</a></td>
+                        <td>Custom code snippets</td>
+                        <td><span class="ad-muted">none</span></td>
+                        <td class="ad-muted">&mdash;</td>
+                        <td><a class="ad-btn ad-btn--sm" href="<?= e(admin_url('settings/scripts.php')) ?>">Open</a></td>
                     </tr>
+                    <?php else: foreach ($snippets as $snippet): $state = custom_scripts_status($snippet); ?>
                     <tr>
-                        <td>Theme custom JavaScript</td>
-                        <td><?= $themeJs === '' ? '<span class="ad-muted">empty</span>'
-                                : e(format_bytes(strlen($themeJs))) ?></td>
-                        <td class="ad-muted">No &mdash; first-party by assumption</td>
-                        <td><a class="ad-btn ad-btn--sm" href="<?= e(admin_url('settings/theme.php')) ?>">Open</a></td>
+                        <td>
+                            <?= e((string) $snippet['name']) ?>
+                            <div class="ad-muted" style="font-size:12px">
+                                <?= e(CUSTOM_SCRIPT_TYPES[(string) $snippet['type']] ?? (string) $snippet['type']) ?>
+                                &middot;
+                                <?= e(CUSTOM_SCRIPT_PLACEMENTS[(string) $snippet['placement']] ?? (string) $snippet['placement']) ?>
+                            </div>
+                        </td>
+                        <td><?= e(format_bytes(strlen((string) $snippet['code']))) ?></td>
+                        <td>
+                            <?php if ((string) $snippet['consent'] === 'essential'): ?>
+                                <span class="ad-muted">No &mdash; essential</span>
+                            <?php else: ?>
+                                Yes &mdash; <?= e(CUSTOM_SCRIPT_CONSENT[(string) $snippet['consent']] ?? (string) $snippet['consent']) ?>
+                            <?php endif; ?>
+                            <div class="sik-status sik-status--<?= e($state['tone']) ?>"><?= e($state['label']) ?></div>
+                        </td>
+                        <td><a class="ad-btn ad-btn--sm" href="<?= e(admin_url('settings/scripts.php') . '?edit=' . (int) $snippet['id']) ?>">Open</a></td>
                     </tr>
+                    <?php endforeach; endif; ?>
                     <tr>
                         <td>
                             Third-party tags

@@ -62,6 +62,10 @@ const SETTINGS_SCREENS = [
     // screen holding the consent switch that decides whether any of them run.
     'integrations' => ['label' => 'Integrations', 'file' => 'integrations.php'],
     'theme'    => ['label' => 'Theme',    'file' => 'theme.php'],
+    // The snippet store that replaced Theme's two custom_css / custom_js
+    // textareas. It sits straight after Theme because that is the screen the
+    // fields used to be on, and Theme still carries the card that points here.
+    'scripts'  => ['label' => 'Custom code', 'file' => 'scripts.php'],
     'social'   => ['label' => 'Social',   'file' => 'social.php'],
     // The `widgets` group - popup kill switches, the ticker, the floating
     // helpers. Every key here was already read by the storefront; until this

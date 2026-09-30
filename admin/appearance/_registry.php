@@ -40,6 +40,9 @@ if (!defined('SIK_BOOTSTRAPPED')) {
 
 require_once ADMIN_PATH . '/settings/_layout.php';
 require_once ADMIN_PATH . '/appearance/_header-spec.php';
+// custom_scripts_summary() for the General section's snippet chip. The storefront
+// footer normally pulls this in; an admin screen has to ask for it by name.
+require_once INCLUDES_PATH . '/custom-scripts.php';
 
 /**
  * Reset ownership: section => the settings keys resetting it restores.
@@ -91,9 +94,15 @@ const APPEARANCE_KEYS = [
         'header_height_mobile', 'header_burger_position', 'header_search_from',
         'mobile_bottom_nav',
     ],
+    // custom_css and custom_js are deliberately absent: Settings > Custom code
+    // owns the storefront snippets now, one row per snippet in custom_scripts,
+    // and the two settings they used to live in were emptied by the migration.
+    // Naming a key here that no harvested spec knows about makes the hub's
+    // coverage audit raise "would reset nothing", which is how this list stays
+    // honest - so the fix is to stop claiming them, not to silence the audit.
     'general' => [
         'container_width', 'card_style', 'product_card_style', 'enable_animations',
-        'custom_css', 'custom_js', 'recently_viewed_enabled',
+        'recently_viewed_enabled',
     ],
 ];
 
@@ -645,28 +654,33 @@ function appearance_sections(): array
         'general' => [
             'label' => 'General',
             'icon'  => 'settings',
-            'blurb' => 'Content width, card treatment, entrance animations, the recently-viewed rail, '
-                . 'and the custom CSS/JS injected into every storefront page.',
+            'blurb' => 'Content width, card treatment, entrance animations and the recently-viewed rail. '
+                . 'The code injected into every storefront page moved to Settings > Custom code.',
             'status' => 'ready',
             'chips' => [
                 appearance_chip('Container', appearance_value('container_width') . 'px', 'navy'),
                 appearance_chip('Cards', ucfirst(appearance_value('card_style'))),
                 appearance_switch_chip('Animations', 'enable_animations'),
-                appearance_chip('Custom CSS',
-                    appearance_value('custom_css') !== '' ? mb_strlen(appearance_value('custom_css')) . ' chars' : 'None',
-                    appearance_value('custom_css') !== '' ? 'amber' : 'gray'),
-                appearance_chip('Custom JS',
-                    appearance_value('custom_js') !== '' ? mb_strlen(appearance_value('custom_js')) . ' chars' : 'None',
-                    appearance_value('custom_js') !== '' ? 'amber' : 'gray'),
+                // The old "Custom CSS / Custom JS - None" chips are gone rather
+                // than repointed: they read two settings that are now always
+                // empty, so they reported "None" while snippets were live. The
+                // count that is true lives on Settings > Custom code, and this
+                // hub links to it below.
+                appearance_chip('Snippets',
+                    function_exists('custom_scripts_summary')
+                        ? (string) custom_scripts_summary()['total'] : '?',
+                    function_exists('custom_scripts_summary') && custom_scripts_summary()['total'] > 0
+                        ? 'amber' : 'gray'),
             ],
             'links' => [
-                ['label' => 'Layout, animations, custom code', 'url' => admin_url('settings/theme.php'), 'primary' => true],
+                ['label' => 'Layout and animations', 'url' => admin_url('settings/theme.php'), 'primary' => true],
+                ['label' => 'Custom code snippets', 'url' => admin_url('settings/scripts.php')],
                 ['label' => 'Logo, favicon, store name', 'url' => admin_url('settings/general.php')],
                 ['label' => 'Homepage sections', 'url' => admin_url('homepage/'), 'permission' => 'homepage.view'],
             ],
             'reset' => 'general',
-            'reset_note' => 'Reset also clears any custom CSS and JavaScript, because blank is what the '
-                . 'store shipped with.',
+            'reset_note' => 'Reset does NOT touch the custom code snippets - they are not settings any '
+                . 'more, and only Settings > Custom code can switch one off or delete it.',
         ],
     ];
 }
